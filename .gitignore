@@ -104,6 +104,7 @@ celerybeat.pid
 # Environments
 .env
 .venv
+env
 env/
 venv/
 ENV/
@@ -127,3 +128,10 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# PyCharm
+.idea
+
+# JWKS
+keystore.jwks
+
