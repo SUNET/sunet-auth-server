@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Set, Union
 
 from pydantic import BaseModel, Field
 
@@ -68,3 +68,68 @@ class RegisteredClaims(BaseModel):
 
 class Claims(RegisteredClaims):
     origins: List[str]
+
+
+class KeyType(str, Enum):
+    EC = 'EC'
+    RSA = 'RSA'
+    OCT = 'oct'
+
+
+class KeyUse(str, Enum):
+    SIGN = 'sig'
+    ENCRYPT = 'enc'
+
+
+class KeyOptions(str, Enum):
+    SIGN = 'sign'
+    VERIFY = 'verify'
+    ENCRYPT = 'encrypt'
+    DECRYPT = 'decrypt'
+    WRAP_KEY = 'wrapKey'
+    UNWRAP_KEY = 'unwrapKey'
+    DERIVE_KEY = 'deriveKey'
+    DERIVE_BITS = 'deriveBits'
+
+
+class JWK(BaseModel):
+    kty: KeyType
+    use: Optional[KeyUse]
+    key_opts: Optional[List[KeyOptions]]
+    alg: Optional[str]
+    kid: Optional[str]
+    x5u: Optional[str]
+    x5c: Optional[str]
+    x5t: Optional[str]
+    x5tS256: Optional[str] = Field(alias='x5t#S256')
+
+
+class ECJWK(JWK):
+    crv: Optional[str]
+    x: Optional[str]
+    y: Optional[str]
+    d: Optional[str]
+    n: Optional[str]
+    e: Optional[str]
+
+
+class RSAJWK(JWK):
+    d: Optional[str]
+    n: Optional[str]
+    e: Optional[str]
+    p: Optional[str]
+    q: Optional[str]
+    dp: Optional[str]
+    dq: Optional[str]
+    qi: Optional[str]
+    oth: Optional[str]
+    r: Optional[str]
+    t: Optional[str]
+
+
+class SymmetricJWK(JWK):
+    k: Optional[str]
+
+
+class JWKS(BaseModel):
+    keys: List[Union[ECJWK, RSAJWK, SymmetricJWK]]

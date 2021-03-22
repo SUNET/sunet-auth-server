@@ -7,6 +7,7 @@ import aiohttp
 import xmltodict
 from cryptography.hazmat.primitives.hashes import SHA1, Hash
 from cryptography.x509 import Certificate, load_pem_x509_certificate
+from pyexpat import ExpatError
 
 __author__ = 'lundberg'
 
@@ -47,13 +48,14 @@ async def xml_mdq_get(entity_id: str, mdq_url: str) -> Optional[List[MDQCert]]:
     identifier = f'{{sha1}}{digest.finalize().hex()}'
 
     # Get xml from the MDQ service
-    async with aiohttp.ClientSession() as session:
-        headers = {'Accept': 'application/samlmetadata+xml'}
-        async with session.get(f'{mdq_url}/{identifier}', headers=headers) as response:
-            if response.status != 200:
-                logger.error(f'{mdq_url}/{identifier} returned {response.status}')
-                return None
-            xml = await response.text()
+    headers = {'Accept': 'application/samlmetadata+xml'}
+    session = aiohttp.ClientSession()
+    response = await session.get(f'{mdq_url}/{identifier}', headers=headers)
+    await session.close()
+    if response.status != 200:
+        logger.error(f'{mdq_url}/{identifier} returned {response.status}')
+        return None
+    xml = await response.text()
 
     # Parse the xml to a OrderedDict and grab the certs and their use
     try:
@@ -66,6 +68,6 @@ async def xml_mdq_get(entity_id: str, mdq_url: str) -> Optional[List[MDQCert]]:
             cert = load_pem_x509_certificate(raw_cert.encode())
             certs.append(MDQCert(use=use, cert=cert))
         return certs
-    except Exception:  # TODO: handle exceptions properly
+    except ExpatError:  # TODO: handle exceptions properly
         logger.exception('Failed to parse mdq entity')
         return None
