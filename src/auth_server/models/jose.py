@@ -1,45 +1,14 @@
 # -*- coding: utf-8 -*-
+
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import List, Optional, Set, Union
+from typing import List, Optional, Union
 
 from pydantic import BaseModel, Field
 
-__author__ = 'lundberg'
-
 from auth_server.utils import utc_now
 
-
-class Proof(str, Enum):
-    MTLS = 'mtls'
-    HTTPSIGN = 'httpsign'
-    TEST = 'test'
-
-
-class Key(BaseModel):
-    proof: Proof
-    # TODO: kid not in spec
-    kid: str
-
-
-class Resources(BaseModel):
-    origins: list = Field(default=[])
-
-
-class AuthRequest(BaseModel):
-    # TODO: keys should be key
-    keys: Key
-    # TODO: resources not in spec, should be access_token
-    resources: Resources
-
-
-class AccessToken(BaseModel):
-    type: str
-    value: str
-
-
-class AuthResponse(BaseModel):
-    access_token: AccessToken
+__author__ = 'lundberg'
 
 
 class RegisteredClaims(BaseModel):
