@@ -12,27 +12,21 @@ from jwcrypto import jwt
 from starlette.testclient import TestClient
 
 from auth_server.api import init_auth_server_api
-from auth_server.models import ECJWK, AuthRequest, Key, Proof, Resources
 
 __author__ = 'lundberg'
 
+from auth_server.models.gnap import AccessTokenRequest, AccessTokenRequestFlags, Client, GrantRequest, Key, Proof
+from auth_server.models.jose import ECJWK
+
 
 class MockResponse:
-    def __init__(self, content: bytes = b'', json_data: Optional[dict] = None, status_code: int = 200):
+    def __init__(self, content: bytes = b'', status_code: int = 200):
         self._content = content
-        self._json_data = json_data
         self._status_code = status_code
 
     @property
     def content(self):
         return self._content
-
-    @property
-    def json(self):
-        return self._json_data
-
-    def raise_for_status(self):
-        pass
 
     @property
     def status(self):
@@ -74,18 +68,21 @@ class TestApp(TestCase):
         assert jwk.kty == 'EC'
         assert jwk.kid == 'default'
         assert jwk.crv == 'P-256'
-        assert 'x' in jwk.dict(exclude_none=True)
-        assert 'y' in jwk.dict(exclude_none=True)
+        assert jwk.x == 'RQ4UriZV8y1g97KSZEDzrEAHeN0K0yvfiNjyNjBsqo8'
+        assert jwk.y == 'eRmcA40T-NIFxostV1E7-GDsavCZ3PVAmzDou-uIpvo'
 
     def test_transaction_test_mode(self):
         self.app.state.config.test_mode = True
 
-        req = AuthRequest(keys=Key(proof=Proof.TEST, kid='some_kid'), resources=Resources(origins=['test']))
+        req = GrantRequest(
+            client=Client(key=Key(proof=Proof.TEST)),
+            access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
+        )
         response = self.client.post("/transaction", json=req.dict(exclude_none=True))
         assert response.status_code == 200
         assert 'access_token' in response.json()
         access_token = response.json()['access_token']
-        assert access_token['type'] == 'bearer'
+        assert access_token['bound'] is False
 
         # Verify token and check claims
         response = self.client.get("/.well-known/jwk.json")
@@ -93,19 +90,21 @@ class TestApp(TestCase):
         token = jwt.JWT(key=jwt.JWK(**response.json()), jwt=access_token['value'])
         claims = json.loads(token.claims)
         assert claims['aud'] == 'some_audience'
-        assert claims['origins'] == ['test']
 
     @mock.patch('aiohttp.ClientSession.get', new_callable=AsyncMock)
     def test_transaction_mtls_mdq(self, mock_mdq):
         mock_mdq.return_value = MockResponse(content=self.mdq_response)
 
-        req = AuthRequest(keys=Key(proof=Proof.MTLS, kid='test.localhost'), resources=Resources(origins=['test']))
+        req = GrantRequest(
+            client=Client(key='test.localhost'),
+            access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
+        )
         client_cert_header = {
-            'SSL-CLIENT-CERT': base64.b64encode(self.client_cert.public_bytes(encoding=Encoding.DER)).decode('utf-8')
+            'TLS-CLIENT-CERT': base64.b64encode(self.client_cert.public_bytes(encoding=Encoding.DER)).decode('utf-8')
         }
         response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_cert_header)
         assert response.status_code == 200
         assert 'access_token' in response.json()
         access_token = response.json()['access_token']
-        assert access_token['type'] == 'bearer'
+        assert access_token['bound'] is False
         assert access_token['value'] is not None

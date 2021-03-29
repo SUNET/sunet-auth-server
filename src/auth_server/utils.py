@@ -3,12 +3,13 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from cryptography.x509 import load_pem_x509_certificate
+from cryptography.x509 import Certificate, load_pem_x509_certificate
 from jwcrypto import jwk
 
 from auth_server.config import AuthServerConfig
 
 __author__ = 'lundberg'
+
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,6 @@ def get_signing_key(jwks: jwk.JWKSet) -> jwk.JWK:
     return signing_key
 
 
-def load_client_cert(ssl_client_cert: str):
-    raw_cert = f'-----BEGIN CERTIFICATE-----\n{ssl_client_cert}\n-----END CERTIFICATE-----'
+def load_cert_from_str(cert: str) -> Certificate:
+    raw_cert = f'-----BEGIN CERTIFICATE-----\n{cert}\n-----END CERTIFICATE-----'
     return load_pem_x509_certificate(raw_cert.encode())

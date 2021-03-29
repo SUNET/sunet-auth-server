@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 from enum import Enum
-from typing import Optional, List, Union, Dict
+from typing import Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field, HttpUrl, AnyUrl
+from pydantic import AnyUrl, BaseModel, Field, HttpUrl
 
 from auth_server.models.jose import JWK
 
@@ -29,15 +29,15 @@ class Key(BaseModel):
     cert: Optional[str] = None
     cert_S256: Optional[str] = Field(default=None, alias='cert#S256')
 
-
-class Resources(BaseModel):
-    origins: list = Field(default=[])
+    class Config:
+        allow_population_by_field_name = True
 
 
 class AccessType(str, Enum):
     """
     Can really be anything, let's start with access
     """
+
     ACCESS = 'access'
 
 
@@ -45,6 +45,7 @@ class AccessAction(str, Enum):
     """
     Can really be anything, let's start with read/write
     """
+
     ALL = 'all'
     READ = 'read'
     WRITE = 'write'
@@ -142,7 +143,7 @@ class GrantRequest(BaseModel):
 
 
 class ContinueAccessToken(BaseModel):
-    bound: True
+    bound: bool
     value: str
 
 
@@ -169,7 +170,7 @@ class ResponseAccessToken(BaseModel):
     bound: Optional[bool] = None
     label: Optional[str] = None
     manage: Optional[AnyUrl] = None
-    access: Optional[List[str, Access]] = None
+    access: Optional[List[Union[str, Access]]] = None
     expires_in: Optional[int] = Field(default=None, description='seconds until expiry')
     key: Optional[Union[str, Key]] = None
     durable: Optional[bool] = None
@@ -187,13 +188,10 @@ class Error(str, Enum):
 
 
 class GrantResponse(BaseModel):
-    continue_: Continue = Field(alias='continue')
-    access_token: ResponseAccessToken
+    continue_: Optional[Continue] = Field(default=None, alias='continue')
+    access_token: Optional[ResponseAccessToken] = None
     interact: Optional[InteractionResponse] = None
     subject: Optional[SubjectResponse] = None
     instance_id: Optional[str] = None
     user_handle: Optional[str] = None
     error: Optional[Error] = None
-
-
-

@@ -36,7 +36,7 @@ class RegisteredClaims(BaseModel):
 
 
 class Claims(RegisteredClaims):
-    origins: List[str]
+    origins: Optional[List[str]] = None
 
 
 class KeyType(str, Enum):
@@ -98,6 +98,12 @@ class RSAJWK(JWK):
 
 class SymmetricJWK(JWK):
     k: Optional[str]
+
+
+# Workaround for mypy not liking Union[ECJWK, RSAJWK, SymmetricJWK] as response_model. It should work.
+# https://github.com/tiangolo/fastapi/issues/2279
+class JWKTypes(BaseModel):
+    __root__: Union[ECJWK, RSAJWK, SymmetricJWK]
 
 
 class JWKS(BaseModel):
