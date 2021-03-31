@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import base64
 import json
+from os import environ
 from typing import Optional
 from unittest import TestCase, mock
 from unittest.mock import AsyncMock
@@ -15,6 +16,7 @@ from auth_server.api import init_auth_server_api
 
 __author__ = 'lundberg'
 
+from auth_server.config import AuthServerConfig, load_config
 from auth_server.models.gnap import AccessTokenRequest, AccessTokenRequestFlags, Client, GrantRequest, Key, Proof
 from auth_server.models.jose import ECJWK
 
@@ -40,12 +42,13 @@ class TestApp(TestCase):
     def setUp(self) -> None:
         self.datadir = pkg_resources.resource_filename(__name__, 'data')
         self.config = {
-            'testing': True,
-            'keystore_path': f'{self.datadir}/testing_jwks.json',
-            'mdq_server': 'http://localhost/mdq',
-            'audience': 'some_audience',
+            'TESTING': 'true',
+            'KEYSTORE': f'{self.datadir}/testing_jwks.json',
+            'MDQ_SERVER': 'http://localhost/mdq',
+            'AUDIENCE': 'some_audience',
         }
-        self.app = init_auth_server_api(test_config=self.config)
+        environ.update(self.config)
+        self.app = init_auth_server_api()
         self.client = TestClient(self.app)
         with open(f'{self.datadir}/test.cert', 'rb') as f:
             self.client_cert = x509.load_pem_x509_certificate(data=f.read())
@@ -72,7 +75,8 @@ class TestApp(TestCase):
         assert jwk.y == 'eRmcA40T-NIFxostV1E7-GDsavCZ3PVAmzDou-uIpvo'
 
     def test_transaction_test_mode(self):
-        self.app.state.config.test_mode = True
+        environ['TEST_MODE'] = 'yes'
+        load_config.cache_clear()  # Clear lru_cache to allow config update
 
         req = GrantRequest(
             client=Client(key=Key(proof=Proof.TEST)),

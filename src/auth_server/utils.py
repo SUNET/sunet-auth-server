@@ -2,11 +2,12 @@
 import json
 import logging
 from datetime import datetime, timezone
+from functools import lru_cache
 
 from cryptography.x509 import Certificate, load_pem_x509_certificate
 from jwcrypto import jwk
 
-from auth_server.config import AuthServerConfig
+from auth_server.config import load_config
 
 __author__ = 'lundberg'
 
@@ -18,7 +19,9 @@ def utc_now() -> datetime:
     return datetime.now(tz=timezone.utc)
 
 
-def load_jwks(config: AuthServerConfig) -> jwk.JWKSet:
+@lru_cache()
+def load_jwks() -> jwk.JWKSet:
+    config = load_config()
     if config.keystore_path.exists():
         with open(config.keystore_path, 'r') as f:
             jwks = jwk.JWKSet.from_json(f.read())
@@ -34,7 +37,9 @@ def load_jwks(config: AuthServerConfig) -> jwk.JWKSet:
     return jwks
 
 
-def get_signing_key(jwks: jwk.JWKSet) -> jwk.JWK:
+@lru_cache()
+def get_signing_key() -> jwk.JWK:
+    jwks = load_jwks()
     # Hack to be backwards compatible with thiss-auth
     # TODO: use jwks.get_key('default')
     signing_key = list(jwks['keys'])[0]
