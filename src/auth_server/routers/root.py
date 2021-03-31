@@ -50,8 +50,9 @@ async def transaction(
     key_reference = None
 
     if not isinstance(grant_req.client, Client):
-        raise HTTPException(status_code=400, detail='Client reference not implemented')
+        raise HTTPException(status_code=400, detail='client by reference not implemented')
 
+    # Key sent by reference, look it up
     if isinstance(grant_req.client.key, str):
         logger.debug(f'key reference: {grant_req.client.key}')
         key_reference = grant_req.client.key
@@ -70,6 +71,7 @@ async def transaction(
         raise HTTPException(status_code=400, detail='no supported proof method')
 
     if proof_ok:
+        # TODO: We need something like a policy engine to call for creation of an access token
         # Create access token
         claims = Claims(exp=config.expires_in, aud=config.audience)
         token = jwt.JWT(header={'alg': 'ES256'}, claims=claims.to_rfc7519())
