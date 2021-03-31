@@ -3,6 +3,3 @@ aiohttp[speedups]
 jwcrypto
 xmltodict
 loguru
-# required by jwcrypto
-six
-deprecated
