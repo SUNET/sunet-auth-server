@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Union
 
 from pydantic import AnyUrl, BaseModel, Field, HttpUrl
 
-from auth_server.models.jose import JWK
+from auth_server.models.jose import JWK, ECJWK, RSAJWK, SymmetricJWK
 
 __author__ = 'lundberg'
 
@@ -25,7 +25,7 @@ class Proof(str, Enum):
 
 class Key(BaseModel):
     proof: Proof
-    jwk: Optional[JWK] = None
+    jwk: Optional[Union[ECJWK, RSAJWK, SymmetricJWK]] = None
     cert: Optional[str] = None
     cert_S256: Optional[str] = Field(default=None, alias='cert#S256')
 

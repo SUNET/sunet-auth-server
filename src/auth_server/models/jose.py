@@ -11,6 +11,38 @@ from auth_server.utils import utc_now
 __author__ = 'lundberg'
 
 
+class KeyType(str, Enum):
+    EC = 'EC'
+    RSA = 'RSA'
+    OCT = 'oct'
+
+
+class KeyUse(str, Enum):
+    SIGN = 'sig'
+    ENCRYPT = 'enc'
+
+
+class KeyOptions(str, Enum):
+    SIGN = 'sign'
+    VERIFY = 'verify'
+    ENCRYPT = 'encrypt'
+    DECRYPT = 'decrypt'
+    WRAP_KEY = 'wrapKey'
+    UNWRAP_KEY = 'unwrapKey'
+    DERIVE_KEY = 'deriveKey'
+    DERIVE_BITS = 'deriveBits'
+
+
+class SupportedAlgorithms(str, Enum):
+    RS256 = 'RS256'
+    ES256 = 'ES256'
+    ES384 = 'ES384'
+
+
+class SupportedHTTPMethods(str, Enum):
+    POST = 'POST'
+
+
 class RegisteredClaims(BaseModel):
     """
     https://tools.ietf.org/html/rfc7519#section-4.1
@@ -36,29 +68,7 @@ class RegisteredClaims(BaseModel):
 
 
 class Claims(RegisteredClaims):
-    origins: Optional[List[str]] = None
-
-
-class KeyType(str, Enum):
-    EC = 'EC'
-    RSA = 'RSA'
-    OCT = 'oct'
-
-
-class KeyUse(str, Enum):
-    SIGN = 'sig'
-    ENCRYPT = 'enc'
-
-
-class KeyOptions(str, Enum):
-    SIGN = 'sign'
-    VERIFY = 'verify'
-    ENCRYPT = 'encrypt'
-    DECRYPT = 'decrypt'
-    WRAP_KEY = 'wrapKey'
-    UNWRAP_KEY = 'unwrapKey'
-    DERIVE_KEY = 'deriveKey'
-    DERIVE_BITS = 'deriveBits'
+    origins: Optional[List[str]] = None  # What should we use this for?
 
 
 class JWK(BaseModel):
@@ -108,3 +118,25 @@ class JWKTypes(BaseModel):
 
 class JWKS(BaseModel):
     keys: List[Union[ECJWK, RSAJWK, SymmetricJWK]]
+
+
+class JWSHeaders(BaseModel):
+    """
+    The header of the JWS MUST contain the "kid" field of the key bound
+    to this client instance for this request.  The JWS header MUST
+    contain an "alg" field appropriate for the key identified by "kid"
+    and MUST NOT be "none".
+
+    To protect the request, the JWS header MUST contain the following
+    additional fields.
+    """
+
+    alg: SupportedAlgorithms
+    kid: str
+    htm: SupportedHTTPMethods
+    htu: str  # The HTTP URI used for this request, including all path and query components.
+    ts: int
+    # at_hash value is the base64url encoding of the left-most half of the hash of the octets of the ASCII
+    # representation of the "access_token" value ex. if the "alg" is "RS256", hash the "access_token"
+    # value with SHA-256, then take the left-most 128 bits and base64url encode them.
+    at_hash: str
