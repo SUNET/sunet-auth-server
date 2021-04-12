@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
+
 from fastapi import HTTPException
 from jwcrypto import jws
 from pydantic import ValidationError
@@ -9,7 +10,7 @@ from starlette.responses import PlainTextResponse
 from starlette.types import Message
 
 from auth_server.context import ContextRequestMixin
-from auth_server.models.gnap import GrantRequest, Client, Key
+from auth_server.models.gnap import Client, GrantRequest, Key
 from auth_server.models.jose import JWSHeaders
 
 __author__ = 'lundberg'
@@ -55,7 +56,7 @@ class JOSEMiddleware(BaseHTTPMiddleware, ContextRequestMixin):
             logger.debug(f'JWS: {jwstoken.objects}')
 
             # Use unverified data to get the public key
-            unverified_grant_req = GrantRequest.parse_raw(jwstoken.objects.get('payload'))
+            unverified_grant_req = GrantRequest.parse_raw(jwstoken.objects.get('payload').decode('utf-8'))
             logger.debug(f'unverified grant request: {unverified_grant_req.dict(exclude_unset=True)}')
 
             if not isinstance(unverified_grant_req.client, Client):
@@ -72,7 +73,8 @@ class JOSEMiddleware(BaseHTTPMiddleware, ContextRequestMixin):
                 try:
                     jwstoken.verify(client_key)
                     logger.info('JWS token verified')
-                except jws.InvalidJWSSignature:
+                except jws.InvalidJWSSignature as e:
+                    logger.error(f'JWS signature failure: {e}')
                     return return_error_response(status_code=400, detail='JWS signature could not be verified')
             else:
                 return return_error_response(status_code=400, detail='no client key found')

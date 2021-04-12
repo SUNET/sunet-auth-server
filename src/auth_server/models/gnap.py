@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Union
 
 from pydantic import AnyUrl, BaseModel, Field, HttpUrl
 
-from auth_server.models.jose import JWK, ECJWK, RSAJWK, SymmetricJWK
+from auth_server.models.jose import ECJWK, JWK, RSAJWK, SymmetricJWK
 
 __author__ = 'lundberg'
 

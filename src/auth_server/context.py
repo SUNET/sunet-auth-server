@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from typing import Callable, Optional, Union
 
 from fastapi import Request, Response

@@ -68,10 +68,16 @@ async def transaction(
         proof_ok = await check_mtls_proof(grant_request=grant_req, cert=tls_client_cert)
     elif grant_req.client.key.proof is Proof.HTTPSIGN:
         raise HTTPException(status_code=400, detail='httpsign is not implemented')
-    elif grant_req.client.key.proof is Proof.JWS and request.context.jws_verified:
-        proof_ok = await check_jws_proof(grant_request=grant_req, jws_headers=request.context.jws_headers)
-    elif grant_req.client.key.proof is Proof.JWSD and detached_jws:
-        proof_ok = await check_jwsd_proof(grant_request=grant_req, detached_jws=detached_jws)
+    elif grant_req.client.key.proof is Proof.JWS:
+        # TODO: Just the proof is not good enough to get a token
+        proof_ok = await check_jws_proof(
+            request=request, grant_request=grant_req, jws_headers=request.context.jws_headers
+        )
+    elif grant_req.client.key.proof is Proof.JWSD:
+        if detached_jws is None:
+            raise HTTPException(status_code=400, detail='no detached jws header found')
+        # TODO: Just the proof is not good enough to get a token
+        proof_ok = await check_jwsd_proof(request=request, grant_request=grant_req, detached_jws=detached_jws)
     elif grant_req.client.key.proof is Proof.TEST and config.test_mode is True:
         logger.warning(f'TEST_MODE - access token will be returned with no proof')
         proof_ok = True
@@ -81,11 +87,11 @@ async def transaction(
     if proof_ok:
         # TODO: We need something like a policy engine to call for creation of an access token
         # Create access token
-        claims = Claims(exp=config.expires_in, aud=config.audience)
+        claims = Claims(exp=config.auth_token_expires_in, aud=config.auth_token_audience)
         token = jwt.JWT(header={'alg': 'ES256'}, claims=claims.to_rfc7519())
         token.make_signed_token(signing_key)
         auth_response = GrantResponse(access_token=ResponseAccessToken(bound=False, value=token.serialize()))
-        logger.info(f'OK:{request.context.key_id}:{config.audience}')
+        logger.info(f'OK:{request.context.key_id}:{config.auth_token_audience}')
         return auth_response
 
     raise HTTPException(status_code=401, detail='permission denied')

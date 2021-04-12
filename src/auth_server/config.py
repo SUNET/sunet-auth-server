@@ -26,8 +26,9 @@ class AuthServerConfig(BaseSettings):
     base_url: str = Field(default='', env='BASE_URL')
     mdq_server: Optional[str] = Field(default=None, env='MDQ_SERVER')
     keystore_path: Path = Field(default='keystore.jwks', env='KEYSTORE')
-    audience: str = Field(default='', env='AUDIENCE')
-    expires_in: timedelta = Field(default='P10D', env='EXPIRES_IN')
+    auth_token_audience: str = Field(default='', env='AUTH_TOKEN_AUDIENCE')
+    auth_token_expires_in: timedelta = Field(default='P10D', env='AUTH_TOKEN_EXPIRES_IN')
+    jws_max_age: timedelta = Field(default='PT5M', env='JWS_MAX_AGE')
     test_mode: bool = Field(
         default=False, env='TEST_MODE'
     )  # This is dangerous and turns off security - only for debugging

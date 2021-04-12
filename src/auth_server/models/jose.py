@@ -135,7 +135,7 @@ class JWSHeaders(BaseModel):
     kid: str
     htm: SupportedHTTPMethods
     htu: str  # The HTTP URI used for this request, including all path and query components.
-    ts: int
+    ts: datetime
     # at_hash value is the base64url encoding of the left-most half of the hash of the octets of the ASCII
     # representation of the "access_token" value ex. if the "alg" is "RS256", hash the "access_token"
     # value with SHA-256, then take the left-most 128 bits and base64url encode them.
