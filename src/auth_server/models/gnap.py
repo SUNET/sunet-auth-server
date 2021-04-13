@@ -2,9 +2,9 @@
 from enum import Enum
 from typing import Dict, List, Optional, Union
 
-from pydantic import AnyUrl, BaseModel, Field, HttpUrl
+from pydantic import AnyUrl, BaseModel, Field
 
-from auth_server.models.jose import ECJWK, JWK, RSAJWK, SymmetricJWK
+from auth_server.models.jose import ECJWK, RSAJWK, SymmetricJWK
 
 __author__ = 'lundberg'
 

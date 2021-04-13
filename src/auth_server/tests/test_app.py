@@ -1,13 +1,12 @@
 # -*- coding: utf-8 -*-
 import base64
 import json
-import unittest
 from os import environ
-from typing import Optional
-from unittest import TestCase, mock
+from unittest import SkipTest, TestCase, mock
 from unittest.mock import AsyncMock
 
 import pkg_resources
+import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives.hashes import SHA256, Hash, HashAlgorithm
 from cryptography.hazmat.primitives.serialization import Encoding
@@ -19,9 +18,9 @@ from auth_server.api import init_auth_server_api
 
 __author__ = 'lundberg'
 
-from auth_server.config import AuthServerConfig, load_config
+from auth_server.config import load_config
 from auth_server.models.gnap import AccessTokenRequest, AccessTokenRequestFlags, Client, GrantRequest, Key, Proof
-from auth_server.models.jose import ECJWK, JWSHeaders, SupportedAlgorithms, SupportedHTTPMethods
+from auth_server.models.jose import ECJWK, SupportedAlgorithms, SupportedHTTPMethods
 from auth_server.utils import utc_now
 
 
@@ -158,7 +157,8 @@ class TestApp(TestCase):
         assert access_token['bound'] is False
         assert access_token['value'] is not None
 
-    @unittest.SkipTest  # TODO: Something strange about detached jws
+    # TODO: Something strange about detached jws verification
+    @pytest.mark.skip(reason="Something strange about detached jws verification")
     def test_transaction_jswd(self):
         client_key_dict = self.client_jwk.export(as_dict=True)
         client_jwk = ECJWK(**client_key_dict)
