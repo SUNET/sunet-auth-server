@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
 
-from fastapi import HTTPException
 from jwcrypto import jws
 from pydantic import ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -9,11 +8,14 @@ from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 from starlette.types import Message
 
+from auth_server.config import load_config
 from auth_server.context import ContextRequestMixin
-from auth_server.models.gnap import Client, GrantRequest, Key
+from auth_server.models.gnap import Client, GrantRequest
 from auth_server.models.jose import JWSHeaders
 
 __author__ = 'lundberg'
+
+from auth_server.proof.common import lookup_client_key
 
 logger = logging.getLogger(__name__)
 
@@ -44,14 +46,16 @@ class JOSEMiddleware(BaseHTTPMiddleware, ContextRequestMixin):
         super().__init__(app)
 
     async def dispatch(self, request: Request, call_next):
-        request = self.make_context_request(request)
         if request.headers.get('content-type') == 'application/jose':
+            config = load_config()
+            request = self.make_context_request(request)
             logger.info('got application/jose request')
             client_key = None
             body = await get_body(request)
-            logger.debug(f'body: {body}')
+            body_str = body.decode("utf-8")
+            logger.debug(f'body: {body_str}')
             jwstoken = jws.JWS()
-            jwstoken.deserialize(body.decode('utf-8'))
+            jwstoken.deserialize(body_str)
             logger.info('JWS token deserialized')
             logger.debug(f'JWS: {jwstoken.objects}')
 
@@ -61,9 +65,13 @@ class JOSEMiddleware(BaseHTTPMiddleware, ContextRequestMixin):
 
             if not isinstance(unverified_grant_req.client, Client):
                 return return_error_response(status_code=400, detail='client by reference not implemented')
-            # TODO: Handle key by reference
-            if not isinstance(unverified_grant_req.client.key, Key):
-                return return_error_response(status_code=400, detail='key by reference not implemented')
+
+            if isinstance(unverified_grant_req.client.key, str):
+                # Key sent by reference, look it up
+                logger.debug(f'key reference: {unverified_grant_req.client.key}')
+                unverified_grant_req.client.key = await lookup_client_key(
+                    request=request, key_id=unverified_grant_req.client.key
+                )
 
             if unverified_grant_req.client.key.jwk is not None:
                 client_key = jws.JWK(**unverified_grant_req.client.key.jwk.dict(exclude_unset=True))

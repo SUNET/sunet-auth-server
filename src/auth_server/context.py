@@ -13,7 +13,7 @@ from auth_server.models.jose import JWSHeaders
 
 @dataclass
 class Context:
-    key_id: Optional[str] = None
+    key_reference: Optional[str] = None
     jws_verified: bool = False
     jws_headers: Optional[JWSHeaders] = None
 

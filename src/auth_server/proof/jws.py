@@ -10,8 +10,8 @@ from pydantic import ValidationError
 
 from auth_server.config import load_config
 from auth_server.context import ContextRequest
-from auth_server.models.gnap import GrantRequest
-from auth_server.models.jose import JWSHeaders, SupportedAlgorithms
+from auth_server.models.gnap import Client, GrantRequest, Key
+from auth_server.models.jose import JWK, JWSHeaders, SupportedAlgorithms
 from auth_server.utils import utc_now
 
 __author__ = 'lundberg'
@@ -52,6 +52,14 @@ async def check_at_hash(access_token: str, alg: SupportedAlgorithms, at_hash: st
 async def verify_gnap_jws(request: ContextRequest, grant_request: GrantRequest, jws_headers: JWSHeaders) -> bool:
     config = load_config()
 
+    # Please mypy
+    if not isinstance(grant_request.client, Client):
+        raise RuntimeError('client needs to be of type gnap.Client')
+    if not isinstance(grant_request.client.key, Key):
+        raise RuntimeError('key needs to be of type gnap.Key')
+    if not isinstance(grant_request.client.key.jwk, JWK):
+        raise RuntimeError('key needs to be of type jose.JWK')
+
     # The header of the JWS MUST contain the "kid" field of the key bound to this client instance for this request.
     if grant_request.client.key.jwk.kid != jws_headers.kid:
         logger.error(f'kid mismatch. grant: {grant_request.client.key.jwk.kid} != header: {jws_headers.kid}')
@@ -88,6 +96,12 @@ async def check_jws_proof(request: ContextRequest, grant_request: GrantRequest, 
 
 
 async def check_jwsd_proof(request: ContextRequest, grant_request: GrantRequest, detached_jws: str) -> bool:
+    # Please mypy
+    if not isinstance(grant_request.client, Client):
+        raise RuntimeError('client needs to be of type gnap.Client')
+    if not isinstance(grant_request.client.key, Key):
+        raise RuntimeError('key needs to be of type gnap.Key')
+
     logger.debug(f'detached_jws: {detached_jws}')
     jws_parts = detached_jws.split('.')
     payload = grant_request.json(exclude_unset=True, exclude_defaults=True, exclude_none=True)
@@ -107,7 +121,7 @@ async def check_jwsd_proof(request: ContextRequest, grant_request: GrantRequest,
             logger.info('Detached JWS token verified')
         except jws.InvalidJWSSignature as e:
             logger.error(f'JWS signature failure: {e}')
-            raise HTTPException(status_code=400, detail='Detached JWS signature could not be verified')
+            raise HTTPException(status_code=400, detail='detached JWS signature could not be verified')
     else:
         raise HTTPException(status_code=400, detail='no client key found')
 

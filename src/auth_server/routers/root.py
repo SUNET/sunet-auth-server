@@ -8,13 +8,13 @@ from jwcrypto import jwt
 from jwcrypto.jwk import JWK, JWKSet
 from starlette.responses import Response
 
-from auth_server.auth_methods.base import lookup_client_key
-from auth_server.auth_methods.jws import check_jws_proof, check_jwsd_proof
-from auth_server.auth_methods.mtls import check_mtls_proof
 from auth_server.config import AuthServerConfig, load_config
 from auth_server.context import ContextRequest, ContextRequestRoute
 from auth_server.models.gnap import Client, GrantRequest, GrantResponse, Proof, ResponseAccessToken
 from auth_server.models.jose import JWKS, Claims, JWKTypes
+from auth_server.proof.common import lookup_client_key
+from auth_server.proof.jws import check_jws_proof, check_jwsd_proof
+from auth_server.proof.mtls import check_mtls_proof
 from auth_server.utils import get_signing_key, load_jwks
 
 __author__ = 'lundberg'
@@ -58,8 +58,7 @@ async def transaction(
     if isinstance(grant_req.client.key, str):
         # Key sent by reference, look it up
         logger.debug(f'key reference: {grant_req.client.key}')
-        request.context.key_id = grant_req.client.key
-        grant_req.client.key = await lookup_client_key(key_id=grant_req.client.key, config=config)
+        grant_req.client.key = await lookup_client_key(request=request, key_id=grant_req.client.key)
 
     # TODO: This part could probably move to it's own function/module
     if grant_req.client.key.proof is Proof.MTLS:
@@ -91,7 +90,7 @@ async def transaction(
         token = jwt.JWT(header={'alg': 'ES256'}, claims=claims.to_rfc7519())
         token.make_signed_token(signing_key)
         auth_response = GrantResponse(access_token=ResponseAccessToken(bound=False, value=token.serialize()))
-        logger.info(f'OK:{request.context.key_id}:{config.auth_token_audience}')
+        logger.info(f'OK:{request.context.key_reference}:{config.auth_token_audience}')
         return auth_response
 
     raise HTTPException(status_code=401, detail='permission denied')
