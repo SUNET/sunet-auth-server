@@ -2,7 +2,7 @@
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Iterable, List, Mapping, Optional, Sequence, Union
+from typing import Any, Iterable, List, Mapping, Sequence, Union
 
 import aiohttp
 import xmltodict
