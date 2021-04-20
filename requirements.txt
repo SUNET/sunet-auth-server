@@ -142,9 +142,9 @@ multidict==5.1.0 \
     # via
     #   aiohttp
     #   yarl
-orjson==3.5.1 \
-    --hash=sha256:19fe12ad37ab0598e39d254249c704a065f32b31659679d07eeb32e5f5edc500 \
-    --hash=sha256:7d3c4179d7af8a39fa1e3b4125155e866e09b24e477c7663ef951dcb6d8ee97d
+orjson==3.5.2 \
+    --hash=sha256:d4a2ddc6342a8280dafaa69827b387b95856ef0a6c5812fe91f5bd21ddd2ef36 \
+    --hash=sha256:f385253a6ddac37ea422ec2c0d35772b4f5bf0dc0803ce44543bf7e530423ef8
     # via fastapi
 promise==2.3 \
     --hash=sha256:dfd18337c523ba4b6a58801c164c1904a9d4d1b1747c7d5dbf45b693a49d93d0
@@ -165,9 +165,9 @@ pydantic==1.8.1 \
     --hash=sha256:dd4888b300769ecec194ca8f2699415f5f7760365ddbe243d4fd6581485fa5f0 \
     --hash=sha256:e3f8790c47ac42549dc8b045a67b0ca371c7f66e73040d0197ce6172b385e520
     # via fastapi
-python-dotenv==0.16.0 \
-    --hash=sha256:31d752f5b748f4e292448c9a0cac6a08ed5e6f4cefab85044462dcad56905cec \
-    --hash=sha256:9fa413c37d4652d3fa02fea0ff465c384f5db75eab259c4fc5d0c5b8bf20edd4
+python-dotenv==0.17.0 \
+    --hash=sha256:471b782da0af10da1a80341e8438fca5fadeba2881c54360d5fd8d03d03a4f4a \
+    --hash=sha256:49782a97c9d641e8a09ae1d9af0856cc587c8d2474919342d5104d85be9890b2
     # via uvicorn
 python-multipart==0.0.5 \
     --hash=sha256:f7bb5f611fc600d15fa47b3974c8aa16e93724513b49b5f95c81e6624c83fa43
