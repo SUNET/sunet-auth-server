@@ -63,9 +63,9 @@ async def lookup_client_key(request: ContextRequest, key_id: str) -> Key:
     # Look for a key using mdq
     if client_key is None and config.mdq_server is not None:
         logger.info(f'Trying to load key from mdq')
-        mdq_certs = await xml_mdq_get(entity_id=key_id, mdq_url=config.mdq_server)
-        if mdq_certs:
-            signing_cert = [item.cert for item in mdq_certs if item.use == KeyUse.SIGNING]
+        mdq_data = await xml_mdq_get(entity_id=key_id, mdq_url=config.mdq_server)
+        if mdq_data.certs:
+            signing_cert = [item.cert for item in mdq_data.certs if item.use == KeyUse.SIGNING]
             # There should only be one or zero signing certs
             if signing_cert:
                 logger.info(f'Found cert in metadata')
