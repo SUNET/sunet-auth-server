@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 import logging
-from dataclasses import dataclass
+from collections import OrderedDict as _OrderedDict
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Iterable, List, Mapping, Sequence, Union
+from typing import Any, Iterable, List, Mapping, OrderedDict, Sequence, Union
 
 import aiohttp
 import xmltodict
@@ -47,7 +48,13 @@ class MDQCert:
     cert: Certificate
 
 
-async def xml_mdq_get(entity_id: str, mdq_url: str) -> List[MDQCert]:
+@dataclass(frozen=True)
+class MDQData:
+    certs: List[MDQCert] = field(default_factory=list)
+    metadata: OrderedDict = field(default_factory=_OrderedDict)
+
+
+async def xml_mdq_get(entity_id: str, mdq_url: str) -> MDQData:
     # SHA1 hash and create hex representation of entity id
     digest = Hash(SHA1())
     digest.update(entity_id.encode())
@@ -63,20 +70,23 @@ async def xml_mdq_get(entity_id: str, mdq_url: str) -> List[MDQCert]:
     await session.close()
     if response.status != 200:
         logger.error(f'{mdq_url}/{identifier} returned {response.status}')
-        return []
+        return MDQData()
 
     xml = await response.text()
     # Parse the xml to a OrderedDict and grab the certs and their use
+    # TODO: Grab other interesting things from the metadata
     try:
+        # TODO: Should we use defusedxml.expatbuilder?
+        entity = xmltodict.parse(xml, process_namespaces=True)
         certs = []
-        entity = xmltodict.parse(xml)
-        for key_descriptor in get_values(key='md:KeyDescriptor', obj=entity):
+        # Certs
+        for key_descriptor in get_values(key='urn:oasis:names:tc:SAML:2.0:metadata:KeyDescriptor', obj=entity):
             use = list(get_values(key='@use', obj=key_descriptor))[0]
-            raw_cert = list(get_values(key='ds:X509Certificate', obj=key_descriptor))[0]
+            raw_cert = list(get_values(key='http://www.w3.org/2000/09/xmldsig#:X509Certificate', obj=key_descriptor))[0]
             raw_cert = f'-----BEGIN CERTIFICATE-----\n{raw_cert}\n-----END CERTIFICATE-----'
             cert = load_pem_x509_certificate(raw_cert.encode())
             certs.append(MDQCert(use=KeyUse(use), cert=cert))
-        return certs
+        return MDQData(certs=certs, metadata=entity)
     except (ExpatError, ValueError):  # TODO: handle exceptions properly
-        logger.exception('Failed to parse mdq entity')
-        return []
+        logger.exception(f'Failed to parse mdq entity: {entity_id}')
+    return MDQData()
