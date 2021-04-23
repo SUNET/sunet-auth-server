@@ -2,7 +2,7 @@
 import base64
 import json
 from os import environ
-from unittest import SkipTest, TestCase, mock
+from unittest import TestCase, mock
 from unittest.mock import AsyncMock
 
 import pkg_resources

@@ -1,18 +1,20 @@
 # -*- coding: utf-8 -*-
 import logging
+from base64 import b64encode
 from collections import OrderedDict as _OrderedDict
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Iterable, List, Mapping, OrderedDict, Sequence, Union
+from typing import Any, Iterable, List, Mapping, Optional, OrderedDict, Sequence, Union
 
 import aiohttp
 import xmltodict
-from cryptography.hazmat.primitives.hashes import SHA1, Hash
+from cryptography.hazmat.primitives.hashes import SHA1, SHA256, Hash
 from cryptography.x509 import Certificate, load_pem_x509_certificate
 from pyexpat import ExpatError
 
 __author__ = 'lundberg'
 
+from auth_server.models.gnap import Key, Proof
 
 logger = logging.getLogger(__name__)
 
@@ -90,3 +92,14 @@ async def xml_mdq_get(entity_id: str, mdq_url: str) -> MDQData:
     except (ExpatError, ValueError):  # TODO: handle exceptions properly
         logger.exception(f'Failed to parse mdq entity: {entity_id}')
     return MDQData()
+
+
+async def mdq_data_to_key(mdq_data: MDQData) -> Optional[Key]:
+    signing_cert = [item.cert for item in mdq_data.certs if item.use == KeyUse.SIGNING]
+    # There should only be one or zero signing certs
+    if signing_cert:
+        logger.info(f'Found cert in metadata')
+        return Key(
+            proof=Proof.MTLS, cert_S256=b64encode(signing_cert[0].fingerprint(algorithm=SHA256())).decode('utf-8'),
+        )
+    return None

@@ -17,6 +17,10 @@ if typing.TYPE_CHECKING:  # Avoid circular dependencies
 __author__ = 'lundberg'
 
 
+class ConfigurationError(Exception):
+    pass
+
+
 class Environment(str, Enum):
     DEV = 'dev'
     PROD = 'prod'
@@ -37,6 +41,7 @@ class AuthServerConfig(BaseSettings):
     log_level: str = Field(default='INFO', env='LOG_LEVEL')
     host: str = Field(default='0.0.0.0', env='HOST')
     port: int = Field(default=3000, env='PORT')
+    auth_flow_class: str = Field(default='auth_server.flows.FullFlow', env='AUTH_FLOW_CLASS')
     base_url: str = Field(default='', env='BASE_URL')
     mdq_server: Optional[str] = Field(default=None, env='MDQ_SERVER')
     keystore_path: Path = Field(default='keystore.jwks', env='KEYSTORE')

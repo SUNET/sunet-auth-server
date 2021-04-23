@@ -12,10 +12,10 @@ from auth_server.config import load_config
 from auth_server.context import ContextRequestMixin
 from auth_server.models.gnap import Client, GrantRequest
 from auth_server.models.jose import JWSHeaders
+from auth_server.proof.common import lookup_client_key_from_config
 
 __author__ = 'lundberg'
 
-from auth_server.proof.common import lookup_client_key
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ class JOSEMiddleware(BaseHTTPMiddleware, ContextRequestMixin):
             if isinstance(unverified_grant_req.client.key, str):
                 # Key sent by reference, look it up
                 logger.debug(f'key reference: {unverified_grant_req.client.key}')
-                unverified_grant_req.client.key = await lookup_client_key(
+                unverified_grant_req.client.key = await lookup_client_key_from_config(
                     request=request, key_id=unverified_grant_req.client.key
                 )
 

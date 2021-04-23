@@ -1,21 +1,17 @@
 # -*- coding: utf-8 -*-
-
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException
-from jwcrypto import jwt
+from fastapi import APIRouter, Depends, Header
 from jwcrypto.jwk import JWK, JWKSet
 from starlette.responses import Response
 
 from auth_server.config import AuthServerConfig, load_config
 from auth_server.context import ContextRequest, ContextRequestRoute
-from auth_server.models.gnap import Client, GrantRequest, GrantResponse, Proof, ResponseAccessToken
-from auth_server.models.jose import JWKS, Claims, JWKTypes
-from auth_server.proof.common import lookup_client_key
-from auth_server.proof.jws import check_jws_proof, check_jwsd_proof
-from auth_server.proof.mtls import check_mtls_proof
-from auth_server.utils import get_signing_key, load_jwks
+from auth_server.flows import BaseAuthFlow
+from auth_server.models.gnap import GrantRequest, GrantResponse
+from auth_server.models.jose import JWKS, JWKTypes
+from auth_server.utils import get_signing_key, import_class, load_jwks
 
 __author__ = 'lundberg'
 
@@ -51,46 +47,17 @@ async def transaction(
     config: AuthServerConfig = Depends(load_config),
     signing_key: JWK = Depends(get_signing_key),
 ):
+    auth_flow_class = import_class(config.auth_flow_class)
+    auth_flow: BaseAuthFlow = auth_flow_class(
+        request=request,
+        grant_req=grant_req,
+        tls_client_cert=tls_client_cert,
+        detached_jws=detached_jws,
+        config=config,
+        signing_key=signing_key,
+    )
 
-    if not isinstance(grant_req.client, Client):
-        raise HTTPException(status_code=400, detail='client by reference not implemented')
-
-    if isinstance(grant_req.client.key, str):
-        # Key sent by reference, look it up
-        logger.debug(f'key reference: {grant_req.client.key}')
-        grant_req.client.key = await lookup_client_key(request=request, key_id=grant_req.client.key)
-
-    # TODO: This part could probably move to it's own function/module
-    if grant_req.client.key.proof is Proof.MTLS:
-        if tls_client_cert is None:
-            raise HTTPException(status_code=400, detail='no client certificate found')
-        proof_ok = await check_mtls_proof(grant_request=grant_req, cert=tls_client_cert)
-    elif grant_req.client.key.proof is Proof.HTTPSIGN:
-        raise HTTPException(status_code=400, detail='httpsign is not implemented')
-    elif grant_req.client.key.proof is Proof.JWS:
-        # TODO: Just the proof is not good enough to get a token
-        proof_ok = await check_jws_proof(
-            request=request, grant_request=grant_req, jws_headers=request.context.jws_headers
-        )
-    elif grant_req.client.key.proof is Proof.JWSD:
-        if detached_jws is None:
-            raise HTTPException(status_code=400, detail='no detached jws header found')
-        # TODO: Just the proof is not good enough to get a token
-        proof_ok = await check_jwsd_proof(request=request, grant_request=grant_req, detached_jws=detached_jws)
-    elif grant_req.client.key.proof is Proof.TEST and config.test_mode is True:
-        logger.warning(f'TEST_MODE - access token will be returned with no proof')
-        proof_ok = True
-    else:
-        raise HTTPException(status_code=400, detail='no supported proof method')
-
-    if proof_ok:
-        # TODO: We need something like a policy engine to call for creation of an access token
-        # Create access token
-        claims = Claims(exp=config.auth_token_expires_in, aud=config.auth_token_audience)
-        token = jwt.JWT(header={'alg': 'ES256'}, claims=claims.to_rfc7519())
-        token.make_signed_token(signing_key)
-        auth_response = GrantResponse(access_token=ResponseAccessToken(bound=False, value=token.serialize()))
-        logger.info(f'OK:{request.context.key_reference}:{config.auth_token_audience}')
-        return auth_response
-
-    raise HTTPException(status_code=401, detail='permission denied')
+    await auth_flow.lookup_client()
+    await auth_flow.lookup_client_key()
+    await auth_flow.validate_proof()
+    return await auth_flow.create_grant_response()

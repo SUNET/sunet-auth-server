@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
+import importlib
 import json
 import logging
 from datetime import datetime, timezone
 from functools import lru_cache
+from typing import Callable
 
 from cryptography.x509 import Certificate, load_pem_x509_certificate
 from jwcrypto import jwk
@@ -49,3 +51,12 @@ def get_signing_key() -> jwk.JWK:
 def load_cert_from_str(cert: str) -> Certificate:
     raw_cert = f'-----BEGIN CERTIFICATE-----\n{cert}\n-----END CERTIFICATE-----'
     return load_pem_x509_certificate(raw_cert.encode())
+
+
+def import_class(class_path: str) -> Callable:
+    path_split = class_path.split('.')
+    module_path = '.'.join(path_split[:-1])
+    class_name = path_split[-1]
+    module = importlib.import_module(module_path)
+    klass = getattr(module, class_name)
+    return klass
