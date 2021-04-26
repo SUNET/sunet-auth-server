@@ -21,7 +21,7 @@ __author__ = 'lundberg'
 from auth_server.config import load_config
 from auth_server.models.gnap import AccessTokenRequest, AccessTokenRequestFlags, Client, GrantRequest, Key, Proof
 from auth_server.models.jose import ECJWK, SupportedAlgorithms, SupportedHTTPMethods
-from auth_server.utils import utc_now
+from auth_server.utils import get_signing_key, utc_now
 
 
 class MockResponse:
@@ -222,3 +222,8 @@ class TestApp(TestCase):
         access_token = response.json()['access_token']
         assert access_token['bound'] is False
         assert access_token['value'] is not None
+        token_value = jwt.JWT()
+        token_value.deserialize(jwt=access_token['value'], key=get_signing_key())
+        claims = json.loads(token_value.claims)
+        assert claims['entity_id'] == 'https://test.localhost'
+        assert claims['scopes'] == ['localhost']

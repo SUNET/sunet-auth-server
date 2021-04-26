@@ -8,10 +8,9 @@ from starlette.responses import Response
 
 from auth_server.config import AuthServerConfig, load_config
 from auth_server.context import ContextRequest, ContextRequestRoute
-from auth_server.flows import BaseAuthFlow
 from auth_server.models.gnap import GrantRequest, GrantResponse
 from auth_server.models.jose import JWKS, JWKTypes
-from auth_server.utils import get_signing_key, import_class, load_jwks
+from auth_server.utils import get_signing_key, load_jwks
 
 __author__ = 'lundberg'
 

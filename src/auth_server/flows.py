@@ -2,7 +2,7 @@
 
 import logging
 from abc import ABC
-from typing import Optional, OrderedDict, List
+from typing import List, Optional
 
 from fastapi import HTTPException
 from jwcrypto import jwt
@@ -12,10 +12,11 @@ from auth_server.config import AuthServerConfig, ConfigurationError
 from auth_server.context import ContextRequest
 from auth_server.mdq import MDQData, mdq_data_to_key, xml_mdq_get
 from auth_server.models.gnap import Client, GrantRequest, GrantResponse, Proof, ResponseAccessToken
-from auth_server.models.jose import Claims
+from auth_server.models.jose import Claims, MDQClaims
 from auth_server.proof.common import lookup_client_key_from_config
 from auth_server.proof.jws import check_jws_proof, check_jwsd_proof
 from auth_server.proof.mtls import check_mtls_proof
+from auth_server.utils import get_values
 
 __author__ = 'lundberg'
 
@@ -161,9 +162,22 @@ class MDQFlow(CommonRules):
 
     async def create_auth_token(self) -> Optional[GrantResponse]:
         if self.proof_ok:
-            # TODO: We need something like a policy engine to call for creation of an access token
+            # Get data from metadata
+            entity_descriptor = list(
+                get_values('urn:oasis:names:tc:SAML:2.0:metadata:EntityDescriptor', self.mdq_data.metadata,)
+            )
+            entity_id = entity_descriptor[0]['@entityID']
+            scopes = []
+            for scope in get_values('urn:mace:shibboleth:metadata:1.0:Scope', self.mdq_data.metadata):
+                scopes.append(scope['#text'])
+
             # Create access token
-            claims = Claims(exp=self.config.auth_token_expires_in, aud=self.config.auth_token_audience)
+            claims = MDQClaims(
+                exp=self.config.auth_token_expires_in,
+                aud=self.config.auth_token_audience,
+                entity_id=entity_id,
+                scopes=scopes,
+            )
             token = jwt.JWT(header={'alg': 'ES256'}, claims=claims.to_rfc7519())
             token.make_signed_token(self.signing_key)
             auth_response = GrantResponse(access_token=ResponseAccessToken(bound=False, value=token.serialize()))

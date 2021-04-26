@@ -4,7 +4,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from functools import lru_cache
-from typing import Callable
+from typing import Any, Callable, Iterable, Mapping, Sequence, Union
 
 from cryptography.x509 import Certificate, load_pem_x509_certificate
 from jwcrypto import jwk
@@ -60,3 +60,23 @@ def import_class(class_path: str) -> Callable:
     module = importlib.import_module(module_path)
     klass = getattr(module, class_name)
     return klass
+
+
+def get_values(key: str, obj: Union[Mapping, Sequence]) -> Iterable[Any]:
+    """
+    Recurse through a dict like object and return all values for the specified key
+
+    :param key: key to look for
+    :param obj: structure to search in
+    :return: iterator of values
+    """
+    if isinstance(obj, dict):
+        if key in obj:
+            yield obj[key]
+        for value in obj.values():
+            for hit in get_values(key, value):
+                yield hit
+    elif isinstance(obj, list):
+        for item in obj:
+            for hit in get_values(key, item):
+                yield hit

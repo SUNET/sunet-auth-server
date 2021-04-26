@@ -4,7 +4,7 @@ from base64 import b64encode
 from collections import OrderedDict as _OrderedDict
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Iterable, List, Mapping, Optional, OrderedDict, Sequence, Union
+from typing import List, Optional, OrderedDict
 
 import aiohttp
 import xmltodict
@@ -12,31 +12,13 @@ from cryptography.hazmat.primitives.hashes import SHA1, SHA256, Hash
 from cryptography.x509 import Certificate, load_pem_x509_certificate
 from pyexpat import ExpatError
 
+from auth_server.models.gnap import Key, Proof
+from auth_server.utils import get_values
+
 __author__ = 'lundberg'
 
-from auth_server.models.gnap import Key, Proof
 
 logger = logging.getLogger(__name__)
-
-
-def get_values(key: str, obj: Union[Mapping, Sequence]) -> Iterable[Any]:
-    """
-    Recurse through a dict like object and return all values for the specified key
-
-    :param key: key to look for
-    :param obj: structure to search in
-    :return: iterator of values
-    """
-    if isinstance(obj, dict):
-        if key in obj:
-            yield obj[key]
-        for value in obj.values():
-            for hit in get_values(key, value):
-                yield hit
-    elif isinstance(obj, list):
-        for item in obj:
-            for hit in get_values(key, item):
-                yield hit
 
 
 class KeyUse(Enum):
