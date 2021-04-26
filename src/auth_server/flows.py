@@ -2,7 +2,7 @@
 
 import logging
 from abc import ABC
-from typing import Optional
+from typing import Optional, OrderedDict, List
 
 from fastapi import HTTPException
 from jwcrypto import jwt
@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 
 
 class BaseAuthFlow(ABC):
+    # This is the order the methods in the flow will be called
+    flow_steps: List[str] = ['lookup_client', 'lookup_client_key', 'validate_proof', 'create_auth_token']
+
     def __init__(
         self,
         request: ContextRequest,
@@ -42,25 +45,32 @@ class BaseAuthFlow(ABC):
         self.grant_response: Optional[GrantResponse] = None
         self.mdq_data: Optional[MDQData] = None
 
-    async def lookup_client(self) -> None:
+    async def lookup_client(self) -> Optional[GrantResponse]:
         raise NotImplementedError()
 
-    async def lookup_client_key(self) -> None:
+    async def lookup_client_key(self) -> Optional[GrantResponse]:
         raise NotImplementedError()
 
-    async def validate_proof(self) -> None:
+    async def validate_proof(self) -> Optional[GrantResponse]:
         raise NotImplementedError()
 
-    async def create_grant_response(self) -> GrantResponse:
+    async def create_auth_token(self) -> Optional[GrantResponse]:
         raise NotImplementedError()
 
 
-class FullFlow(BaseAuthFlow):
-    async def lookup_client(self) -> None:
+class CommonRules(BaseAuthFlow):
+    """
+    Gather current flow rules and implementation limitations here
+    """
+
+    async def lookup_client(self) -> Optional[GrantResponse]:
         if not isinstance(self.grant_request.client, Client):
             raise HTTPException(status_code=400, detail='client by reference not implemented')
+        return None
 
-    async def lookup_client_key(self) -> None:
+
+class FullFlow(CommonRules):
+    async def lookup_client_key(self) -> Optional[GrantResponse]:
         # First look for a key in config
         if isinstance(self.grant_request.client.key, str):
             # Key sent by reference, look it up
@@ -76,8 +86,9 @@ class FullFlow(BaseAuthFlow):
             client_key = await mdq_data_to_key(self.mdq_data)
             if client_key is not None:
                 self.grant_request.client.key = client_key
+        return None
 
-    async def validate_proof(self) -> None:
+    async def validate_proof(self) -> Optional[GrantResponse]:
         if self.grant_request.client.key.proof is Proof.MTLS:
             if self.tls_client_cert is None:
                 raise HTTPException(status_code=400, detail='no client certificate found')
@@ -101,8 +112,9 @@ class FullFlow(BaseAuthFlow):
             self.proof_ok = True
         else:
             raise HTTPException(status_code=400, detail='no supported proof method')
+        return None
 
-    async def create_grant_response(self) -> GrantResponse:
+    async def create_auth_token(self) -> Optional[GrantResponse]:
         if self.proof_ok:
             # TODO: We need something like a policy engine to call for creation of an access token
             # Create access token
@@ -112,33 +124,11 @@ class FullFlow(BaseAuthFlow):
             auth_response = GrantResponse(access_token=ResponseAccessToken(bound=False, value=token.serialize()))
             logger.info(f'OK:{self.request.context.key_reference}:{self.config.auth_token_audience}')
             return auth_response
-        raise HTTPException(status_code=401, detail='permission denied')
+        return None
 
 
-class MDQFlow(BaseAuthFlow):
-    def __init__(
-        self,
-        request: ContextRequest,
-        grant_req: GrantRequest,
-        config: AuthServerConfig,
-        signing_key: JWK,
-        tls_client_cert: Optional[str] = None,
-        detached_jws: Optional[str] = None,
-    ):
-        super().__init__(
-            request=request,
-            grant_req=grant_req,
-            config=config,
-            signing_key=signing_key,
-            tls_client_cert=tls_client_cert,
-            detached_jws=detached_jws,
-        )
-
-    async def lookup_client(self) -> None:
-        if not isinstance(self.grant_request.client, Client):
-            raise HTTPException(status_code=400, detail='client by reference not implemented')
-
-    async def lookup_client_key(self):
+class MDQFlow(CommonRules):
+    async def lookup_client_key(self) -> Optional[GrantResponse]:
         if not isinstance(self.grant_request.client.key, str):
             raise HTTPException(status_code=400, detail='key by reference is mandatory')
 
@@ -151,13 +141,14 @@ class MDQFlow(BaseAuthFlow):
         # Look for a key using mdq
         logger.info(f'Trying to load key from mdq')
         self.mdq_data = await xml_mdq_get(entity_id=key_id, mdq_url=self.config.mdq_server)
-        client_key = mdq_data_to_key(self.mdq_data)
+        client_key = await mdq_data_to_key(self.mdq_data)
 
         if not client_key:
             raise HTTPException(status_code=400, detail=f'no client key found for {key_id}')
         self.grant_request.client.key = client_key
+        return None
 
-    async def validate_proof(self):
+    async def validate_proof(self) -> Optional[GrantResponse]:
         if self.grant_request.client.key.proof is not Proof.MTLS:
             raise HTTPException(status_code=400, detail='MTLS is the only supported proof method')
         if self.tls_client_cert is None:
@@ -166,3 +157,16 @@ class MDQFlow(BaseAuthFlow):
         self.proof_ok = await check_mtls_proof(grant_request=self.grant_request, cert=self.tls_client_cert)
         if not self.proof_ok:
             raise HTTPException(status_code=401, detail='no client certificate found')
+        return None
+
+    async def create_auth_token(self) -> Optional[GrantResponse]:
+        if self.proof_ok:
+            # TODO: We need something like a policy engine to call for creation of an access token
+            # Create access token
+            claims = Claims(exp=self.config.auth_token_expires_in, aud=self.config.auth_token_audience)
+            token = jwt.JWT(header={'alg': 'ES256'}, claims=claims.to_rfc7519())
+            token.make_signed_token(self.signing_key)
+            auth_response = GrantResponse(access_token=ResponseAccessToken(bound=False, value=token.serialize()))
+            logger.info(f'OK:{self.request.context.key_reference}:{self.config.auth_token_audience}')
+            return auth_response
+        return None

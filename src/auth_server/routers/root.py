@@ -2,7 +2,7 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, HTTPException
 from jwcrypto.jwk import JWK, JWKSet
 from starlette.responses import Response
 
@@ -47,8 +47,8 @@ async def transaction(
     config: AuthServerConfig = Depends(load_config),
     signing_key: JWK = Depends(get_signing_key),
 ):
-    auth_flow_class = import_class(config.auth_flow_class)
-    auth_flow: BaseAuthFlow = auth_flow_class(
+
+    auth_flow = request.app.auth_flow_class(
         request=request,
         grant_req=grant_req,
         tls_client_cert=tls_client_cert,
@@ -56,8 +56,14 @@ async def transaction(
         config=config,
         signing_key=signing_key,
     )
+    for flow_step in auth_flow.flow_steps:
+        m = getattr(auth_flow, flow_step)
+        logger.debug(f'step {flow_step} will be called')
 
-    await auth_flow.lookup_client()
-    await auth_flow.lookup_client_key()
-    await auth_flow.validate_proof()
-    return await auth_flow.create_grant_response()
+        res = await m()
+        if isinstance(res, GrantResponse):
+            logger.info(f'step {flow_step} returned GrantResponse')
+            logger.debug(res.dict(exclude_unset=True))
+            return res
+
+    raise HTTPException(status_code=401, detail='permission denied')

@@ -50,8 +50,10 @@ class TestApp(TestCase):
             'KEYSTORE': f'{self.datadir}/testing_jwks.json',
             'MDQ_SERVER': 'http://localhost/mdq',
             'AUTH_TOKEN_AUDIENCE': 'some_audience',
+            'AUTH_FLOW_CLASS': 'auth_server.flows.FullFlow',
         }
         environ.update(self.config)
+        load_config.cache_clear()  # Clear lru_cache to allow config update
         self.app = init_auth_server_api()
         self.client = TestClient(self.app)
         with open(f'{self.datadir}/test.cert', 'rb') as f:
@@ -78,6 +80,10 @@ class TestApp(TestCase):
         assert jwk.crv == 'P-256'
         assert jwk.x == 'RQ4UriZV8y1g97KSZEDzrEAHeN0K0yvfiNjyNjBsqo8'
         assert jwk.y == 'eRmcA40T-NIFxostV1E7-GDsavCZ3PVAmzDou-uIpvo'
+
+    def test_read_pem(self):
+        response = self.client.get("/.well-known/public.pem")
+        assert response.status_code == 200
 
     def test_transaction_test_mode(self):
         environ['TEST_MODE'] = 'yes'
@@ -188,6 +194,29 @@ class TestApp(TestCase):
         client_header = {'Detached-JWS': data}
         response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
 
+        assert response.status_code == 200
+        assert 'access_token' in response.json()
+        access_token = response.json()['access_token']
+        assert access_token['bound'] is False
+        assert access_token['value'] is not None
+
+    @mock.patch('aiohttp.ClientSession.get', new_callable=AsyncMock)
+    def test_mdq_flow(self, mock_mdq):
+        environ['AUTH_FLOW_CLASS'] = 'auth_server.flows.MDQFlow'
+        load_config.cache_clear()  # Clear lru_cache to allow config update
+        app = init_auth_server_api()  # Instantiate new app with mdq flow
+        client = TestClient(app)
+
+        mock_mdq.return_value = MockResponse(content=self.mdq_response)
+
+        req = GrantRequest(
+            client=Client(key='test.localhost'),
+            access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
+        )
+        client_header = {
+            'TLS-CLIENT-CERT': base64.b64encode(self.client_cert.public_bytes(encoding=Encoding.DER)).decode('utf-8')
+        }
+        response = client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
         assert response.status_code == 200
         assert 'access_token' in response.json()
         access_token = response.json()['access_token']

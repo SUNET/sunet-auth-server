@@ -54,8 +54,8 @@ class AccessAction(str, Enum):
 class Access(BaseModel):
     type: Optional[AccessType] = Field(default=AccessType.ACCESS)
     actions: Optional[List[AccessAction]] = Field(default=[AccessAction.ALL])
-    locations: Optional[List[AnyUrl]] = Field(default=[])
-    datatypes: Optional[List[str]]
+    locations: Optional[List[AnyUrl]] = []
+    datatypes: Optional[List[str]] = []
 
 
 class AccessTokenRequestFlags(str, Enum):
