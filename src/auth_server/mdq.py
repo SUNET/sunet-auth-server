@@ -51,14 +51,13 @@ async def xml_mdq_get(entity_id: str, mdq_url: str) -> MDQData:
     url = f'{mdq_url}/{identifier}'
     logger.debug(f'Trying {url}')
     response = await session.get(url=url, headers=headers)
-    await session.close()
     if response.status != 200:
         logger.error(f'{mdq_url}/{identifier} returned {response.status}')
         return MDQData()
 
     xml = await response.text()
+    await session.close()
     # Parse the xml to a OrderedDict and grab the certs and their use
-    # TODO: Grab other interesting things from the metadata
     try:
         # TODO: Should we use defusedxml.expatbuilder?
         entity = xmltodict.parse(xml, process_namespaces=True)
@@ -82,6 +81,7 @@ async def mdq_data_to_key(mdq_data: MDQData) -> Optional[Key]:
     if signing_cert:
         logger.info(f'Found cert in metadata')
         return Key(
-            proof=Proof.MTLS, cert_S256=b64encode(signing_cert[0].fingerprint(algorithm=SHA256())).decode('utf-8'),
+            proof=Proof.MTLS,
+            cert_S256=b64encode(signing_cert[0].fingerprint(algorithm=SHA256())).decode('utf-8'),
         )
     return None

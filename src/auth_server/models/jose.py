@@ -76,6 +76,10 @@ class MDQClaims(RegisteredClaims):
     scopes: Optional[List[str]] = None
 
 
+class TLSFEDClaims(MDQClaims):
+    organization_number: Optional[str] = None
+
+
 class JWK(BaseModel):
     kty: KeyType
     use: Optional[KeyUse]

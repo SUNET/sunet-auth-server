@@ -66,9 +66,9 @@ async def verify_gnap_jws(request: ContextRequest, grant_request: GrantRequest, 
         raise HTTPException(status_code=400, detail='key id is not the same in request as in header')
 
     # Verify that the request is reasonably fresh
-    if utc_now() - jws_headers.ts > config.jws_max_age:
-        logger.error(f'jws is to old: {utc_now() - jws_headers.ts} > {config.jws_max_age}')
-        raise HTTPException(status_code=400, detail=f'jws is to old: >{config.jws_max_age}')
+    if utc_now() - jws_headers.ts > config.proof_jws_max_age:
+        logger.error(f'jws is to old: {utc_now() - jws_headers.ts} > {config.proof_jws_max_age}')
+        raise HTTPException(status_code=400, detail=f'jws is to old: >{config.proof_jws_max_age}')
 
     # The HTTP Method used to make this request, as an uppercase ASCII string.
     if request.method != jws_headers.htm.value:

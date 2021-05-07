@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
 
 import logging
 from abc import ABC
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import HTTPException
 from jwcrypto import jwt
@@ -11,11 +12,12 @@ from jwcrypto.jwk import JWK
 from auth_server.config import AuthServerConfig, ConfigurationError
 from auth_server.context import ContextRequest
 from auth_server.mdq import MDQData, mdq_data_to_key, xml_mdq_get
-from auth_server.models.gnap import Client, GrantRequest, GrantResponse, Proof, ResponseAccessToken
-from auth_server.models.jose import Claims, MDQClaims
+from auth_server.models.gnap import AccessTokenResponse, Client, GrantRequest, GrantResponse, Proof
+from auth_server.models.jose import Claims, MDQClaims, TLSFEDClaims
 from auth_server.proof.common import lookup_client_key_from_config
 from auth_server.proof.jws import check_jws_proof, check_jwsd_proof
 from auth_server.proof.mtls import check_mtls_proof
+from auth_server.tls_fed_auth import MetadataEntity, entity_to_key, get_entity
 from auth_server.utils import get_values
 
 __author__ = 'lundberg'
@@ -24,9 +26,6 @@ logger = logging.getLogger(__name__)
 
 
 class BaseAuthFlow(ABC):
-    # This is the order the methods in the flow will be called
-    flow_steps: List[str] = ['lookup_client', 'lookup_client_key', 'validate_proof', 'create_auth_token']
-
     def __init__(
         self,
         request: ContextRequest,
@@ -45,6 +44,11 @@ class BaseAuthFlow(ABC):
         self.proof_ok: bool = False
         self.grant_response: Optional[GrantResponse] = None
         self.mdq_data: Optional[MDQData] = None
+
+    @staticmethod
+    async def steps():
+        # This is the order the methods in the flow will be called
+        return ['lookup_client', 'lookup_client_key', 'validate_proof', 'create_auth_token']
 
     async def lookup_client(self) -> Optional[GrantResponse]:
         raise NotImplementedError()
@@ -90,41 +94,47 @@ class FullFlow(CommonRules):
         return None
 
     async def validate_proof(self) -> Optional[GrantResponse]:
+        # MTLS
         if self.grant_request.client.key.proof is Proof.MTLS:
             if self.tls_client_cert is None:
                 raise HTTPException(status_code=400, detail='no client certificate found')
             self.proof_ok = await check_mtls_proof(grant_request=self.grant_request, cert=self.tls_client_cert)
+        # HTTPSIGN
         elif self.grant_request.client.key.proof is Proof.HTTPSIGN:
             raise HTTPException(status_code=400, detail='httpsign is not implemented')
+        # JWS
         elif self.grant_request.client.key.proof is Proof.JWS:
-            # TODO: Just the proof is not good enough to get a token
             self.proof_ok = await check_jws_proof(
                 request=self.request, grant_request=self.grant_request, jws_headers=self.request.context.jws_headers
             )
+        # JWSD
         elif self.grant_request.client.key.proof is Proof.JWSD:
             if self.detached_jws is None:
                 raise HTTPException(status_code=400, detail='no detached jws header found')
-            # TODO: Just the proof is not good enough to get a token
             self.proof_ok = await check_jwsd_proof(
                 request=self.request, grant_request=self.grant_request, detached_jws=self.detached_jws
             )
-        elif self.grant_request.client.key.proof is Proof.TEST and self.config.test_mode is True:
-            logger.warning(f'TEST_MODE - access token will be returned with no proof')
-            self.proof_ok = True
         else:
             raise HTTPException(status_code=400, detail='no supported proof method')
         return None
 
     async def create_auth_token(self) -> Optional[GrantResponse]:
         if self.proof_ok:
-            # TODO: We need something like a policy engine to call for creation of an access token
             # Create access token
             claims = Claims(exp=self.config.auth_token_expires_in, aud=self.config.auth_token_audience)
             token = jwt.JWT(header={'alg': 'ES256'}, claims=claims.to_rfc7519())
             token.make_signed_token(self.signing_key)
-            auth_response = GrantResponse(access_token=ResponseAccessToken(bound=False, value=token.serialize()))
+            auth_response = GrantResponse(access_token=AccessTokenResponse(bound=False, value=token.serialize()))
             logger.info(f'OK:{self.request.context.key_reference}:{self.config.auth_token_audience}')
             return auth_response
+        return None
+
+
+class TestFlow(FullFlow):
+    async def validate_proof(self) -> Optional[GrantResponse]:
+        if self.grant_request.client.key.proof is Proof.TEST:
+            logger.warning(f'TEST_MODE - access token will be returned with no proof')
+            self.proof_ok = True
         return None
 
 
@@ -161,12 +171,17 @@ class MDQFlow(CommonRules):
         return None
 
     async def create_auth_token(self) -> Optional[GrantResponse]:
-        if self.proof_ok:
+        if self.proof_ok and self.mdq_data:
             # Get data from metadata
+            # entity id
             entity_descriptor = list(
-                get_values('urn:oasis:names:tc:SAML:2.0:metadata:EntityDescriptor', self.mdq_data.metadata,)
+                get_values('urn:oasis:names:tc:SAML:2.0:metadata:EntityDescriptor', self.mdq_data.metadata)
             )
-            entity_id = entity_descriptor[0]['@entityID']
+            try:
+                entity_id = entity_descriptor[0]['@entityID']
+            except (IndexError, KeyError):
+                raise HTTPException(status_code=401, detail='malformed metadata')
+            # scopes
             scopes = []
             for scope in get_values('urn:mace:shibboleth:metadata:1.0:Scope', self.mdq_data.metadata):
                 scopes.append(scope['#text'])
@@ -180,7 +195,58 @@ class MDQFlow(CommonRules):
             )
             token = jwt.JWT(header={'alg': 'ES256'}, claims=claims.to_rfc7519())
             token.make_signed_token(self.signing_key)
-            auth_response = GrantResponse(access_token=ResponseAccessToken(bound=False, value=token.serialize()))
+            auth_response = GrantResponse(access_token=AccessTokenResponse(bound=False, value=token.serialize()))
+            logger.info(f'OK:{self.request.context.key_reference}:{self.config.auth_token_audience}')
+            return auth_response
+        return None
+
+
+class TLSFEDFlow(MDQFlow):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.entity: Optional[MetadataEntity] = None
+
+    async def lookup_client_key(self) -> Optional[GrantResponse]:
+        if not isinstance(self.grant_request.client.key, str):
+            raise HTTPException(status_code=400, detail='key by reference is mandatory')
+
+        key_id = self.grant_request.client.key
+        logger.debug(f'key reference: {key_id}')
+
+        if not self.config.tls_fed_metadata:
+            raise ConfigurationError('TLS fed auth not configured')
+
+        # Look for a key in the TLS fed metadata
+        logger.info(f'Trying to load key from TLS fed auth')
+        self.entity = await get_entity(entity_id=key_id)
+        client_key = await entity_to_key(self.entity)
+
+        if not client_key:
+            raise HTTPException(status_code=400, detail=f'no client key found for {key_id}')
+        self.grant_request.client.key = client_key
+        return None
+
+    async def create_auth_token(self) -> Optional[GrantResponse]:
+        if self.proof_ok and self.entity:
+            # Get data from metadata
+            # entity id
+            entity_id = self.entity.entity_id
+            # scopes
+            scopes = self.entity.scopes
+            # organization number
+            organization_number = self.entity.organization_id
+            # Create access token
+            claims = TLSFEDClaims(
+                exp=self.config.auth_token_expires_in,
+                aud=self.config.auth_token_audience,
+                entity_id=entity_id,
+                scopes=scopes,
+                organization_number=organization_number,
+            )
+            token = jwt.JWT(header={'alg': 'ES256'}, claims=claims.to_rfc7519())
+            token.make_signed_token(self.signing_key)
+            auth_response = GrantResponse(access_token=AccessTokenResponse(bound=False, value=token.serialize()))
             logger.info(f'OK:{self.request.context.key_reference}:{self.config.auth_token_audience}')
             return auth_response
         return None

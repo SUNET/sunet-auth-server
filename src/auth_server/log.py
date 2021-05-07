@@ -31,7 +31,11 @@ logging.getLogger().handlers = [InterceptHandler()]
 logging.getLogger().level = 0  # DEBUG
 
 
-def init_logging(level: str = 'INFO', fmt=LOGURU_FORMAT, colorize: bool = True,) -> None:
+def init_logging(
+    level: str = 'INFO',
+    fmt=LOGURU_FORMAT,
+    colorize: bool = True,
+) -> None:
     logger.remove()  # Remove the default handler
     logger.add(sys.stderr, format=fmt, colorize=colorize, level='ERROR', enqueue=True)
     logger.add(sys.stdout, format=fmt, colorize=colorize, level=level, enqueue=True)

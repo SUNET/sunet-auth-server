@@ -2,6 +2,7 @@
 import base64
 import json
 from os import environ
+from typing import Any, Dict, Optional
 from unittest import TestCase, mock
 from unittest.mock import AsyncMock
 
@@ -21,7 +22,7 @@ __author__ = 'lundberg'
 from auth_server.config import load_config
 from auth_server.models.gnap import AccessTokenRequest, AccessTokenRequestFlags, Client, GrantRequest, Key, Proof
 from auth_server.models.jose import ECJWK, SupportedAlgorithms, SupportedHTTPMethods
-from auth_server.utils import get_signing_key, utc_now
+from auth_server.utils import utc_now
 
 
 class MockResponse:
@@ -62,6 +63,14 @@ class TestApp(TestCase):
             self.mdq_response = f.read()
         self.client_jwk = jwk.JWK.generate(kid='default', kty='EC', crv='P-256')
 
+    def _get_access_token_claims(self, access_token: Dict, client: Optional[TestClient]) -> Dict[str, Any]:
+        if client is None:
+            client = self.client
+        response = client.get("/.well-known/jwk.json")
+        assert response.status_code == 200
+        token = jwt.JWT(key=jwt.JWK(**response.json()), jwt=access_token['value'])
+        return json.loads(token.claims)
+
     def test_read_jwks(self):
         response = self.client.get("/.well-known/jwks.json")
         assert response.status_code == 200
@@ -86,24 +95,24 @@ class TestApp(TestCase):
         assert response.status_code == 200
 
     def test_transaction_test_mode(self):
-        environ['TEST_MODE'] = 'yes'
+        environ['AUTH_FLOW_CLASS'] = 'auth_server.flows.TestFlow'
+        load_config.cache_clear()  # Clear lru_cache to allow config update
+        app = init_auth_server_api()  # Instantiate new app with mdq flow
+        client = TestClient(app)
         load_config.cache_clear()  # Clear lru_cache to allow config update
 
         req = GrantRequest(
             client=Client(key=Key(proof=Proof.TEST)),
             access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
         )
-        response = self.client.post("/transaction", json=req.dict(exclude_none=True))
+        response = client.post("/transaction", json=req.dict(exclude_none=True))
         assert response.status_code == 200
         assert 'access_token' in response.json()
         access_token = response.json()['access_token']
         assert access_token['bound'] is False
 
         # Verify token and check claims
-        response = self.client.get("/.well-known/jwk.json")
-        assert response.status_code == 200
-        token = jwt.JWT(key=jwt.JWK(**response.json()), jwt=access_token['value'])
-        claims = json.loads(token.claims)
+        claims = self._get_access_token_claims(access_token=access_token, client=client)
         assert claims['aud'] == 'some_audience'
 
     @mock.patch('aiohttp.ClientSession.get', new_callable=AsyncMock)
@@ -150,7 +159,8 @@ class TestApp(TestCase):
         }
         jws = JWS(payload=req.json(exclude_unset=True))
         jws.add_signature(
-            key=self.client_jwk, protected=json.dumps(jws_headers),
+            key=self.client_jwk,
+            protected=json.dumps(jws_headers),
         )
         data = jws.serialize(compact=True)
 
@@ -185,7 +195,8 @@ class TestApp(TestCase):
         }
         jws = JWS(payload=req.json(exclude_unset=True))
         jws.add_signature(
-            key=self.client_jwk, protected=json.dumps(jws_headers),
+            key=self.client_jwk,
+            protected=json.dumps(jws_headers),
         )
         data = jws.serialize(compact=True)
         # Remove payload from serialized jws
@@ -222,8 +233,8 @@ class TestApp(TestCase):
         access_token = response.json()['access_token']
         assert access_token['bound'] is False
         assert access_token['value'] is not None
-        token_value = jwt.JWT()
-        token_value.deserialize(jwt=access_token['value'], key=get_signing_key())
-        claims = json.loads(token_value.claims)
+
+        # Verify token and check claims
+        claims = self._get_access_token_claims(access_token=access_token, client=client)
         assert claims['entity_id'] == 'https://test.localhost'
         assert claims['scopes'] == ['localhost']

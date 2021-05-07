@@ -55,7 +55,7 @@ async def transaction(
         config=config,
         signing_key=signing_key,
     )
-    for flow_step in auth_flow.flow_steps:
+    for flow_step in await auth_flow.steps():
         m = getattr(auth_flow, flow_step)
         logger.debug(f'step {flow_step} will be called')
 
