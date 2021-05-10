@@ -123,12 +123,7 @@ async def load_metadata(raw_jws: Optional[str], jwks: Optional[jwk.JWKSet]) -> O
         logger.error(f'metadata could not be validated: {e}')
         return None
 
-    return MetadataSource(
-        issued_at=issued_at,
-        expires_at=expires_at,
-        issuer=issuer,
-        metadata=metadata,
-    )
+    return MetadataSource(issued_at=issued_at, expires_at=expires_at, issuer=issuer, metadata=metadata,)
 
 
 @lru_cache()
@@ -195,13 +190,19 @@ async def get_entity(entity_id: str) -> Optional[MetadataEntity]:
     return entity
 
 
-async def entity_to_key(entity: MetadataEntity) -> Optional[Key]:
-    certs = [load_pem_x509_certificate(item.x509certificate.encode()) for item in entity.issuers]
+async def entity_to_key(entity: Optional[MetadataEntity]) -> Optional[Key]:
+    if entity is None:
+        return None
+
+    certs = [
+        load_pem_x509_certificate(item.x509certificate.encode())
+        for item in entity.issuers
+        if item.x509certificate is not None
+    ]
     if certs:
         # TODO: how do we handle multiple certs?
         logger.info(f'Found cert in metadata')
         return Key(
-            proof=Proof.MTLS,
-            cert_S256=base64.b64encode(certs[0].fingerprint(algorithm=SHA256())).decode('utf-8'),
+            proof=Proof.MTLS, cert_S256=base64.b64encode(certs[0].fingerprint(algorithm=SHA256())).decode('utf-8'),
         )
     return None

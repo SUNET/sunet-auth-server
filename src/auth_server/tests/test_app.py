@@ -247,11 +247,11 @@ class TestApp(TestCase):
         payload = metadata.json(exclude_unset=True)
         if issue_time is None:
             issue_time = utc_now()
-        expires = issue_time + expires
+        expire_time = issue_time + expires
         protected_header = {
             'iss': issuer,
             'iat': int(issue_time.timestamp()),
-            'exp': int(expires.timestamp()),
+            'exp': int(expire_time.timestamp()),
             'alg': alg.value,
             'kid': key.key_id,
         }

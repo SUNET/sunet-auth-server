@@ -12,7 +12,7 @@ from jwcrypto.jwk import JWK
 from auth_server.config import AuthServerConfig, ConfigurationError
 from auth_server.context import ContextRequest
 from auth_server.mdq import MDQData, mdq_data_to_key, xml_mdq_get
-from auth_server.models.gnap import AccessTokenResponse, Client, GrantRequest, GrantResponse, Proof
+from auth_server.models.gnap import AccessTokenResponse, Client, GrantRequest, GrantResponse, Proof, Key
 from auth_server.models.jose import Claims, MDQClaims, TLSFEDClaims
 from auth_server.proof.common import lookup_client_key_from_config
 from auth_server.proof.jws import check_jws_proof, check_jwsd_proof
@@ -76,6 +76,9 @@ class CommonRules(BaseAuthFlow):
 
 class FullFlow(CommonRules):
     async def lookup_client_key(self) -> Optional[GrantResponse]:
+        # please mypy, enforced in CommonRules or previous steps
+        assert isinstance(self.grant_request.client, Client)
+
         # First look for a key in config
         if isinstance(self.grant_request.client.key, str):
             # Key sent by reference, look it up
@@ -94,6 +97,10 @@ class FullFlow(CommonRules):
         return None
 
     async def validate_proof(self) -> Optional[GrantResponse]:
+        # please mypy, enforced in CommonRules or previous steps
+        assert isinstance(self.grant_request.client, Client)
+        assert isinstance(self.grant_request.client.key, Key)
+
         # MTLS
         if self.grant_request.client.key.proof is Proof.MTLS:
             if self.tls_client_cert is None:
@@ -132,6 +139,10 @@ class FullFlow(CommonRules):
 
 class TestFlow(FullFlow):
     async def validate_proof(self) -> Optional[GrantResponse]:
+        # please mypy, enforced in CommonRules or previous steps
+        assert isinstance(self.grant_request.client, Client)
+        assert isinstance(self.grant_request.client.key, Key)
+
         if self.grant_request.client.key.proof is Proof.TEST:
             logger.warning(f'TEST_MODE - access token will be returned with no proof')
             self.proof_ok = True
@@ -140,6 +151,9 @@ class TestFlow(FullFlow):
 
 class MDQFlow(CommonRules):
     async def lookup_client_key(self) -> Optional[GrantResponse]:
+        # please mypy, enforced in CommonRules or previous steps
+        assert isinstance(self.grant_request.client, Client)
+
         if not isinstance(self.grant_request.client.key, str):
             raise HTTPException(status_code=400, detail='key by reference is mandatory')
 
@@ -160,6 +174,10 @@ class MDQFlow(CommonRules):
         return None
 
     async def validate_proof(self) -> Optional[GrantResponse]:
+        # please mypy, enforced in CommonRules or previous steps
+        assert isinstance(self.grant_request.client, Client)
+        assert isinstance(self.grant_request.client.key, Key)
+
         if self.grant_request.client.key.proof is not Proof.MTLS:
             raise HTTPException(status_code=400, detail='MTLS is the only supported proof method')
         if self.tls_client_cert is None:
@@ -208,6 +226,9 @@ class TLSFEDFlow(MDQFlow):
         self.entity: Optional[MetadataEntity] = None
 
     async def lookup_client_key(self) -> Optional[GrantResponse]:
+        # please mypy, enforced in CommonRules or previous steps
+        assert isinstance(self.grant_request.client, Client)
+
         if not isinstance(self.grant_request.client.key, str):
             raise HTTPException(status_code=400, detail='key by reference is mandatory')
 
