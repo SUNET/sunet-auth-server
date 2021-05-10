@@ -94,7 +94,20 @@ async def load_metadata(raw_jws: Optional[str], jwks: Optional[jwk.JWKSet]) -> O
         # deserialize jws
         _jws.deserialize(raw_jws=raw_jws)
         logger.debug(f'jose_header: {_jws.jose_header}')
-        kid = _jws.jose_header[0]['kid']
+
+        # TODO: Handle multiple signatures for key rolling
+        jose_header = {}
+        if isinstance(_jws.jose_header, list):
+            jose_header = _jws.jose_header[0]
+        elif isinstance(_jws.jose_header, dict):
+            jose_header = _jws.jose_header
+
+        # load header values
+        kid = jose_header.get('kid')
+        issued_at = jose_header.get('iat')
+        expires_at = jose_header.get('exp')
+        issuer = jose_header.get('iss')
+
         # verify jws
         _jws.verify(key=jwks.get_key(kid=kid))
         logger.debug(f'payload: {_jws.payload}')
@@ -111,9 +124,9 @@ async def load_metadata(raw_jws: Optional[str], jwks: Optional[jwk.JWKSet]) -> O
         return None
 
     return MetadataSource(
-        issued_at=_jws.jose_header[0]['iat'],
-        expires_at=_jws.jose_header[0]['exp'],
-        issuer=_jws.jose_header[0]['iss'],
+        issued_at=issued_at,
+        expires_at=expires_at,
+        issuer=issuer,
         metadata=metadata,
     )
 
@@ -188,6 +201,7 @@ async def entity_to_key(entity: MetadataEntity) -> Optional[Key]:
         # TODO: how do we handle multiple certs?
         logger.info(f'Found cert in metadata')
         return Key(
-            proof=Proof.MTLS, cert_S256=base64.b64encode(certs[0].fingerprint(algorithm=SHA256())).decode('utf-8'),
+            proof=Proof.MTLS,
+            cert_S256=base64.b64encode(certs[0].fingerprint(algorithm=SHA256())).decode('utf-8'),
         )
     return None

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import base64
 import json
+from datetime import datetime, timedelta
 from os import environ
 from typing import Any, Dict, Optional
 from unittest import TestCase, mock
@@ -11,18 +12,19 @@ import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives.hashes import SHA256, Hash, HashAlgorithm
 from cryptography.hazmat.primitives.serialization import Encoding
-from jwcrypto import jwk, jwt
+from jwcrypto import jwk, jws, jwt
 from jwcrypto.jws import JWS
 from starlette.testclient import TestClient
 
 from auth_server.api import init_auth_server_api
-
-__author__ = 'lundberg'
-
 from auth_server.config import load_config
 from auth_server.models.gnap import AccessTokenRequest, AccessTokenRequestFlags, Client, GrantRequest, Key, Proof
 from auth_server.models.jose import ECJWK, SupportedAlgorithms, SupportedHTTPMethods
+from auth_server.models.tls_fed_metadata import Entity
+from auth_server.models.tls_fed_metadata import Model as TLSFEDMetadata
 from auth_server.utils import utc_now
+
+__author__ = 'lundberg'
 
 
 class MockResponse:
@@ -59,6 +61,7 @@ class TestApp(TestCase):
         self.client = TestClient(self.app)
         with open(f'{self.datadir}/test.cert', 'rb') as f:
             self.client_cert = x509.load_pem_x509_certificate(data=f.read())
+        self.client_cert_str = base64.b64encode(self.client_cert.public_bytes(encoding=Encoding.DER)).decode('utf-8')
         with open(f'{self.datadir}/test_mdq.xml', 'rb') as f:
             self.mdq_response = f.read()
         self.client_jwk = jwk.JWK.generate(kid='default', kty='EC', crv='P-256')
@@ -99,7 +102,6 @@ class TestApp(TestCase):
         load_config.cache_clear()  # Clear lru_cache to allow config update
         app = init_auth_server_api()  # Instantiate new app with mdq flow
         client = TestClient(app)
-        load_config.cache_clear()  # Clear lru_cache to allow config update
 
         req = GrantRequest(
             client=Client(key=Key(proof=Proof.TEST)),
@@ -123,9 +125,7 @@ class TestApp(TestCase):
             client=Client(key='test.localhost'),
             access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
         )
-        client_header = {
-            'TLS-CLIENT-CERT': base64.b64encode(self.client_cert.public_bytes(encoding=Encoding.DER)).decode('utf-8')
-        }
+        client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
         response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
         assert response.status_code == 200
         assert 'access_token' in response.json()
@@ -159,8 +159,7 @@ class TestApp(TestCase):
         }
         jws = JWS(payload=req.json(exclude_unset=True))
         jws.add_signature(
-            key=self.client_jwk,
-            protected=json.dumps(jws_headers),
+            key=self.client_jwk, protected=json.dumps(jws_headers),
         )
         data = jws.serialize(compact=True)
 
@@ -195,8 +194,7 @@ class TestApp(TestCase):
         }
         jws = JWS(payload=req.json(exclude_unset=True))
         jws.add_signature(
-            key=self.client_jwk,
-            protected=json.dumps(jws_headers),
+            key=self.client_jwk, protected=json.dumps(jws_headers),
         )
         data = jws.serialize(compact=True)
         # Remove payload from serialized jws
@@ -224,9 +222,7 @@ class TestApp(TestCase):
             client=Client(key='test.localhost'),
             access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
         )
-        client_header = {
-            'TLS-CLIENT-CERT': base64.b64encode(self.client_cert.public_bytes(encoding=Encoding.DER)).decode('utf-8')
-        }
+        client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
         response = client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
         assert response.status_code == 200
         assert 'access_token' in response.json()
@@ -238,3 +234,92 @@ class TestApp(TestCase):
         claims = self._get_access_token_claims(access_token=access_token, client=client)
         assert claims['entity_id'] == 'https://test.localhost'
         assert claims['scopes'] == ['localhost']
+
+    @staticmethod
+    def _tls_fed_metadata_to_jws(
+        metadata: TLSFEDMetadata,
+        key: jwk.JWK,
+        issuer: str,
+        expires: timedelta,
+        alg: SupportedAlgorithms,
+        issue_time: Optional[datetime] = None,
+    ) -> bytes:
+        payload = metadata.json(exclude_unset=True)
+        if issue_time is None:
+            issue_time = utc_now()
+        expires = issue_time + expires
+        protected_header = {
+            'iss': issuer,
+            'iat': int(issue_time.timestamp()),
+            'exp': int(expires.timestamp()),
+            'alg': alg.value,
+            'kid': key.key_id,
+        }
+        _jws = jws.JWS(payload=payload)
+        _jws.add_signature(key=key, alg=alg.value, protected=json.dumps(protected_header))
+        return _jws.serialize(compact=True).encode()
+
+    def _create_tls_fed_metadata(self, entity_id: str) -> TLSFEDMetadata:
+        _jwks = jwk.JWKSet()
+        with open(f'{self.datadir}/tls_fed_jwks.json', 'r') as f:
+            _jwks.import_keyset(f.read())
+
+        entities = [
+            Entity.parse_obj(
+                {
+                    'entity_id': entity_id,
+                    'organization': 'Test Org',
+                    'organization_id': 'SE0123456789',
+                    'scopes': ['test.localhost'],
+                    'issuers': [
+                        {
+                            'x509certificate': f'-----BEGIN CERTIFICATE-----\n{self.client_cert_str}\n-----END CERTIFICATE-----'
+                        }
+                    ],
+                }
+            )
+        ]
+        return TLSFEDMetadata(version='1.0.0', cache_ttl=3600, entities=entities)
+
+    @mock.patch('aiohttp.ClientSession.get', new_callable=AsyncMock)
+    def test_tls_fed_flow(self, mock_metadata):
+        # Update config and init a new app
+        environ['AUTH_FLOW_CLASS'] = 'auth_server.flows.TLSFEDFlow'
+        environ['TLS_FED_METADATA'] = json.dumps(
+            [{'remote': 'https://metadata.example.com/metadata.jws', 'jwks': f'{self.datadir}/tls_fed_jwks.json'}]
+        )
+        load_config.cache_clear()  # Clear lru_cache to allow config update
+        app = init_auth_server_api()  # Instantiate new app with mdq flow
+        client = TestClient(app)
+
+        # Create metadata jws and set it as mock response
+        with open(f'{self.datadir}/tls_fed_jwks.json', 'r') as f:
+            tls_fed_jwks = jwk.JWKSet()
+            tls_fed_jwks.import_keyset(f.read())
+
+        entity_id = 'https://test.localhost'
+        metadata_jws = self._tls_fed_metadata_to_jws(
+            self._create_tls_fed_metadata(entity_id=entity_id),
+            key=tls_fed_jwks.get_key('metadata_signing_key_id'),
+            issuer='metdata.example.com',
+            expires=timedelta(days=14),
+            alg=SupportedAlgorithms.ES256,
+        )
+        mock_metadata.return_value = MockResponse(content=metadata_jws)
+
+        req = GrantRequest(
+            client=Client(key=entity_id), access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
+        )
+        client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
+        response = client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
+        assert response.status_code == 200
+        assert 'access_token' in response.json()
+        access_token = response.json()['access_token']
+        assert access_token['bound'] is False
+        assert access_token['value'] is not None
+
+        # Verify token and check claims
+        claims = self._get_access_token_claims(access_token=access_token, client=client)
+        assert claims['entity_id'] == 'https://test.localhost'
+        assert claims['scopes'] == ['test.localhost']
+        assert claims['organization_id'] == 'SE0123456789'

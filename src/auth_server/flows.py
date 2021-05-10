@@ -229,20 +229,13 @@ class TLSFEDFlow(MDQFlow):
 
     async def create_auth_token(self) -> Optional[GrantResponse]:
         if self.proof_ok and self.entity:
-            # Get data from metadata
-            # entity id
-            entity_id = self.entity.entity_id
-            # scopes
-            scopes = self.entity.scopes
-            # organization number
-            organization_number = self.entity.organization_id
             # Create access token
             claims = TLSFEDClaims(
                 exp=self.config.auth_token_expires_in,
                 aud=self.config.auth_token_audience,
-                entity_id=entity_id,
-                scopes=scopes,
-                organization_number=organization_number,
+                entity_id=self.entity.entity_id,
+                scopes=self.entity.scopes,
+                organization_id=self.entity.organization_id,
             )
             token = jwt.JWT(header={'alg': 'ES256'}, claims=claims.to_rfc7519())
             token.make_signed_token(self.signing_key)

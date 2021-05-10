@@ -77,7 +77,7 @@ class MDQClaims(RegisteredClaims):
 
 
 class TLSFEDClaims(MDQClaims):
-    organization_number: Optional[str] = None
+    organization_id: Optional[str] = None
 
 
 class JWK(BaseModel):
