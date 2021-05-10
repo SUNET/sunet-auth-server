@@ -54,8 +54,8 @@ class AccessAction(str, Enum):
 class Access(BaseModel):
     type: Optional[AccessType] = Field(default=AccessType.ACCESS)
     actions: Optional[List[AccessAction]] = Field(default=[AccessAction.ALL])
-    locations: Optional[List[AnyUrl]] = Field(default=[])
-    datatypes: Optional[List[str]]
+    locations: Optional[List[AnyUrl]] = []
+    datatypes: Optional[List[str]] = []
 
 
 class AccessTokenRequestFlags(str, Enum):
@@ -165,7 +165,7 @@ class InteractionResponse(BaseModel):
     finish: Optional[str] = None
 
 
-class ResponseAccessToken(BaseModel):
+class AccessTokenResponse(BaseModel):
     value: str
     bound: Optional[bool] = None
     label: Optional[str] = None
@@ -189,7 +189,7 @@ class Error(str, Enum):
 
 class GrantResponse(BaseModel):
     continue_: Optional[Continue] = Field(default=None, alias='continue')
-    access_token: Optional[ResponseAccessToken] = None
+    access_token: Optional[AccessTokenResponse] = None
     interact: Optional[InteractionResponse] = None
     subject: Optional[SubjectResponse] = None
     instance_id: Optional[str] = None

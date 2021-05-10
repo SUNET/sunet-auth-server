@@ -10,12 +10,12 @@ from starlette.types import Message
 
 from auth_server.config import load_config
 from auth_server.context import ContextRequestMixin
-from auth_server.models.gnap import Client, GrantRequest
+from auth_server.models.gnap import Client, GrantRequest, Key
 from auth_server.models.jose import JWSHeaders
+from auth_server.proof.common import lookup_client_key_from_config
 
 __author__ = 'lundberg'
 
-from auth_server.proof.common import lookup_client_key
 
 logger = logging.getLogger(__name__)
 
@@ -66,14 +66,17 @@ class JOSEMiddleware(BaseHTTPMiddleware, ContextRequestMixin):
             if not isinstance(unverified_grant_req.client, Client):
                 return return_error_response(status_code=400, detail='client by reference not implemented')
 
+            # Key sent by reference
             if isinstance(unverified_grant_req.client.key, str):
-                # Key sent by reference, look it up
                 logger.debug(f'key reference: {unverified_grant_req.client.key}')
-                unverified_grant_req.client.key = await lookup_client_key(
+                key_from_config = await lookup_client_key_from_config(
                     request=request, key_id=unverified_grant_req.client.key
                 )
+                if key_from_config is not None:
+                    unverified_grant_req.client.key = key_from_config
 
-            if unverified_grant_req.client.key.jwk is not None:
+            # Client generated key
+            if isinstance(unverified_grant_req.client.key, Key) and unverified_grant_req.client.key.jwk is not None:
                 client_key = jws.JWK(**unverified_grant_req.client.key.jwk.dict(exclude_unset=True))
 
             # Verify jws

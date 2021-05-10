@@ -71,6 +71,15 @@ class Claims(RegisteredClaims):
     origins: Optional[List[str]] = None  # What should we use this for?
 
 
+class MDQClaims(RegisteredClaims):
+    entity_id: str
+    scopes: Optional[List[str]] = None
+
+
+class TLSFEDClaims(MDQClaims):
+    organization_id: Optional[str] = None
+
+
 class JWK(BaseModel):
     kty: KeyType
     use: Optional[KeyUse]
