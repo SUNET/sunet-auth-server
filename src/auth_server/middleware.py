@@ -11,7 +11,7 @@ from starlette.types import Message
 from auth_server.config import load_config
 from auth_server.context import ContextRequestMixin
 from auth_server.models.gnap import Client, GrantRequest, Key
-from auth_server.models.jose import JWSHeaders
+from auth_server.models.jose import JWSHeader
 from auth_server.proof.common import lookup_client_key_from_config
 
 __author__ = 'lundberg'
@@ -93,7 +93,7 @@ class JOSEMiddleware(BaseHTTPMiddleware, ContextRequestMixin):
             # JWS verified, replace body with deserialized token
             request.context.jws_verified = True
             try:
-                request.context.jws_headers = JWSHeaders(**jwstoken.jose_header)
+                request.context.jws_header = JWSHeader(**jwstoken.jose_header)
             except ValidationError as e:
                 logger.error('Missing JWS header')
                 return return_error_response(status_code=400, detail=str(e))

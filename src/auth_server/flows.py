@@ -12,7 +12,7 @@ from jwcrypto.jwk import JWK
 from auth_server.config import AuthServerConfig, ConfigurationError
 from auth_server.context import ContextRequest
 from auth_server.mdq import MDQData, mdq_data_to_key, xml_mdq_get
-from auth_server.models.gnap import AccessTokenResponse, Client, GrantRequest, GrantResponse, Proof, Key
+from auth_server.models.gnap import AccessTokenResponse, Client, GrantRequest, GrantResponse, Key, Proof
 from auth_server.models.jose import Claims, MDQClaims, TLSFEDClaims
 from auth_server.proof.common import lookup_client_key_from_config
 from auth_server.proof.jws import check_jws_proof, check_jwsd_proof
@@ -112,7 +112,7 @@ class FullFlow(CommonRules):
         # JWS
         elif self.grant_request.client.key.proof is Proof.JWS:
             self.proof_ok = await check_jws_proof(
-                request=self.request, grant_request=self.grant_request, jws_headers=self.request.context.jws_headers
+                request=self.request, grant_request=self.grant_request, jws_header=self.request.context.jws_header
             )
         # JWSD
         elif self.grant_request.client.key.proof is Proof.JWSD:

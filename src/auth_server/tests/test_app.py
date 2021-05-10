@@ -13,13 +13,12 @@ from cryptography import x509
 from cryptography.hazmat.primitives.hashes import SHA256, Hash, HashAlgorithm
 from cryptography.hazmat.primitives.serialization import Encoding
 from jwcrypto import jwk, jws, jwt
-from jwcrypto.jws import JWS
 from starlette.testclient import TestClient
 
 from auth_server.api import init_auth_server_api
 from auth_server.config import load_config
 from auth_server.models.gnap import AccessTokenRequest, AccessTokenRequestFlags, Client, GrantRequest, Key, Proof
-from auth_server.models.jose import ECJWK, SupportedAlgorithms, SupportedHTTPMethods
+from auth_server.models.jose import ECJWK, JWSType, SupportedAlgorithms, SupportedHTTPMethods
 from auth_server.models.tls_fed_metadata import Entity
 from auth_server.models.tls_fed_metadata import Model as TLSFEDMetadata
 from auth_server.utils import utc_now
@@ -133,35 +132,26 @@ class TestApp(TestCase):
         assert access_token['bound'] is False
         assert access_token['value'] is not None
 
-    @staticmethod
-    def _create_at_hash(grant_request: GrantRequest, hash_alg: HashAlgorithm):
-        access_token_str = json.dumps(grant_request.dict(exclude_unset=True)['access_token'])
-        digest = Hash(hash_alg)
-        digest.update(access_token_str.encode())
-        digest_bytes = digest.finalize()
-        return base64.b64encode(digest_bytes[: hash_alg.digest_size // 2]).decode('utf-8')
-
-    def test_transaction_jsw(self):
+    def test_transaction_jws(self):
         client_key_dict = self.client_jwk.export(as_dict=True)
         client_jwk = ECJWK(**client_key_dict)
         req = GrantRequest(
             client=Client(key=Key(proof=Proof.JWS, jwk=client_jwk)),
             access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
         )
-        at_hash = self._create_at_hash(req, SHA256())
-        jws_headers = {
+        jws_header = {
+            'typ': JWSType.JWS,
             'alg': SupportedAlgorithms.ES256.value,
             'kid': self.client_jwk.key_id,
             'htm': SupportedHTTPMethods.POST.value,
-            'htu': 'http://testserver/transaction',
-            'ts': int(utc_now().timestamp()),
-            'at_hash': at_hash,
+            'uri': 'http://testserver/transaction',
+            'created': int(utc_now().timestamp()),
         }
-        jws = JWS(payload=req.json(exclude_unset=True))
-        jws.add_signature(
-            key=self.client_jwk, protected=json.dumps(jws_headers),
+        _jws = jws.JWS(payload=req.json(exclude_unset=True))
+        _jws.add_signature(
+            key=self.client_jwk, protected=json.dumps(jws_header),
         )
-        data = jws.serialize(compact=True)
+        data = _jws.serialize(compact=True)
 
         client_header = {'Content-Type': 'application/jose'}
         response = self.client.post("/transaction", data=data, headers=client_header)
@@ -172,36 +162,36 @@ class TestApp(TestCase):
         assert access_token['bound'] is False
         assert access_token['value'] is not None
 
-    # TODO: Something strange about detached jws verification
-    @pytest.mark.skip(reason="Something strange about detached jws verification")
-    def test_transaction_jswd(self):
+    def test_transaction_jwsd(self):
         client_key_dict = self.client_jwk.export(as_dict=True)
         client_jwk = ECJWK(**client_key_dict)
         req = GrantRequest(
             client=Client(key=Key(proof=Proof.JWSD, jwk=client_jwk)),
             access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
         )
-        at_hash = self._create_at_hash(req, SHA256())
-        jws_headers = {
+        jws_header = {
+            'typ': JWSType.JWSD,
             'alg': SupportedAlgorithms.ES256.value,
             'kid': self.client_jwk.key_id,
             'htm': SupportedHTTPMethods.POST.value,
-            'htu': 'http://testserver/transaction',
-            'ts': int(utc_now().timestamp()),
-            'at_hash': at_hash,
-            'b64': False,
-            'crit': ['b64'],
+            'uri': 'http://testserver/transaction',
+            'created': int(utc_now().timestamp()),
         }
-        jws = JWS(payload=req.json(exclude_unset=True))
-        jws.add_signature(
-            key=self.client_jwk, protected=json.dumps(jws_headers),
+        _jws = jws.JWS(payload=req.json(exclude_unset=True))
+        _jws.add_signature(
+            key=self.client_jwk, protected=json.dumps(jws_header),
         )
-        data = jws.serialize(compact=True)
-        # Remove payload from serialized jws
-        data = f'{data.split(".")[0]}..{data.split(".")[2]}'
+        data = _jws.serialize(compact=True)
 
-        client_header = {'Detached-JWS': data}
-        response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
+        _tmp_jws = jws.JWS()
+        _tmp_jws.deserialize(raw_jws=data)
+        _tmp_jws.verify(key=self.client_jwk)
+
+        # Remove payload from serialized jws
+        header, payload, signature = data.split('.')
+        client_header = {'Detached-JWS': f'{header}.{signature}'}
+
+        response = self.client.post("/transaction", json=req.dict(exclude_unset=True), headers=client_header)
 
         assert response.status_code == 200
         assert 'access_token' in response.json()

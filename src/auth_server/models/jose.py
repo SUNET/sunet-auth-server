@@ -68,6 +68,7 @@ class RegisteredClaims(BaseModel):
 
 
 class Claims(RegisteredClaims):
+    version: int = 1
     origins: Optional[List[str]] = None  # What should we use this for?
 
 
@@ -129,23 +130,21 @@ class JWKS(BaseModel):
     keys: List[Union[ECJWK, RSAJWK, SymmetricJWK]]
 
 
-class JWSHeaders(BaseModel):
-    """
-    The header of the JWS MUST contain the "kid" field of the key bound
-    to this client instance for this request.  The JWS header MUST
-    contain an "alg" field appropriate for the key identified by "kid"
-    and MUST NOT be "none".
+class JWSType(str, Enum):
+    JWS = 'gnap-binding+jws'
+    JWSD = 'gnap-binding+jwsd'
 
-    To protect the request, the JWS header MUST contain the following
-    additional fields.
-    """
 
-    alg: SupportedAlgorithms
+class JWSHeader(BaseModel):
     kid: str
+    alg: SupportedAlgorithms
+    typ: JWSType
     htm: SupportedHTTPMethods
-    htu: str  # The HTTP URI used for this request, including all path and query components.
-    ts: datetime
-    # at_hash value is the base64url encoding of the left-most half of the hash of the octets of the ASCII
-    # representation of the "access_token" value ex. if the "alg" is "RS256", hash the "access_token"
-    # value with SHA-256, then take the left-most 128 bits and base64url encode them.
-    at_hash: str
+    # The HTTP URI used for this request, including all path and query components.
+    uri: str
+    # A timestamp of when the signature was created, in integer seconds since UNIX Epoch
+    created: datetime
+    # When a request is bound to an access token, the access token hash value. The value MUST be the result of
+    # Base64url encoding (with no padding) the SHA-256 digest of the ASCII encoding of the associated access
+    # token's value.  REQUIRED if the request protects an access token.
+    ath: Optional[str]

@@ -3,7 +3,7 @@
 import logging
 from typing import Optional
 
-from auth_server.config import ClientKey, load_config
+from auth_server.config import ClientKey, ConfigurationError, load_config
 from auth_server.context import ContextRequest
 from auth_server.models.gnap import Key
 from auth_server.models.jose import ECJWK, RSAJWK, KeyType, SymmetricJWK
@@ -42,7 +42,7 @@ async def load_config_key(client_key: ClientKey) -> Key:
         logger.debug(f'client_key.cert_S256: {client_key.cert_S256}')
         return Key(proof=client_key.proof, cert_S256=client_key.cert_S256)
 
-    raise RuntimeError(f'malformed client key in config')
+    raise ConfigurationError(f'malformed client key in config')
 
 
 async def lookup_client_key_from_config(request: ContextRequest, key_id: str) -> Optional[Key]:
