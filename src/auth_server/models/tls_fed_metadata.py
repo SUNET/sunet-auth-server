@@ -21,9 +21,7 @@ class Alg(Enum):
 class PinDirective(BaseModel):
     alg: Alg = Field(..., example='sha256', title='Directive name')
     digest: constr(regex=r'^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$') = Field(  # type: ignore
-        ...,
-        example='HiMkrb4phPSP+OvGqmZd6sGvy7AUn4k3XEe8OMBrzt8=',
-        title='Directive value (Base64)',
+        ..., example='HiMkrb4phPSP+OvGqmZd6sGvy7AUn4k3XEe8OMBrzt8=', title='Directive value (Base64)',
     )
 
 
@@ -33,9 +31,7 @@ class Endpoint(BaseModel):
 
     description: Optional[str] = Field(None, example='SCIM Server 1', title='Endpoint description')
     tags: Optional[List[constr(regex=r'^[a-z0-9]{1,64}$')]] = Field(  # type: ignore
-        None,
-        description="A list of strings that describe the endpoint's capabilities.\n",
-        title='Endpoint tags',
+        None, description="A list of strings that describe the endpoint's capabilities.\n", title='Endpoint tags',
     )
     base_uri: Optional[AnyUrl] = Field(None, example='https://scim.example.com', title='Endpoint base URI')
     pins: List[PinDirective] = Field(..., title='Certificate pin set')

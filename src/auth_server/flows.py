@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC
+from enum import Enum
 from typing import Optional
 
 from fastapi import HTTPException
@@ -25,6 +26,23 @@ __author__ = 'lundberg'
 logger = logging.getLogger(__name__)
 
 
+class BuiltInFlow(str, Enum):
+    FULLFLOW = 'FullFlow'
+    MDQFLOW = 'MDQFlow'
+    TLSFEDFLOW = 'TLSFEDFlow'
+    TESTFLOW = 'TestFlow'
+
+
+# Use this to go to next flow
+class NextFlowException(HTTPException):
+    pass
+
+
+# Use this to return an error message to the client
+class StopTransactionException(HTTPException):
+    pass
+
+
 class BaseAuthFlow(ABC):
     def __init__(
         self,
@@ -35,6 +53,7 @@ class BaseAuthFlow(ABC):
         tls_client_cert: Optional[str] = None,
         detached_jws: Optional[str] = None,
     ):
+        self.version = 1
         self.request = request
         self.grant_request = grant_req
         self.config = config
@@ -44,6 +63,10 @@ class BaseAuthFlow(ABC):
         self.proof_ok: bool = False
         self.grant_response: Optional[GrantResponse] = None
         self.mdq_data: Optional[MDQData] = None
+
+    @classmethod
+    def name(cls):
+        return f'{cls.__name__}'
 
     @staticmethod
     async def steps():
@@ -62,6 +85,18 @@ class BaseAuthFlow(ABC):
     async def create_auth_token(self) -> Optional[GrantResponse]:
         raise NotImplementedError()
 
+    async def transaction(self) -> Optional[GrantResponse]:
+        for flow_step in await self.steps():
+            m = getattr(self, flow_step)
+            logger.debug(f'step {flow_step} in {self} will be called')
+            res = await m()
+            if isinstance(res, GrantResponse):
+                logger.info(f'step {flow_step} in {self} returned GrantResponse')
+                logger.debug(res.dict(exclude_unset=True))
+                return res
+            logger.debug(f'step {flow_step} done, next step will be called')
+        return None
+
 
 class CommonRules(BaseAuthFlow):
     """
@@ -70,7 +105,7 @@ class CommonRules(BaseAuthFlow):
 
     async def lookup_client(self) -> Optional[GrantResponse]:
         if not isinstance(self.grant_request.client, Client):
-            raise HTTPException(status_code=400, detail='client by reference not implemented')
+            raise NextFlowException(status_code=400, detail='client by reference not implemented')
         return None
 
 
@@ -104,11 +139,11 @@ class FullFlow(CommonRules):
         # MTLS
         if self.grant_request.client.key.proof is Proof.MTLS:
             if self.tls_client_cert is None:
-                raise HTTPException(status_code=400, detail='no client certificate found')
+                raise NextFlowException(status_code=400, detail='no client certificate found')
             self.proof_ok = await check_mtls_proof(grant_request=self.grant_request, cert=self.tls_client_cert)
         # HTTPSIGN
         elif self.grant_request.client.key.proof is Proof.HTTPSIGN:
-            raise HTTPException(status_code=400, detail='httpsign is not implemented')
+            raise NextFlowException(status_code=400, detail='httpsign is not implemented')
         # JWS
         elif self.grant_request.client.key.proof is Proof.JWS:
             self.proof_ok = await check_jws_proof(
@@ -117,22 +152,27 @@ class FullFlow(CommonRules):
         # JWSD
         elif self.grant_request.client.key.proof is Proof.JWSD:
             if self.detached_jws is None:
-                raise HTTPException(status_code=400, detail='no detached jws header found')
+                raise NextFlowException(status_code=400, detail='no detached jws header found')
             self.proof_ok = await check_jwsd_proof(
                 request=self.request, grant_request=self.grant_request, detached_jws=self.detached_jws
             )
         else:
-            raise HTTPException(status_code=400, detail='no supported proof method')
+            raise NextFlowException(status_code=400, detail='no supported proof method')
         return None
 
     async def create_auth_token(self) -> Optional[GrantResponse]:
         if self.proof_ok:
             # Create access token
-            claims = Claims(exp=self.config.auth_token_expires_in, aud=self.config.auth_token_audience)
+            claims = Claims(
+                iss=self.config.auth_token_issuer,
+                exp=self.config.auth_token_expires_in,
+                aud=self.config.auth_token_audience,
+            )
             token = jwt.JWT(header={'alg': 'ES256'}, claims=claims.to_rfc7519())
             token.make_signed_token(self.signing_key)
             auth_response = GrantResponse(access_token=AccessTokenResponse(bound=False, value=token.serialize()))
             logger.info(f'OK:{self.request.context.key_reference}:{self.config.auth_token_audience}')
+            logger.debug(f'claims: {claims.to_rfc7519()}')
             return auth_response
         return None
 
@@ -155,7 +195,7 @@ class MDQFlow(CommonRules):
         assert isinstance(self.grant_request.client, Client)
 
         if not isinstance(self.grant_request.client.key, str):
-            raise HTTPException(status_code=400, detail='key by reference is mandatory')
+            raise NextFlowException(status_code=400, detail='key by reference is mandatory')
 
         key_id = self.grant_request.client.key
         logger.debug(f'key reference: {key_id}')
@@ -169,7 +209,7 @@ class MDQFlow(CommonRules):
         client_key = await mdq_data_to_key(self.mdq_data)
 
         if not client_key:
-            raise HTTPException(status_code=400, detail=f'no client key found for {key_id}')
+            raise NextFlowException(status_code=400, detail=f'no client key found for {key_id}')
         self.grant_request.client.key = client_key
         return None
 
@@ -179,13 +219,13 @@ class MDQFlow(CommonRules):
         assert isinstance(self.grant_request.client.key, Key)
 
         if self.grant_request.client.key.proof is not Proof.MTLS:
-            raise HTTPException(status_code=400, detail='MTLS is the only supported proof method')
+            raise NextFlowException(status_code=400, detail='MTLS is the only supported proof method')
         if self.tls_client_cert is None:
-            raise HTTPException(status_code=400, detail='no client certificate found')
+            raise NextFlowException(status_code=400, detail='no client certificate found')
 
         self.proof_ok = await check_mtls_proof(grant_request=self.grant_request, cert=self.tls_client_cert)
         if not self.proof_ok:
-            raise HTTPException(status_code=401, detail='no client certificate found')
+            raise NextFlowException(status_code=401, detail='no client certificate found')
         return None
 
     async def create_auth_token(self) -> Optional[GrantResponse]:
@@ -198,7 +238,7 @@ class MDQFlow(CommonRules):
             try:
                 entity_id = entity_descriptor[0]['@entityID']
             except (IndexError, KeyError):
-                raise HTTPException(status_code=401, detail='malformed metadata')
+                raise NextFlowException(status_code=401, detail='malformed metadata')
             # scopes
             scopes = []
             for scope in get_values('urn:mace:shibboleth:metadata:1.0:Scope', self.mdq_data.metadata):
@@ -206,6 +246,7 @@ class MDQFlow(CommonRules):
 
             # Create access token
             claims = MDQClaims(
+                iss=self.config.auth_token_issuer,
                 exp=self.config.auth_token_expires_in,
                 aud=self.config.auth_token_audience,
                 entity_id=entity_id,
@@ -215,6 +256,7 @@ class MDQFlow(CommonRules):
             token.make_signed_token(self.signing_key)
             auth_response = GrantResponse(access_token=AccessTokenResponse(bound=False, value=token.serialize()))
             logger.info(f'OK:{self.request.context.key_reference}:{self.config.auth_token_audience}')
+            logger.debug(f'claims: {claims.to_rfc7519()}')
             return auth_response
         return None
 
@@ -230,7 +272,7 @@ class TLSFEDFlow(MDQFlow):
         assert isinstance(self.grant_request.client, Client)
 
         if not isinstance(self.grant_request.client.key, str):
-            raise HTTPException(status_code=400, detail='key by reference is mandatory')
+            raise NextFlowException(status_code=400, detail='key by reference is mandatory')
 
         key_id = self.grant_request.client.key
         logger.debug(f'key reference: {key_id}')
@@ -244,7 +286,7 @@ class TLSFEDFlow(MDQFlow):
         client_key = await entity_to_key(self.entity)
 
         if not client_key:
-            raise HTTPException(status_code=400, detail=f'no client key found for {key_id}')
+            raise NextFlowException(status_code=400, detail=f'no client key found for {key_id}')
         self.grant_request.client.key = client_key
         return None
 
@@ -252,6 +294,7 @@ class TLSFEDFlow(MDQFlow):
         if self.proof_ok and self.entity:
             # Create access token
             claims = TLSFEDClaims(
+                iss=self.config.auth_token_issuer,
                 exp=self.config.auth_token_expires_in,
                 aud=self.config.auth_token_audience,
                 entity_id=self.entity.entity_id,
@@ -262,5 +305,6 @@ class TLSFEDFlow(MDQFlow):
             token.make_signed_token(self.signing_key)
             auth_response = GrantResponse(access_token=AccessTokenResponse(bound=False, value=token.serialize()))
             logger.info(f'OK:{self.request.context.key_reference}:{self.config.auth_token_audience}')
+            logger.debug(f'claims: {claims.to_rfc7519()}')
             return auth_response
         return None

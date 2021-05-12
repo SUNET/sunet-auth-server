@@ -57,7 +57,7 @@ class RegisteredClaims(BaseModel):
     jti: Optional[str]  # JWT ID
 
     def to_rfc7519(self):
-        d = self.dict(exclude_unset=True)
+        d = self.dict(exclude_none=True)
         if self.exp:
             d['exp'] = int((self.iat + self.exp).timestamp())
         if self.nbf:
@@ -72,7 +72,7 @@ class Claims(RegisteredClaims):
     origins: Optional[List[str]] = None  # What should we use this for?
 
 
-class MDQClaims(RegisteredClaims):
+class MDQClaims(Claims):
     entity_id: str
     scopes: Optional[List[str]] = None
 

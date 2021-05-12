@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 import base64
 import logging
-from datetime import datetime
-from functools import lru_cache
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Mapping, Optional
 
 import aiohttp
+from async_lru import alru_cache
 from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.x509 import load_pem_x509_certificate
 from jwcrypto import jwk, jws
@@ -123,15 +123,10 @@ async def load_metadata(raw_jws: Optional[str], jwks: Optional[jwk.JWKSet]) -> O
         logger.error(f'metadata could not be validated: {e}')
         return None
 
-    return MetadataSource(
-        issued_at=issued_at,
-        expires_at=expires_at,
-        issuer=issuer,
-        metadata=metadata,
-    )
+    return MetadataSource(issued_at=issued_at, expires_at=expires_at, issuer=issuer, metadata=metadata)
 
 
-@lru_cache()
+@alru_cache
 async def get_tls_fed_metadata() -> Metadata:
     config = load_config()
     # Set default renew and expire times
@@ -152,11 +147,15 @@ async def get_tls_fed_metadata() -> Metadata:
         metadata_source = await load_metadata(raw_jws=raw_jws, jwks=jwks)
         logger.debug(f'loaded metadata source: {metadata_source}')
         if metadata_source is not None:
-            # Set renew_at to the earliest issue time + max age
-            source_renew_at = metadata_source.issued_at + config.tls_fed_metadata_max_age
+            # Set renew_at to the earliest issue time + cache ttl or max age
+            cache_ttl = timedelta(seconds=metadata_source.metadata.cache_ttl)
+            if config.tls_fed_metadata_max_age <= timedelta(seconds=metadata_source.metadata.cache_ttl):
+                cache_ttl = config.tls_fed_metadata_max_age
+            source_renew_at = metadata_source.issued_at + cache_ttl
             if source_renew_at < renew_at:
                 renew_at = source_renew_at
                 logger.info(f'metadata should be renewed at {renew_at}')
+
             # Collect entities from all sources
             for entity in metadata_source.metadata.entities:
                 entities[str(entity.entity_id)] = MetadataEntity(
@@ -208,7 +207,6 @@ async def entity_to_key(entity: Optional[MetadataEntity]) -> Optional[Key]:
         # TODO: how do we handle multiple certs?
         logger.info(f'Found cert in metadata')
         return Key(
-            proof=Proof.MTLS,
-            cert_S256=base64.b64encode(certs[0].fingerprint(algorithm=SHA256())).decode('utf-8'),
+            proof=Proof.MTLS, cert_S256=base64.b64encode(certs[0].fingerprint(algorithm=SHA256())).decode('utf-8'),
         )
     return None

@@ -8,6 +8,7 @@ from starlette.responses import Response
 
 from auth_server.config import AuthServerConfig, load_config
 from auth_server.context import ContextRequest, ContextRequestRoute
+from auth_server.flows import NextFlowException, StopTransactionException
 from auth_server.models.gnap import GrantRequest, GrantResponse
 from auth_server.models.jose import JWKS, JWKTypes
 from auth_server.utils import get_signing_key, load_jwks
@@ -47,21 +48,33 @@ async def transaction(
     signing_key: JWK = Depends(get_signing_key),
 ):
 
-    auth_flow = request.app.auth_flow_class(
-        request=request,
-        grant_req=grant_req,
-        tls_client_cert=tls_client_cert,
-        detached_jws=detached_jws,
-        config=config,
-        signing_key=signing_key,
-    )
-    for flow_step in await auth_flow.steps():
-        m = getattr(auth_flow, flow_step)
-        logger.debug(f'step {flow_step} will be called')
+    # Run configured auth flows
+    for auth_flow in request.app.auth_flows:
+        logger.debug(f'calling {auth_flow}')
 
-        res = await m()
+        try:
+            flow = auth_flow(
+                request=request,
+                grant_req=grant_req,
+                tls_client_cert=tls_client_cert,
+                detached_jws=detached_jws,
+                config=config,
+                signing_key=signing_key,
+            )
+            if flow.version == 1:
+                res = await flow.transaction()
+            else:
+                res = None
+
+        except NextFlowException as e:
+            logger.debug(f'flow {auth_flow} stopped: {e.detail}')
+            continue
+        except StopTransactionException as e:
+            logger.error(f'transaction stopped in flow {auth_flow} with exception: {e.detail}')
+            raise HTTPException(status_code=e.status_code, detail=e.detail)
+
         if isinstance(res, GrantResponse):
-            logger.info(f'step {flow_step} returned GrantResponse')
+            logger.info(f'flow {auth_flow} returned GrantResponse')
             logger.debug(res.dict(exclude_unset=True))
             return res
 
