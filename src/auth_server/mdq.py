@@ -81,7 +81,6 @@ async def mdq_data_to_key(mdq_data: MDQData) -> Optional[Key]:
     if signing_cert:
         logger.info(f'Found cert in metadata')
         return Key(
-            proof=Proof.MTLS,
-            cert_S256=b64encode(signing_cert[0].fingerprint(algorithm=SHA256())).decode('utf-8'),
+            proof=Proof.MTLS, cert_S256=b64encode(signing_cert[0].fingerprint(algorithm=SHA256())).decode('utf-8'),
         )
     return None
