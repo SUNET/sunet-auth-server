@@ -17,7 +17,7 @@ from auth_server.api import init_auth_server_api
 from auth_server.config import load_config
 from auth_server.models.gnap import AccessTokenRequest, AccessTokenRequestFlags, Client, GrantRequest, Key, Proof
 from auth_server.models.jose import ECJWK, JWSType, SupportedAlgorithms, SupportedHTTPMethods
-from auth_server.tests.utils import tls_fed_metadata_to_jws, create_tls_fed_metadata
+from auth_server.tests.utils import create_tls_fed_metadata, tls_fed_metadata_to_jws
 from auth_server.tls_fed_auth import get_tls_fed_metadata
 from auth_server.utils import utc_now
 
