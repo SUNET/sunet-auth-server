@@ -50,6 +50,9 @@ async def transaction(
 
     # Run configured auth flows
     for auth_flow in request.app.auth_flows:
+        if auth_flow.get_version() != 1:
+            logger.warning(f'not loading {auth_flow} because it is version {auth_flow.version}')
+            continue
         logger.debug(f'calling {auth_flow}')
 
         try:
@@ -61,10 +64,8 @@ async def transaction(
                 config=config,
                 signing_key=signing_key,
             )
-            if flow.version == 1:
-                res = await flow.transaction()
-            else:
-                res = None
+
+            res = await flow.transaction()
 
         except NextFlowException as e:
             logger.debug(f'flow {auth_flow} stopped: {e.detail}')
