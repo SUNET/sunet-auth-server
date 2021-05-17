@@ -147,9 +147,12 @@ async def get_tls_fed_metadata() -> Metadata:
         metadata_source = await load_metadata(raw_jws=raw_jws, jwks=jwks)
         logger.debug(f'loaded metadata source: {metadata_source}')
         if metadata_source is not None:
+            # please mypy
+            assert metadata_source.metadata.cache_ttl is not None
+            assert isinstance(metadata_source.metadata.cache_ttl, int)
             # Set renew_at to the earliest issue time + cache ttl or max age
             cache_ttl = timedelta(seconds=metadata_source.metadata.cache_ttl)
-            if config.tls_fed_metadata_max_age <= timedelta(seconds=metadata_source.metadata.cache_ttl):
+            if config.tls_fed_metadata_max_age <= cache_ttl:
                 cache_ttl = config.tls_fed_metadata_max_age
             source_renew_at = metadata_source.issued_at + cache_ttl
             if source_renew_at < renew_at:
