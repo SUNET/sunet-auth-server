@@ -6,7 +6,7 @@ from fastapi import FastAPI
 
 from auth_server.config import AuthServerConfig, load_config
 from auth_server.context import ContextRequestRoute
-from auth_server.flows import BaseAuthFlow, BuiltInFlow, FullFlow, MDQFlow, TestFlow, TLSFEDFlow
+from auth_server.flows import BaseAuthFlow, BuiltInFlow, ConfigFlow, FullFlow, MDQFlow, TestFlow, TLSFEDFlow
 from auth_server.log import init_logging
 from auth_server.middleware import JOSEMiddleware
 from auth_server.routers.root import root_router
@@ -39,6 +39,8 @@ class AuthServer(FastAPI):
                     flows.append(MDQFlow)
                 elif builtin_flow is BuiltInFlow.TLSFEDFLOW:
                     flows.append(TLSFEDFlow)
+                elif builtin_flow is BuiltInFlow.CONFIGFLOW:
+                    flows.append(ConfigFlow)
                 elif builtin_flow is BuiltInFlow.TESTFLOW:
                     flows.append(TestFlow)
                 logger.debug(f'Loaded built-in flow {flow}')

@@ -51,9 +51,9 @@ async def transaction(
     # Run configured auth flows
     for auth_flow in request.app.auth_flows:
         if auth_flow.get_version() != 1:
-            logger.warning(f'not loading {auth_flow} because it is version {auth_flow.version}')
+            logger.warning(f'not loading {auth_flow.get_name()} because it is version {auth_flow.version}')
             continue
-        logger.debug(f'calling {auth_flow}')
+        logger.debug(f'calling {auth_flow.get_name()}')
 
         try:
             flow = auth_flow(
@@ -68,10 +68,10 @@ async def transaction(
             res = await flow.transaction()
 
         except NextFlowException as e:
-            logger.debug(f'flow {auth_flow} stopped: {e.detail}')
+            logger.info(f'flow {auth_flow.get_name()} stopped: {e.detail}')
             continue
         except StopTransactionException as e:
-            logger.error(f'transaction stopped in flow {auth_flow} with exception: {e.detail}')
+            logger.error(f'transaction stopped in flow {auth_flow.get_name()} with exception: {e.detail}')
             raise HTTPException(status_code=e.status_code, detail=e.detail)
 
         if isinstance(res, GrantResponse):

@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
-import base64
-import json
 import logging
 
-from cryptography.hazmat.primitives.hashes import SHA256, SHA384, SHA512, Hash
+from cryptography.hazmat.primitives.hashes import SHA256, SHA384, SHA512
 from fastapi import HTTPException
 from jwcrypto import jws
 from jwcrypto.common import base64url_encode
@@ -13,7 +11,7 @@ from auth_server.config import load_config
 from auth_server.context import ContextRequest
 from auth_server.models.gnap import Client, GrantRequest, Key
 from auth_server.models.jose import JWK, JWSHeader, JWSType, SupportedAlgorithms
-from auth_server.utils import utc_now
+from auth_server.time_utils import utc_now
 
 __author__ = 'lundberg'
 

@@ -1,18 +1,16 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-import typing
 from datetime import timedelta
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
-from pydantic import AnyUrl, BaseSettings, Field
+from pydantic import AnyUrl, BaseModel, BaseSettings, Field
 
-if typing.TYPE_CHECKING:  # Avoid circular dependencies
-    from auth_server.models.gnap import Proof
-    from auth_server.models.jose import ECJWK, RSAJWK, SymmetricJWK
+from auth_server.models.gnap import Proof
+from auth_server.models.jose import ECJWK, RSAJWK, SymmetricJWK
 
 __author__ = 'lundberg'
 
@@ -26,15 +24,15 @@ class Environment(str, Enum):
     PROD = 'prod'
 
 
-class ClientKey(BaseSettings):
+class ClientKey(BaseModel):
     proof: Proof
     jwk: Optional[Union[ECJWK, RSAJWK, SymmetricJWK]] = None
     cert: Optional[str] = None
     cert_S256: Optional[str] = None
-    # TODO: Figure out other data to add here to help with access token creation
+    claims: Dict[str, Any] = {}
 
 
-class TLSFEDMetadata(BaseSettings):
+class TLSFEDMetadata(BaseModel):
     remote: Optional[AnyUrl] = None
     local: Optional[Path] = None
     jwks: Path
