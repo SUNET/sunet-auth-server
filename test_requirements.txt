@@ -7,9 +7,9 @@
 --index-url https://pypi.sunet.se
 --extra-index-url https://pypi.sunet.se/simple
 
-aiodns==2.0.0 \
-    --hash=sha256:815fdef4607474295d68da46978a54481dd1e7be153c7d60f9e72773cd38d77d \
-    --hash=sha256:aaa5ac584f40fe778013df0aa6544bf157799bd3f608364b451840ed2c8688de
+aiodns==3.0.0 \
+    --hash=sha256:2b19bc5f97e5c936638d28e665923c093d8af2bf3aa88d35c43417fa25d136a2 \
+    --hash=sha256:946bdfabe743fceeeb093c8a010f5d1645f708a241be849e17edfb0e49e08cd6
     # via
     #   -c requirements.txt
     #   aiohttp
@@ -84,17 +84,17 @@ async-generator==1.10 \
     # via
     #   -c requirements.txt
     #   fastapi
+async-lru==1.0.2 \
+    --hash=sha256:baa898027619f5cc31b7966f96f00e4fc0df43ba206a8940a5d1af5336a477cb
+    # via
+    #   -c requirements.txt
+    #   -r requirements.in
 async-timeout==3.0.1 \
     --hash=sha256:0c3c816a028d47f659d6ff5c745cb2acf1f966da1fe5c19c77a70282b25f4c5f \
     --hash=sha256:4291ca197d287d274d0b6cb5d6f8f8f82d434ed288f962539ff18cc9012f9ea3
     # via
     #   -c requirements.txt
     #   aiohttp
-async_lru==1.0.2 \
-    --hash=sha256:baa898027619f5cc31b7966f96f00e4fc0df43ba206a8940a5d1af5336a477cb
-    # via
-    #   -c requirements.txt
-    #   -r requirements.in
 attrs==21.2.0 \
     --hash=sha256:149e90d6d8ac20db7a955ad60cf0e6881a3f20d37096140088356da6c716b0b1 \
     --hash=sha256:ef6aaac3ca6cd92904cdd0d83f629a15f18053ec84e6432106f7a4d04ae4f5fb
@@ -209,7 +209,7 @@ click==7.1.2 \
     # via
     #   -c requirements.txt
     #   uvicorn
-coverage==5.5 \
+coverage[toml]==5.5 \
     --hash=sha256:24d4a7de75446be83244eabbff746d66b9240ae020ced65d060815fac3423759 \
     --hash=sha256:970284a88b99673ccb2e4e334cfb38a10aab7cd44f7457564d11898a74b62d0a \
     --hash=sha256:ebe78fe9a0e874362175b02371bdfbee64d8edc42a044253ddf4ee7d3c15212c
@@ -344,10 +344,10 @@ py==1.10.0 \
     --hash=sha256:21b81bda15b66ef5e1a777a21c4dcd9c20ad3efd0b3f817e7a809035269e1bd3 \
     --hash=sha256:3b80836aa6d1feeaa108e046da6423ab8f6ceda6468545ae8d02d9d58d18818a
     # via pytest
-pycares==3.2.3 \
-    --hash=sha256:2246adcbc948dd31925c9bff5cc41c06fc640f7d982e6b41b6d09e4f201e5c11 \
-    --hash=sha256:da1899fde778f9b8736712283eccbf7b654248779b349d139cd28eb30b0fa8cd \
-    --hash=sha256:ed972a04067e91f552da84945d38b94c3984c898f699faa8bb066e9f3a114c32
+pycares==4.0.0 \
+    --hash=sha256:8ebb3ba0485f66cae8eed7ce3e9ed6f2c0bfd5e7319d5d0fbbb511064f17e1d4 \
+    --hash=sha256:d0154fc5753b088758fbec9bc137e1b24bb84fc0c6a09725c8bac25a342311cd \
+    --hash=sha256:eb60be66accc9a9ea1018b591a1f5800cba83491d07e9acc8c56bc6e6607ab54
     # via
     #   -c requirements.txt
     #   aiodns
@@ -362,15 +362,16 @@ pydantic==1.8.2 \
     --hash=sha256:4a03cbbe743e9c7247ceae6f0d8898f7a64bb65800a45cbdc52d65e370570820 \
     --hash=sha256:fec866a0b59f372b7e776f2d7308511784dace622e0992a0b59ea3ccee0ae833
     # via
+    #   -c constraints.txt
     #   -c requirements.txt
     #   fastapi
 pyparsing==2.4.7 \
     --hash=sha256:c203ec8783bf771a155b207279b9bccb8dea02d8f0c9e5f8ead507bc3246ecc1 \
     --hash=sha256:ef9d7589ef3c200abe66653d3f1ab1033c3c419ae9b9bdb1240a85b024efc88b
     # via packaging
-pytest-cov==2.11.1 \
-    --hash=sha256:359952d9d39b9f822d9d29324483e7ba04a3a17dd7d05aa6beb7ea01e359e5f7 \
-    --hash=sha256:bdb9fdb0b85a7cc825269a4c56b48ccaa5c7e365054b6038772c32ddcdc969da
+pytest-cov==2.12.0 \
+    --hash=sha256:8535764137fecce504a49c2b742288e3d34bc09eed298ad65963616cc98fd45e \
+    --hash=sha256:95d4933dcbbacfa377bb60b29801daa30d90c33981ab2a79e9ab4452c165066e
     # via -r test_requirements.in
 pytest==6.2.4 \
     --hash=sha256:50bcad0a0b9c5a72c8e4e7c9855a3ad496ca6a881a3641b4260605450772c54b \
@@ -426,7 +427,9 @@ starlette==0.14.2 \
 toml==0.10.2 \
     --hash=sha256:806143ae5bfb6a3c6e736a764057db0e6a0e05e338b5630894a5f779cabb4f9b \
     --hash=sha256:b3bda1d108d5dd99f4a20d24d9c348e91c4db7ab1b749200bded2f839ccbe68f
-    # via pytest
+    # via
+    #   coverage
+    #   pytest
 typing-extensions==3.10.0.0 \
     --hash=sha256:50b6f157849174217d0656f99dc82fe932884fb250826c18350e159ec6cdf342 \
     --hash=sha256:779383f6086d90c99ae41cf0ff39aac8a7937a9283ce0a414e5dd782f4c94a84

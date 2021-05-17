@@ -7,9 +7,9 @@
 --index-url https://pypi.sunet.se
 --extra-index-url https://pypi.sunet.se/simple
 
-aiodns==2.0.0 \
-    --hash=sha256:815fdef4607474295d68da46978a54481dd1e7be153c7d60f9e72773cd38d77d \
-    --hash=sha256:aaa5ac584f40fe778013df0aa6544bf157799bd3f608364b451840ed2c8688de
+aiodns==3.0.0 \
+    --hash=sha256:2b19bc5f97e5c936638d28e665923c093d8af2bf3aa88d35c43417fa25d136a2 \
+    --hash=sha256:946bdfabe743fceeeb093c8a010f5d1645f708a241be849e17edfb0e49e08cd6
     # via aiohttp
 aiofile==3.5.0 \
     --hash=sha256:5e7287a33b498bfa418aac1caa0be7b2ad32ec49680ec22f537335d95002de0a \
@@ -162,10 +162,10 @@ promise==2.3 \
     # via
     #   graphql-core
     #   graphql-relay
-pycares==3.2.3 \
-    --hash=sha256:2246adcbc948dd31925c9bff5cc41c06fc640f7d982e6b41b6d09e4f201e5c11 \
-    --hash=sha256:da1899fde778f9b8736712283eccbf7b654248779b349d139cd28eb30b0fa8cd \
-    --hash=sha256:ed972a04067e91f552da84945d38b94c3984c898f699faa8bb066e9f3a114c32
+pycares==4.0.0 \
+    --hash=sha256:8ebb3ba0485f66cae8eed7ce3e9ed6f2c0bfd5e7319d5d0fbbb511064f17e1d4 \
+    --hash=sha256:d0154fc5753b088758fbec9bc137e1b24bb84fc0c6a09725c8bac25a342311cd \
+    --hash=sha256:eb60be66accc9a9ea1018b591a1f5800cba83491d07e9acc8c56bc6e6607ab54
     # via aiodns
 pycparser==2.20 \
     --hash=sha256:2d475327684562c3a96cc71adf7dc8c4f0565175cf86b6d7a404ff4c771f15f0 \
@@ -175,7 +175,9 @@ pydantic==1.8.2 \
     --hash=sha256:26464e57ccaafe72b7ad156fdaa4e9b9ef051f69e175dbbb463283000c05ab7b \
     --hash=sha256:4a03cbbe743e9c7247ceae6f0d8898f7a64bb65800a45cbdc52d65e370570820 \
     --hash=sha256:fec866a0b59f372b7e776f2d7308511784dace622e0992a0b59ea3ccee0ae833
-    # via fastapi
+    # via
+    #   -c constraints.txt
+    #   fastapi
 python-dotenv==0.17.1 \
     --hash=sha256:00aa34e92d992e9f8383730816359647f358f4a3be1ba45e5a5cefd27ee91544 \
     --hash=sha256:b1ae5e9643d5ed987fc57cc2583021e38db531946518130777734f9589b3141f

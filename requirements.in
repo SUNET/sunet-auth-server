@@ -1,3 +1,4 @@
+-c constraints.txt
 fastapi[all]
 aiohttp[speedups]
 aiofile
