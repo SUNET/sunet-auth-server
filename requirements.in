@@ -1,5 +1,8 @@
+-c constraints.txt
 fastapi[all]
 aiohttp[speedups]
+aiofile
+async_lru
 jwcrypto
 xmltodict
 loguru
