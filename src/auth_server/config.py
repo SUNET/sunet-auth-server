@@ -47,7 +47,7 @@ class AuthServerConfig(BaseSettings):
     log_level: str = Field(default='INFO', env='LOG_LEVEL')
     host: str = Field(default='0.0.0.0', env='HOST')
     port: int = Field(default=3000, env='PORT')
-    auth_flows: List[str] = Field(default=['FullFlow'], env='AUTH_FLOWs')
+    auth_flows: List[str] = Field(default=['FullFlow'], env='AUTH_FLOWS')
     base_url: str = Field(default='', env='BASE_URL')
     mdq_server: Optional[str] = Field(default=None, env='MDQ_SERVER')
     tls_fed_metadata: List[TLSFEDMetadata] = Field(default=[], env='TLS_FED_METADATA')
