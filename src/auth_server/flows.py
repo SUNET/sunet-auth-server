@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from abc import ABC
 from enum import Enum
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import HTTPException
 from jwcrypto import jwt
@@ -44,6 +44,9 @@ class StopTransactionException(HTTPException):
 
 
 class BaseAuthFlow(ABC):
+
+    _version: int = 1
+
     def __init__(
         self,
         request: ContextRequest,
@@ -53,7 +56,6 @@ class BaseAuthFlow(ABC):
         tls_client_cert: Optional[str] = None,
         detached_jws: Optional[str] = None,
     ):
-        self.version = 1
         self.request = request
         self.grant_request = grant_req
         self.config = config
@@ -65,11 +67,15 @@ class BaseAuthFlow(ABC):
         self.mdq_data: Optional[MDQData] = None
 
     @classmethod
-    def name(cls):
+    def get_version(cls) -> int:
+        return cls._version
+
+    @classmethod
+    def get_name(cls) -> str:
         return f'{cls.__name__}'
 
     @staticmethod
-    async def steps():
+    async def steps() -> List[str]:
         # This is the order the methods in the flow will be called
         return ['lookup_client', 'lookup_client_key', 'validate_proof', 'create_auth_token']
 

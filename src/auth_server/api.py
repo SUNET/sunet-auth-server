@@ -49,7 +49,7 @@ class AuthServer(FastAPI):
                     logger.debug(f'Loaded custom flow {flow}')
                 except (ValueError, ModuleNotFoundError) as e:
                     logger.error(f'Could not load custom flow {flow}: {e}')
-        logger.info(f'Loaded flows: {[flow.name() for flow in flows]}')
+        logger.info(f'Loaded flows: {[flow.get_name() for flow in flows]}')
         return flows
 
 
