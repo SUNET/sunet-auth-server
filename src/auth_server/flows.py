@@ -44,9 +44,6 @@ class StopTransactionException(HTTPException):
 
 
 class BaseAuthFlow(ABC):
-
-    _version: int = 1
-
     def __init__(
         self,
         request: ContextRequest,
@@ -66,9 +63,12 @@ class BaseAuthFlow(ABC):
         self.grant_response: Optional[GrantResponse] = None
         self.mdq_data: Optional[MDQData] = None
 
+    class Meta:
+        version: int = 1
+
     @classmethod
     def get_version(cls) -> int:
-        return cls._version
+        return cls.Meta.version
 
     @classmethod
     def get_name(cls) -> str:
