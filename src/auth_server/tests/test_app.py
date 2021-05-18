@@ -73,7 +73,8 @@ class TestApp(TestCase):
         self.app = init_auth_server_api()
         self.client = TestClient(self.app)
 
-    def _clear_lru_cache(self):
+    @staticmethod
+    def _clear_lru_cache():
         # Clear lru_cache to allow config update
         load_config.cache_clear()
         load_jwks.cache_clear()
@@ -81,7 +82,7 @@ class TestApp(TestCase):
         get_tls_fed_metadata.cache_clear()
 
     def tearDown(self) -> None:
-        self.app = None
+        self.app = None  # type: ignore
         self.client = None
         self._clear_lru_cache()
         # Clear environment variables

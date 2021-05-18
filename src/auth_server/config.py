@@ -78,7 +78,7 @@ def read_config_file(config_file: str, config_path: str = '') -> Dict:
 def load_config() -> AuthServerConfig:
     config_file = environ.get('CONFIG_FILE')
     if config_file is not None:
-        config_path = environ.get('CONFIG_PATH')
+        config_path = environ.get('CONFIG_PATH', '')
         data = read_config_file(config_file=config_file, config_path=config_path)
         return AuthServerConfig.parse_obj(data)
     return AuthServerConfig()
