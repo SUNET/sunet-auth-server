@@ -84,17 +84,17 @@ async-generator==1.10 \
     # via
     #   -c requirements.txt
     #   fastapi
-async-lru==1.0.2 \
-    --hash=sha256:baa898027619f5cc31b7966f96f00e4fc0df43ba206a8940a5d1af5336a477cb
-    # via
-    #   -c requirements.txt
-    #   -r requirements.in
 async-timeout==3.0.1 \
     --hash=sha256:0c3c816a028d47f659d6ff5c745cb2acf1f966da1fe5c19c77a70282b25f4c5f \
     --hash=sha256:4291ca197d287d274d0b6cb5d6f8f8f82d434ed288f962539ff18cc9012f9ea3
     # via
     #   -c requirements.txt
     #   aiohttp
+async_lru==1.0.2 \
+    --hash=sha256:baa898027619f5cc31b7966f96f00e4fc0df43ba206a8940a5d1af5336a477cb
+    # via
+    #   -c requirements.txt
+    #   -r requirements.in
 attrs==21.2.0 \
     --hash=sha256:149e90d6d8ac20db7a955ad60cf0e6881a3f20d37096140088356da6c716b0b1 \
     --hash=sha256:ef6aaac3ca6cd92904cdd0d83f629a15f18053ec84e6432106f7a4d04ae4f5fb
@@ -443,6 +443,7 @@ pyyaml==5.4.1 \
     --hash=sha256:8c1be557ee92a20f184922c7b6424e8ab6691788e6d86137c5d93c1a6ec1b8fb
     # via
     #   -c requirements.txt
+    #   -r requirements.in
     #   fastapi
     #   uvicorn
 requests==2.25.1 \
