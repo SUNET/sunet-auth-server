@@ -3,6 +3,7 @@ import base64
 import json
 from datetime import timedelta
 from os import environ
+from tempfile import NamedTemporaryFile
 from typing import Any, Dict, Optional
 from unittest import TestCase, mock
 from unittest.mock import AsyncMock
@@ -20,6 +21,7 @@ from auth_server.models.jose import ECJWK, JWSType, SupportedAlgorithms, Support
 from auth_server.tests.utils import create_tls_fed_metadata, tls_fed_metadata_to_jws
 from auth_server.time_utils import utc_now
 from auth_server.tls_fed_auth import get_tls_fed_metadata
+from auth_server.utils import get_signing_key, load_jwks
 
 __author__ = 'lundberg'
 
@@ -53,15 +55,37 @@ class TestApp(TestCase):
             'AUTH_FLOWS': json.dumps(['FullFlow']),
         }
         environ.update(self.config)
-        load_config.cache_clear()  # Clear lru_cache to allow config update
         self.app = init_auth_server_api()
         self.client = TestClient(self.app)
+
         with open(f'{self.datadir}/test.cert', 'rb') as f:
             self.client_cert = x509.load_pem_x509_certificate(data=f.read())
         self.client_cert_str = base64.b64encode(self.client_cert.public_bytes(encoding=Encoding.DER)).decode('utf-8')
         with open(f'{self.datadir}/test_mdq.xml', 'rb') as f:
             self.mdq_response = f.read()
         self.client_jwk = jwk.JWK.generate(kid='default', kty='EC', crv='P-256')
+
+    def _update_app_config(self, config: Optional[Dict] = None):
+        if config is not None:
+            environ.clear()
+            environ.update(config)
+        self._clear_lru_cache()
+        self.app = init_auth_server_api()
+        self.client = TestClient(self.app)
+
+    def _clear_lru_cache(self):
+        # Clear lru_cache to allow config update
+        load_config.cache_clear()
+        load_jwks.cache_clear()
+        get_signing_key.cache_clear()
+        get_tls_fed_metadata.cache_clear()
+
+    def tearDown(self) -> None:
+        self.app = None
+        self.client = None
+        self._clear_lru_cache()
+        # Clear environment variables
+        environ.clear()
 
     def _get_access_token_claims(self, access_token: Dict, client: Optional[TestClient]) -> Dict[str, Any]:
         if client is None:
@@ -95,24 +119,42 @@ class TestApp(TestCase):
         assert response.status_code == 200
 
     def test_transaction_test_mode(self):
-        environ['AUTH_FLOWS'] = json.dumps(['FullFlow', 'TestFlow'])
-        load_config.cache_clear()  # Clear lru_cache to allow config update
-        app = init_auth_server_api()  # Instantiate new app with mdq flow
-        client = TestClient(app)
+        self.config['AUTH_FLOWS'] = json.dumps(['FullFlow', 'TestFlow'])
+        self._update_app_config(config=self.config)
 
         req = GrantRequest(
             client=Client(key=Key(proof=Proof.TEST)),
             access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
         )
-        response = client.post("/transaction", json=req.dict(exclude_none=True))
+        response = self.client.post("/transaction", json=req.dict(exclude_none=True))
         assert response.status_code == 200
         assert 'access_token' in response.json()
         access_token = response.json()['access_token']
         assert access_token['bound'] is False
 
         # Verify token and check claims
-        claims = self._get_access_token_claims(access_token=access_token, client=client)
+        claims = self._get_access_token_claims(access_token=access_token, client=self.client)
         assert claims['aud'] == 'some_audience'
+
+    def test_config_from_yaml(self):
+        environ['CONFIG_FILE'] = f'{self.datadir}/test_config.yaml'
+        environ['CONFIG_PATH'] = 'auth_server'
+        self._update_app_config()
+
+        req = GrantRequest(
+            client=Client(key=Key(proof=Proof.TEST)),
+            access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
+        )
+        response = self.client.post("/transaction", json=req.dict(exclude_none=True))
+        assert response.status_code == 200
+        assert 'access_token' in response.json()
+        access_token = response.json()['access_token']
+        assert access_token['bound'] is False
+
+        # Verify token and check claims
+        claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims['aud'] == 'another_audience'
+        assert claims['iss'] == 'authserver.local'
 
     @mock.patch('aiohttp.ClientSession.get', new_callable=AsyncMock)
     def test_transaction_mtls_mdq_with_key_reference(self, mock_mdq):
@@ -199,10 +241,8 @@ class TestApp(TestCase):
 
     @mock.patch('aiohttp.ClientSession.get', new_callable=AsyncMock)
     def test_mdq_flow(self, mock_mdq):
-        environ['AUTH_FLOWS'] = json.dumps(['MDQFlow'])
-        load_config.cache_clear()  # Clear lru_cache to allow config update
-        app = init_auth_server_api()  # Instantiate new app with mdq flow
-        client = TestClient(app)
+        self.config['AUTH_FLOWS'] = json.dumps(['MDQFlow'])
+        self._update_app_config(config=self.config)
 
         mock_mdq.return_value = MockResponse(content=self.mdq_response)
 
@@ -211,7 +251,7 @@ class TestApp(TestCase):
             access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
         )
         client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
-        response = client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
+        response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
         assert response.status_code == 200
         assert 'access_token' in response.json()
         access_token = response.json()['access_token']
@@ -219,20 +259,17 @@ class TestApp(TestCase):
         assert access_token['value'] is not None
 
         # Verify token and check claims
-        claims = self._get_access_token_claims(access_token=access_token, client=client)
+        claims = self._get_access_token_claims(access_token=access_token, client=self.client)
         assert claims['entity_id'] == 'https://test.localhost'
         assert claims['scopes'] == ['localhost']
 
     @mock.patch('aiohttp.ClientSession.get', new_callable=AsyncMock)
-    def test_tls_fed_flow(self, mock_metadata):
-        # Update config and init a new app
-        environ['AUTH_FLOWS'] = json.dumps(['TLSFEDFlow'])
-        environ['TLS_FED_METADATA'] = json.dumps(
+    def test_tls_fed_flow_remote_metadata(self, mock_metadata):
+        self.config['AUTH_FLOWS'] = json.dumps(['TLSFEDFlow'])
+        self.config['TLS_FED_METADATA'] = json.dumps(
             [{'remote': 'https://metadata.example.com/metadata.jws', 'jwks': f'{self.datadir}/tls_fed_jwks.json'}]
         )
-        load_config.cache_clear()  # Clear lru_cache to allow config update
-        app = init_auth_server_api()  # Instantiate new app with mdq flow
-        client = TestClient(app)
+        self._update_app_config(config=self.config)
 
         # Create metadata jws and set it as mock response
         with open(f'{self.datadir}/tls_fed_jwks.json', 'r') as f:
@@ -255,7 +292,7 @@ class TestApp(TestCase):
             client=Client(key=entity_id), access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
         )
         client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
-        response = client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
+        response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
         assert response.status_code == 200
         assert 'access_token' in response.json()
         access_token = response.json()['access_token']
@@ -263,21 +300,62 @@ class TestApp(TestCase):
         assert access_token['value'] is not None
 
         # Verify token and check claims
-        claims = self._get_access_token_claims(access_token=access_token, client=client)
+        claims = self._get_access_token_claims(access_token=access_token, client=self.client)
         assert claims['entity_id'] == 'https://test.localhost'
         assert claims['scopes'] == ['test.localhost']
         assert claims['organization_id'] == 'SE0123456789'
 
+    def test_tls_fed_flow_local_metadata(self):
+        # Create metadata jws and save it as a temporary file
+        with open(f'{self.datadir}/tls_fed_jwks.json', 'r') as f:
+            tls_fed_jwks = jwk.JWKSet()
+            tls_fed_jwks.import_keyset(f.read())
+
+        entity_id = 'https://test.localhost'
+        metadata = create_tls_fed_metadata(self.datadir, entity_id=entity_id, client_cert=self.client_cert_str)
+        metadata_jws = tls_fed_metadata_to_jws(
+            metadata,
+            key=tls_fed_jwks.get_key('metadata_signing_key_id'),
+            issuer='metdata.example.com',
+            expires=timedelta(days=14),
+            alg=SupportedAlgorithms.ES256,
+            compact=False,
+        )
+
+        with NamedTemporaryFile() as f:
+            f.write(metadata_jws)
+            f.flush()
+            self.config['AUTH_FLOWS'] = json.dumps(['TLSFEDFlow'])
+            self.config['TLS_FED_METADATA'] = json.dumps(
+                [{'local': f'{f.name}', 'jwks': f'{self.datadir}/tls_fed_jwks.json'}]
+            )
+            self._update_app_config(config=self.config)
+
+            # Start transaction
+            req = GrantRequest(
+                client=Client(key=entity_id), access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
+            )
+            client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
+            response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
+            assert response.status_code == 200
+            assert 'access_token' in response.json()
+            access_token = response.json()['access_token']
+            assert access_token['bound'] is False
+            assert access_token['value'] is not None
+
+            # Verify token and check claims
+            claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+            assert claims['entity_id'] == 'https://test.localhost'
+            assert claims['scopes'] == ['test.localhost']
+            assert claims['organization_id'] == 'SE0123456789'
+
     @mock.patch('aiohttp.ClientSession.get', new_callable=AsyncMock)
     def test_tls_fed_flow_expired_entity(self, mock_metadata):
-        # Update config and init a new app
-        environ['AUTH_FLOWS'] = json.dumps(['TLSFEDFlow'])
-        environ['TLS_FED_METADATA'] = json.dumps(
+        self.config['AUTH_FLOWS'] = json.dumps(['TLSFEDFlow'])
+        self.config['TLS_FED_METADATA'] = json.dumps(
             [{'remote': 'https://metadata.example.com/metadata.jws', 'jwks': f'{self.datadir}/tls_fed_jwks.json'}]
         )
-        load_config.cache_clear()  # Clear lru_cache to allow config update
-        app = init_auth_server_api()  # Instantiate new app with mdq flow
-        client = TestClient(app)
+        self._update_app_config(config=self.config)
 
         # Create metadata jws and set it as mock response
         with open(f'{self.datadir}/tls_fed_jwks.json', 'r') as f:
@@ -302,31 +380,27 @@ class TestApp(TestCase):
             client=Client(key=entity_id), access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
         )
         client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
-        response = client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
+        response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
         assert response.status_code == 401
 
     def test_config_flow(self):
-        # Update config and init a new app
-        environ['AUTH_FLOWS'] = json.dumps(['ConfigFlow'])
+        self.config['AUTH_FLOWS'] = json.dumps(['ConfigFlow'])
         client_key = ClientKey.parse_obj(
             {'proof': Proof.MTLS, 'cert': self.client_cert_str, 'claims': {'test_claim': 'test_claim_value'}}
         )
         key_reference = 'test_key_ref'
-        environ['CLIENT_KEYS'] = json.dumps({key_reference: client_key.dict(exclude_unset=True)})
-
-        load_config.cache_clear()  # Clear lru_cache to allow config update
-        app = init_auth_server_api()  # Instantiate new app with mdq flow
-        client = TestClient(app)
+        self.config['CLIENT_KEYS'] = json.dumps({key_reference: client_key.dict(exclude_unset=True)})
+        self._update_app_config(config=self.config)
 
         req = GrantRequest(
             client=Client(key=key_reference), access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
         )
         client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
-        response = client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
+        response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
         assert response.status_code == 200
         assert 'access_token' in response.json()
         access_token = response.json()['access_token']
         assert access_token['bound'] is False
         # Verify token and check claims
-        claims = self._get_access_token_claims(access_token=access_token, client=client)
+        claims = self._get_access_token_claims(access_token=access_token, client=self.client)
         assert claims['test_claim'] == 'test_claim_value'

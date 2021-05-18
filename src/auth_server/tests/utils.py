@@ -22,6 +22,7 @@ def tls_fed_metadata_to_jws(
     expires: timedelta,
     alg: SupportedAlgorithms,
     issue_time: Optional[datetime] = None,
+    compact: bool = True,
 ) -> bytes:
     payload = metadata.json(exclude_unset=True)
     if issue_time is None:
@@ -36,7 +37,7 @@ def tls_fed_metadata_to_jws(
     }
     _jws = jws.JWS(payload=payload)
     _jws.add_signature(key=key, alg=alg.value, protected=json.dumps(protected_header))
-    return _jws.serialize(compact=True).encode()
+    return _jws.serialize(compact=compact).encode()
 
 
 def create_tls_fed_metadata(
