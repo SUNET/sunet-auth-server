@@ -6,7 +6,7 @@ from typing import List, Optional, Union
 
 from pydantic import BaseModel, Field
 
-from auth_server.utils import utc_now
+from auth_server.time_utils import utc_now
 
 __author__ = 'lundberg'
 

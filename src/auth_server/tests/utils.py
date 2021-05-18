@@ -10,7 +10,7 @@ from jwcrypto import jwk, jws
 from auth_server.models.jose import SupportedAlgorithms
 from auth_server.models.tls_fed_metadata import Entity
 from auth_server.models.tls_fed_metadata import Model as TLSFEDMetadata
-from auth_server.utils import utc_now
+from auth_server.time_utils import utc_now
 
 __author__ = 'lundberg'
 

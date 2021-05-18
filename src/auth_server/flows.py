@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from abc import ABC
 from enum import Enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
 from jwcrypto import jwt
@@ -31,6 +31,7 @@ class BuiltInFlow(str, Enum):
     MDQFLOW = 'MDQFlow'
     TLSFEDFLOW = 'TLSFEDFlow'
     TESTFLOW = 'TestFlow'
+    CONFIGFLOW = 'ConfigFlow'
 
 
 # Use this to go to next flow
@@ -62,6 +63,7 @@ class BaseAuthFlow(ABC):
         self.proof_ok: bool = False
         self.grant_response: Optional[GrantResponse] = None
         self.mdq_data: Optional[MDQData] = None
+        self.config_claims: Optional[Dict[str, Any]] = None
 
     class Meta:
         version: int = 1
@@ -94,10 +96,10 @@ class BaseAuthFlow(ABC):
     async def transaction(self) -> Optional[GrantResponse]:
         for flow_step in await self.steps():
             m = getattr(self, flow_step)
-            logger.debug(f'step {flow_step} in {self} will be called')
+            logger.debug(f'step {flow_step} in {self.get_name()} will be called')
             res = await m()
             if isinstance(res, GrantResponse):
-                logger.info(f'step {flow_step} in {self} returned GrantResponse')
+                logger.info(f'step {flow_step} in {self.get_name()} returned GrantResponse')
                 logger.debug(res.dict(exclude_unset=True))
                 return res
             logger.debug(f'step {flow_step} done, next step will be called')
@@ -192,6 +194,50 @@ class TestFlow(FullFlow):
         if self.grant_request.client.key.proof is Proof.TEST:
             logger.warning(f'TEST_MODE - access token will be returned with no proof')
             self.proof_ok = True
+        return None
+
+
+class ConfigFlow(FullFlow):
+    async def lookup_client_key(self) -> Optional[GrantResponse]:
+        # please mypy, enforced in CommonRules or previous steps
+        assert isinstance(self.grant_request.client, Client)
+
+        if not isinstance(self.grant_request.client.key, str):
+            raise NextFlowException(status_code=400, detail='key by reference is mandatory')
+
+        logger.info('Looking up key in config')
+        logger.debug(f'key reference: {self.grant_request.client.key}')
+        client_key = await lookup_client_key_from_config(request=self.request, key_id=self.grant_request.client.key)
+        if client_key is None:
+            raise NextFlowException(status_code=400, detail='no client key found')
+
+        logger.debug(f'key by reference found: {client_key}')
+        self.grant_request.client.key = client_key
+        # Load any claims associated with the key
+        if self.request.context.key_reference in self.config.client_keys:  # please mypy
+            self.config_claims = self.config.client_keys[self.request.context.key_reference].claims
+        return None
+
+    async def create_auth_token(self) -> Optional[GrantResponse]:
+        if self.proof_ok:
+            # Create access token
+            claims = Claims(
+                iss=self.config.auth_token_issuer,
+                exp=self.config.auth_token_expires_in,
+                aud=self.config.auth_token_audience,
+            )
+
+            # Update the claims with any claims found in config for this key
+            claims_dict = claims.to_rfc7519()
+            if self.config_claims is not None:
+                claims_dict.update(self.config_claims)
+
+            token = jwt.JWT(header={'alg': 'ES256'}, claims=claims_dict)
+            token.make_signed_token(self.signing_key)
+            auth_response = GrantResponse(access_token=AccessTokenResponse(bound=False, value=token.serialize()))
+            logger.info(f'OK:{self.request.context.key_reference}:{self.config.auth_token_audience}')
+            logger.debug(f'claims: {claims_dict}')
+            return auth_response
         return None
 
 

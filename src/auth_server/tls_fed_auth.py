@@ -12,15 +12,13 @@ from cryptography.x509 import load_pem_x509_certificate
 from jwcrypto import jwk, jws
 from pydantic import BaseModel, ValidationError
 
-# from auth_server.config import load_config
 from auth_server.config import load_config
 from auth_server.models.gnap import Key, Proof
 from auth_server.models.tls_fed_metadata import Entity
 from auth_server.models.tls_fed_metadata import Model as TLSFEDMetadata
+from auth_server.time_utils import utc_now
 
 __author__ = 'lundberg'
-
-from auth_server.utils import utc_now
 
 logger = logging.getLogger(__name__)
 

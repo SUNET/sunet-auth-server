@@ -2,7 +2,6 @@
 import importlib
 import json
 import logging
-from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Callable, Iterable, Mapping, Sequence, Union
 
@@ -15,10 +14,6 @@ __author__ = 'lundberg'
 
 
 logger = logging.getLogger(__name__)
-
-
-def utc_now() -> datetime:
-    return datetime.now(tz=timezone.utc)
 
 
 @lru_cache()
