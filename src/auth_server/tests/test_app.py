@@ -9,6 +9,7 @@ from unittest import TestCase, mock
 from unittest.mock import AsyncMock
 
 import pkg_resources
+import yaml
 from cryptography import x509
 from cryptography.hazmat.primitives.serialization import Encoding
 from jwcrypto import jwk, jws, jwt
@@ -138,9 +139,17 @@ class TestApp(TestCase):
         assert claims['aud'] == 'some_audience'
 
     def test_config_from_yaml(self):
-        environ['CONFIG_FILE'] = f'{self.datadir}/test_config.yaml'
-        environ['CONFIG_PATH'] = 'auth_server'
-        self._update_app_config()
+        # Set absolute path to testing_jwks.json
+        config_file_path = f'{self.datadir}/test_config.yaml'
+        with open(config_file_path, 'r') as f:
+            config = yaml.safe_load(f)
+        with NamedTemporaryFile(mode='w') as tf:
+            config['auth_server']['keystore_path'] = f'{self.datadir}/testing_jwks.json'
+            yaml.dump(config, tf)
+
+            environ['CONFIG_FILE'] = f'{tf.name}'
+            environ['CONFIG_PATH'] = 'auth_server'
+            self._update_app_config()
 
         req = GrantRequest(
             client=Client(key=Key(proof=Proof.TEST)),
