@@ -1,6 +1,7 @@
 -c constraints.txt
 fastapi[all]
 aiohttp[speedups]
+pyyaml
 aiofile
 async_lru
 jwcrypto

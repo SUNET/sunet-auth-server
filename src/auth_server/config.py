@@ -4,9 +4,11 @@ from __future__ import annotations
 from datetime import timedelta
 from enum import Enum
 from functools import lru_cache
+from os import environ
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+import yaml
 from pydantic import AnyUrl, BaseModel, BaseSettings, Field
 
 from auth_server.models.gnap import Proof
@@ -61,7 +63,22 @@ class AuthServerConfig(BaseSettings):
         frozen = True  # make hashable
 
 
+def read_config_file(config_file: str, config_path: str = '') -> Dict:
+    with open(config_file, 'r') as f:
+        data = yaml.safe_load(f)
+    # traverse the loaded data to the right namespace, discarding everything else
+    for this in config_path.split('/'):
+        if not this:
+            continue
+        data = data[this]
+    return data
+
+
 @lru_cache
 def load_config() -> AuthServerConfig:
-    # TODO: Implement config loading from yaml file
+    config_file = environ.get('CONFIG_FILE')
+    if config_file is not None:
+        config_path = environ.get('CONFIG_PATH', '')
+        data = read_config_file(config_file=config_file, config_path=config_path)
+        return AuthServerConfig.parse_obj(data)
     return AuthServerConfig()

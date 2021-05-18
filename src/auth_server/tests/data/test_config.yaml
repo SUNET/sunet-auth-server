@@ -1,0 +1,10 @@
+---
+auth_server:
+  testing: yes
+  log_level: DEBUG
+  # keystore_path is replaced in test case
+  keystore_path: ~
+  auth_token_issuer: authserver.local
+  auth_token_audience: another_audience
+  auth_flows:
+    - TestFlow

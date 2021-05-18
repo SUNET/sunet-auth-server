@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import List, Mapping, Optional
 
 import aiohttp
+from aiofile import async_open
 from async_lru import alru_cache
 from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.x509 import load_pem_x509_certificate
@@ -74,8 +75,8 @@ async def get_remote_metadata(url: str) -> Optional[str]:
 async def get_local_metadata(path: Path) -> Optional[str]:
     # Open local jws file
     try:
-        with open(path, 'r') as f:
-            return f.read()
+        async with async_open(path, 'r') as f:
+            return await f.read()
     except IOError as e:
         logger.error(f'Could not open {path}: {e}')
     return None

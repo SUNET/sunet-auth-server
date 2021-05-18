@@ -395,6 +395,7 @@ pyyaml==5.4.1 \
     --hash=sha256:8c1be557ee92a20f184922c7b6424e8ab6691788e6d86137c5d93c1a6ec1b8fb
     # via
     #   -c requirements.txt
+    #   -r requirements.in
     #   fastapi
     #   uvicorn
 requests==2.25.1 \
