@@ -19,6 +19,7 @@ from auth_server.api import init_auth_server_api
 from auth_server.config import ClientKey, load_config
 from auth_server.models.gnap import AccessTokenRequest, AccessTokenRequestFlags, Client, GrantRequest, Key, Proof
 from auth_server.models.jose import ECJWK, JWSType, SupportedAlgorithms, SupportedHTTPMethods
+from auth_server.models.status import Status
 from auth_server.tests.utils import create_tls_fed_metadata, tls_fed_metadata_to_jws
 from auth_server.time_utils import utc_now
 from auth_server.tls_fed_auth import get_tls_fed_metadata
@@ -48,12 +49,12 @@ class TestApp(TestCase):
     def setUp(self) -> None:
         self.datadir = pkg_resources.resource_filename(__name__, 'data')
         self.config = {
-            'TESTING': 'true',
-            'LOG_LEVEL': 'DEBUG',
-            'KEYSTORE': f'{self.datadir}/testing_jwks.json',
-            'MDQ_SERVER': 'http://localhost/mdq',
-            'AUTH_TOKEN_AUDIENCE': 'some_audience',
-            'AUTH_FLOWS': json.dumps(['FullFlow']),
+            'testing': 'true',
+            'log_level': 'DEBUG',
+            'keystore_path': f'{self.datadir}/testing_jwks.json',
+            'mdq_server': 'http://localhost/mdq',
+            'auth_token_audience': 'some_audience',
+            'auth_flows': json.dumps(['FullFlow']),
         }
         environ.update(self.config)
         self.app = init_auth_server_api()
@@ -97,6 +98,12 @@ class TestApp(TestCase):
         token = jwt.JWT(key=jwt.JWK(**response.json()), jwt=access_token['value'])
         return json.loads(token.claims)
 
+    def test_get_status_healty(self):
+        response = self.client.get("/status/healthy")
+        assert response.status_code == 200
+        assert 'status' in response.json()
+        assert response.json()['status'] == Status.OK.value
+
     def test_read_jwks(self):
         response = self.client.get("/.well-known/jwks.json")
         assert response.status_code == 200
@@ -121,7 +128,7 @@ class TestApp(TestCase):
         assert response.status_code == 200
 
     def test_transaction_test_mode(self):
-        self.config['AUTH_FLOWS'] = json.dumps(['FullFlow', 'TestFlow'])
+        self.config['auth_flows'] = json.dumps(['FullFlow', 'TestFlow'])
         self._update_app_config(config=self.config)
 
         req = GrantRequest(
@@ -147,8 +154,8 @@ class TestApp(TestCase):
             config['auth_server']['keystore_path'] = f'{self.datadir}/testing_jwks.json'
             yaml.dump(config, tf)
 
-            environ['CONFIG_FILE'] = f'{tf.name}'
-            environ['CONFIG_PATH'] = 'auth_server'
+            environ['config_file'] = f'{tf.name}'
+            environ['config_path'] = 'auth_server'
             self._update_app_config()
 
         req = GrantRequest(
@@ -251,7 +258,7 @@ class TestApp(TestCase):
 
     @mock.patch('aiohttp.ClientSession.get', new_callable=AsyncMock)
     def test_mdq_flow(self, mock_mdq):
-        self.config['AUTH_FLOWS'] = json.dumps(['MDQFlow'])
+        self.config['auth_flows'] = json.dumps(['MDQFlow'])
         self._update_app_config(config=self.config)
 
         mock_mdq.return_value = MockResponse(content=self.mdq_response)
@@ -275,8 +282,8 @@ class TestApp(TestCase):
 
     @mock.patch('aiohttp.ClientSession.get', new_callable=AsyncMock)
     def test_tls_fed_flow_remote_metadata(self, mock_metadata):
-        self.config['AUTH_FLOWS'] = json.dumps(['TLSFEDFlow'])
-        self.config['TLS_FED_METADATA'] = json.dumps(
+        self.config['auth_flows'] = json.dumps(['TLSFEDFlow'])
+        self.config['tls_fed_metadata'] = json.dumps(
             [{'remote': 'https://metadata.example.com/metadata.jws', 'jwks': f'{self.datadir}/tls_fed_jwks.json'}]
         )
         self._update_app_config(config=self.config)
@@ -335,8 +342,8 @@ class TestApp(TestCase):
         with NamedTemporaryFile() as f:
             f.write(metadata_jws)
             f.flush()
-            self.config['AUTH_FLOWS'] = json.dumps(['TLSFEDFlow'])
-            self.config['TLS_FED_METADATA'] = json.dumps(
+            self.config['auth_flows'] = json.dumps(['TLSFEDFlow'])
+            self.config['tls_fed_metadata'] = json.dumps(
                 [{'local': f'{f.name}', 'jwks': f'{self.datadir}/tls_fed_jwks.json'}]
             )
             self._update_app_config(config=self.config)
@@ -361,8 +368,8 @@ class TestApp(TestCase):
 
     @mock.patch('aiohttp.ClientSession.get', new_callable=AsyncMock)
     def test_tls_fed_flow_expired_entity(self, mock_metadata):
-        self.config['AUTH_FLOWS'] = json.dumps(['TLSFEDFlow'])
-        self.config['TLS_FED_METADATA'] = json.dumps(
+        self.config['auth_flows'] = json.dumps(['TLSFEDFlow'])
+        self.config['tls_fed_metadata'] = json.dumps(
             [{'remote': 'https://metadata.example.com/metadata.jws', 'jwks': f'{self.datadir}/tls_fed_jwks.json'}]
         )
         self._update_app_config(config=self.config)
@@ -394,12 +401,12 @@ class TestApp(TestCase):
         assert response.status_code == 401
 
     def test_config_flow(self):
-        self.config['AUTH_FLOWS'] = json.dumps(['ConfigFlow'])
+        self.config['auth_flows'] = json.dumps(['ConfigFlow'])
         client_key = ClientKey.parse_obj(
             {'proof': Proof.MTLS, 'cert': self.client_cert_str, 'claims': {'test_claim': 'test_claim_value'}}
         )
         key_reference = 'test_key_ref'
-        self.config['CLIENT_KEYS'] = json.dumps({key_reference: client_key.dict(exclude_unset=True)})
+        self.config['client_keys'] = json.dumps({key_reference: client_key.dict(exclude_unset=True)})
         self._update_app_config(config=self.config)
 
         req = GrantRequest(
