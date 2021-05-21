@@ -1,0 +1,24 @@
+builders:
+  - script
+triggers:
+  cron: "@weekly"
+script:
+  - "python3.8 -m venv venv"
+  - ". venv/bin/activate"
+  - "pip install -U pip setuptools wheel mypy"
+  - "pip install --index-url https://pypi.sunet.se -r test_requirements.txt"
+  - "pip freeze"
+  - "make test"
+  - "make typecheck"
+clean_workspace: true
+
+extra_jobs:
+  - name: sunet-auth-server-docker
+    builders:
+      - docker
+    docker_name: sunet/sunet-auth-server
+    triggers:
+      github_push: false
+      cron: null
+    upstream:
+      - sunet-auth-server
