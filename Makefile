@@ -11,9 +11,6 @@ reformat:
 typecheck:
 	mypy --ignore-missing-imports $(SOURCE)
 
-typecheck_extra:
-	mypy --ignore-missing-imports $(SOURCE)
-
 sync_deps: update_deps
 	# Can't use pip-sync until https://github.com/jazzband/pip-tools/issues/1087 is resolved
 	# pip-sync
