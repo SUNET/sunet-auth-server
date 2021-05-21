@@ -3,13 +3,15 @@ import logging
 from typing import List, Type, cast
 
 from fastapi import FastAPI
+from pydantic import ValidationError
 
-from auth_server.config import AuthServerConfig, load_config
+from auth_server.config import AuthServerConfig, load_config, ConfigurationError
 from auth_server.context import ContextRequestRoute
 from auth_server.flows import BaseAuthFlow, BuiltInFlow, ConfigFlow, FullFlow, MDQFlow, TestFlow, TLSFEDFlow
 from auth_server.log import init_logging
 from auth_server.middleware import JOSEMiddleware
 from auth_server.routers.root import root_router
+from auth_server.routers.status import status_router
 from auth_server.utils import import_class
 
 __author__ = 'lundberg'
@@ -60,4 +62,5 @@ def init_auth_server_api() -> AuthServer:
     app.router.route_class = ContextRequestRoute
     app.add_middleware(JOSEMiddleware)
     app.include_router(root_router)
+    app.include_router(status_router)
     return app
