@@ -1,5 +1,5 @@
 -c constraints.txt
-fastapi[all]
+fastapi
 aiohttp[speedups]
 pyyaml
 aiofile
@@ -7,3 +7,7 @@ async_lru
 jwcrypto
 xmltodict
 loguru
+uvicorn[standard]
+gunicorn
+# jwcrypto needs six
+six
