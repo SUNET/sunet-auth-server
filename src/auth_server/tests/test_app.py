@@ -85,7 +85,7 @@ class TestApp(TestCase):
 
     def tearDown(self) -> None:
         self.app = None  # type: ignore
-        self.client = None
+        self.client = None  # type: ignore
         self._clear_lru_cache()
         # Clear environment variables
         environ.clear()
