@@ -50,7 +50,12 @@ async def xml_mdq_get(entity_id: str, mdq_url: str) -> MDQData:
     session = aiohttp.ClientSession()
     url = f'{mdq_url}/{identifier}'
     logger.debug(f'Trying {url}')
-    response = await session.get(url=url, headers=headers)
+    try:
+        response = await session.get(url=url, headers=headers)
+    except aiohttp.ClientError as e:
+        logger.error(f'{url} failed: {e}')
+        return MDQData()
+
     if response.status != 200:
         logger.error(f'{mdq_url}/{identifier} returned {response.status}')
         return MDQData()

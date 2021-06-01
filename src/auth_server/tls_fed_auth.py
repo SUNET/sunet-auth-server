@@ -62,7 +62,11 @@ async def get_remote_metadata(url: str) -> Optional[str]:
     # Get remote metadata jws
     session = aiohttp.ClientSession()
     logger.debug(f'Trying {url}')
-    response = await session.get(url=url)
+    try:
+        response = await session.get(url=url)
+    except aiohttp.ClientError as e:
+        logger.error(f'{url} failed: {e}')
+        return None
     if response.status != 200:
         logger.error(f'{url} returned {response.status}')
         return None
