@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import json
+import os
 from datetime import timedelta
 from enum import Enum
 from functools import lru_cache
@@ -82,8 +84,16 @@ def load_config() -> AuthServerConfig:
         if config_file is not None:
             config_path = environ.get('config_path', '')
             data = read_config_file(config_file=config_file, config_path=config_path)
-            return AuthServerConfig.parse_obj(data)
-        return AuthServerConfig()
+            config = AuthServerConfig.parse_obj(data)
+        else:
+            config = AuthServerConfig()
+        # Save config to a file in /dev/shm for introspection
+        fd_int = os.open(f'/dev/shm/{config.app_name}_config.yaml', os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with open(fd_int, 'w') as fd:
+            fd.write('---\n')
+            # have to take the detour over json to get things like enums serialised to strings
+            yaml.safe_dump(json.loads(config.json()), fd)
+        return config
     except ValidationError as e:
         stderr.write(f'Configuration error: {e}')
         stderr.write('Configuration schema:')
