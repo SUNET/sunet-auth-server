@@ -47,6 +47,9 @@ async def transaction(
     config: AuthServerConfig = Depends(load_config),
     signing_key: JWK = Depends(get_signing_key),
 ):
+    logger.debug(f'grant_request: {grant_req}')
+    logger.debug(f'tls_client_cert: {tls_client_cert}')
+    logger.debug(f'detached_jws: {detached_jws}')
 
     # Run configured auth flows
     for auth_flow in request.app.auth_flows:
