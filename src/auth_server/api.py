@@ -5,7 +5,7 @@ from typing import List, Type, cast
 from fastapi import FastAPI
 from pydantic import ValidationError
 
-from auth_server.config import AuthServerConfig, load_config, ConfigurationError
+from auth_server.config import AuthServerConfig, ConfigurationError, load_config
 from auth_server.context import ContextRequestRoute
 from auth_server.flows import BaseAuthFlow, BuiltInFlow, ConfigFlow, FullFlow, MDQFlow, TestFlow, TLSFEDFlow
 from auth_server.log import init_logging

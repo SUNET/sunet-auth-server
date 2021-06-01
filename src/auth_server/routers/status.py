@@ -3,7 +3,7 @@ import logging
 
 from fastapi import APIRouter
 
-from auth_server.models.status import StatusResponse, Status
+from auth_server.models.status import Status, StatusResponse
 
 __author__ = 'lundberg'
 
