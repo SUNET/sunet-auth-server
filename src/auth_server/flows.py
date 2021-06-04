@@ -146,7 +146,7 @@ class FullFlow(CommonRules):
 
         # MTLS
         if self.grant_request.client.key.proof is Proof.MTLS:
-            if self.tls_client_cert is None:
+            if not self.tls_client_cert:
                 raise NextFlowException(status_code=400, detail='no client certificate found')
             self.proof_ok = await check_mtls_proof(grant_request=self.grant_request, cert=self.tls_client_cert)
         # HTTPSIGN
@@ -159,7 +159,7 @@ class FullFlow(CommonRules):
             )
         # JWSD
         elif self.grant_request.client.key.proof is Proof.JWSD:
-            if self.detached_jws is None:
+            if not self.detached_jws:
                 raise NextFlowException(status_code=400, detail='no detached jws header found')
             self.proof_ok = await check_jwsd_proof(
                 request=self.request, grant_request=self.grant_request, detached_jws=self.detached_jws
@@ -272,7 +272,7 @@ class MDQFlow(CommonRules):
 
         if self.grant_request.client.key.proof is not Proof.MTLS:
             raise NextFlowException(status_code=400, detail='MTLS is the only supported proof method')
-        if self.tls_client_cert is None:
+        if not self.tls_client_cert:
             raise NextFlowException(status_code=400, detail='no client certificate found')
 
         self.proof_ok = await check_mtls_proof(grant_request=self.grant_request, cert=self.tls_client_cert)

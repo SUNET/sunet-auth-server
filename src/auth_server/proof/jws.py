@@ -77,20 +77,33 @@ async def check_jws_proof(request: ContextRequest, grant_request: GrantRequest, 
 async def check_jwsd_proof(request: ContextRequest, grant_request: GrantRequest, detached_jws: str) -> bool:
     # Please mypy
     if not isinstance(grant_request.client, Client):
-        raise RuntimeError('client needs to be of type gnap.Client')
+        raise HTTPException(status_code=400, detail='Client reference not implemented')
     if not isinstance(grant_request.client.key, Key):
-        raise RuntimeError('key needs to be of type gnap.Key')
+        raise HTTPException(status_code=500, detail='Client key unexpected a reference')
 
     logger.debug(f'detached_jws: {detached_jws}')
-    header, signature = detached_jws.split('.')
+
+    # recreate jws
+    try:
+        header, signature = detached_jws.split('.')
+    except ValueError as e:
+        logger.error(f'invalid detached jws: {e}')
+        return False
+
     payload = base64url_encode(grant_request.json(exclude_unset=True))
     raw_jws = f'{header}.{payload}.{signature}'
     _jws = jws.JWS()
-    _jws.deserialize(raw_jws=raw_jws)
-    logger.info('Detached JWS token deserialized')
-    logger.debug(f'JWS: {_jws.objects}')
 
-    # Verify jws
+    # deserialize jws
+    try:
+        _jws.deserialize(raw_jws=raw_jws)
+        logger.info('Detached JWS token deserialized')
+        logger.debug(f'JWS: {_jws.objects}')
+    except jws.InvalidJWSObject as e:
+        logger.error(f'Failed to deserialize detached jws: {e}')
+        return False
+
+    # verify jws
     client_key = None
     if grant_request.client.key.jwk is not None:
         client_key = jws.JWK(**grant_request.client.key.jwk.dict(exclude_unset=True))

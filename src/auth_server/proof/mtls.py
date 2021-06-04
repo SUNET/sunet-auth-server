@@ -16,8 +16,12 @@ logger = logging.getLogger(__name__)
 
 
 async def check_mtls_proof(grant_request: GrantRequest, cert: str) -> bool:
-    proof_ok = False
-    tls_cert = load_cert_from_str(cert)
+    try:
+        tls_cert = load_cert_from_str(cert)
+    except ValueError:
+        logger.error(f'could not load client cert: {cert}')
+        return False
+
     tls_fingerprint = b64encode(tls_cert.fingerprint(algorithm=SHA256())).decode('utf-8')
     logger.debug(f'tls cert fingerprint: {str(tls_fingerprint)}')
 
@@ -30,13 +34,15 @@ async def check_mtls_proof(grant_request: GrantRequest, cert: str) -> bool:
         logger.debug(f'cert#S256: {grant_request.client.key.cert_S256}')
         if tls_fingerprint == grant_request.client.key.cert_S256:
             logger.info(f'TLS cert fingerprint matches grant request cert#S256')
-            proof_ok = True
+            return True
+        logger.info(f'TLS cert fingerprint does NOT match grant request cert#S256')
     elif grant_request.client.key.cert is not None:
         grant_cert = load_cert_from_str(grant_request.client.key.cert)
         grant_cert_fingerprint = b64encode(grant_cert.fingerprint(algorithm=SHA256())).decode('utf-8')
         logger.debug(f'grant cert fingerprint: {grant_cert_fingerprint}')
         if tls_fingerprint == grant_cert_fingerprint:
             logger.info(f'TLS cert fingerprint matches grant request cert fingerprint')
-            proof_ok = True
+            return True
+        logger.info(f'TLS cert fingerprint does NOT match grant request cert fingerprint')
 
-    return proof_ok
+    return False
