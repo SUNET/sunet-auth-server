@@ -90,7 +90,17 @@ async def check_jwsd_proof(request: ContextRequest, grant_request: GrantRequest,
         logger.error(f'invalid detached jws: {e}')
         return False
 
-    payload = base64url_encode(grant_request.json(exclude_unset=True))
+    if request.context.key_reference is not None:
+        # If key was sent as reference in grant request we need to mirror that when
+        # rebuilding the request as that was what was signed
+        grant_request_orig = grant_request.copy(deep=True)
+        # please mypy
+        assert isinstance(grant_request_orig.client, Client)
+        grant_request_orig.client.key = request.context.key_reference
+        payload = base64url_encode(grant_request_orig.json(exclude_unset=True))
+    else:
+        payload = base64url_encode(grant_request.json(exclude_unset=True))
+
     raw_jws = f'{header}.{payload}.{signature}'
     _jws = jws.JWS()
 
