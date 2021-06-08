@@ -401,7 +401,7 @@ class TestApp(TestCase):
         assert response.status_code == 401
 
     def test_config_flow(self):
-        self.config['auth_flows'] = json.dumps(['ConfigFlow'])
+        self.config['auth_flows'] = json.dumps(['TestFlow', 'ConfigFlow'])
         client_key = ClientKey.parse_obj(
             {'proof': Proof.MTLS, 'cert': self.client_cert_str, 'claims': {'test_claim': 'test_claim_value'}}
         )
