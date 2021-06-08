@@ -49,11 +49,9 @@ async def lookup_client_key_from_config(request: ContextRequest, key_id: str) ->
     config = load_config()
     request.context.key_reference = key_id  # Remember the key reference for later use
     client_key = None
-    logger.info(f'Trying to load key with key id: {key_id}')
 
     # Look for a key in config
     if key_id in config.client_keys:
-        logger.info('Trying to load key from config')
         client_key = await load_config_key(config.client_keys[key_id])
 
     return client_key

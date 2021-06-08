@@ -118,6 +118,14 @@ class CommonRules(BaseAuthFlow):
             raise NextFlowException(status_code=400, detail='client by reference not implemented')
         return None
 
+    async def lookup_client_key(self) -> Optional[GrantResponse]:
+        # please mypy, enforced in CommonRules or previous steps
+        assert isinstance(self.grant_request.client, Client)
+
+        if not isinstance(self.grant_request.client.key, Key):
+            raise NextFlowException(status_code=400, detail='key by reference not supported')
+        return None
+
 
 class FullFlow(CommonRules):
     async def lookup_client_key(self) -> Optional[GrantResponse]:
