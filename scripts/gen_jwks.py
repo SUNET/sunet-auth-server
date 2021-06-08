@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import argparse
 import json
 import sys
 
@@ -7,13 +8,13 @@ from jwcrypto import jwk
 __author__ = 'lundberg'
 
 
-def main(path: str = None):
+def main(args: argparse.Namespace):
     print('Creating new jwks')
     key = jwk.JWK.generate(kid='default', kty='EC', crv='P-256')
     jwks = jwk.JWKSet()
     jwks.add(key)
-    if path is not None:
-        f = open(path, 'w')
+    if args.out is not None:
+        f = open(args.out, 'w')
         msg = f'\njwks written to {f.name}\n'
         indent = None
     else:
@@ -25,7 +26,6 @@ def main(path: str = None):
 
 
 if __name__ == '__main__':
-    path = None
-    if len(sys.argv) == 2:
-        path = sys.argv[1]
-    main(path=path)
+    parser = argparse.ArgumentParser(description='Validate and deserialize a JWT token')
+    parser.add_argument('--out', '-o', help='out file', default=None, type=str)
+    main(args=parser.parse_args())
