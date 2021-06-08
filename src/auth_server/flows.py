@@ -139,6 +139,11 @@ class FullFlow(CommonRules):
             client_key = await mdq_data_to_key(self.mdq_data)
             if client_key is not None:
                 self.grant_request.client.key = client_key
+
+        # If the key is still a reference give up and call the next flow
+        if not isinstance(self.grant_request.client.key, Key):
+            raise NextFlowException(status_code=400, detail='no client key found')
+
         return None
 
     async def validate_proof(self) -> Optional[GrantResponse]:
