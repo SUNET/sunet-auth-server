@@ -240,13 +240,9 @@ class TestApp(TestCase):
         )
         data = _jws.serialize(compact=True)
 
-        _tmp_jws = jws.JWS()
-        _tmp_jws.deserialize(raw_jws=data)
-        _tmp_jws.verify(key=self.client_jwk)
-
         # Remove payload from serialized jws
         header, payload, signature = data.split('.')
-        client_header = {'Detached-JWS': f'{header}.{signature}'}
+        client_header = {'Detached-JWS': f'{header}..{signature}'}
 
         response = self.client.post("/transaction", json=req.dict(exclude_unset=True), headers=client_header)
 

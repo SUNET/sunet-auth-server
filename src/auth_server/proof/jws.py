@@ -85,7 +85,7 @@ async def check_jwsd_proof(request: ContextRequest, grant_request: GrantRequest,
 
     # recreate jws
     try:
-        header, signature = detached_jws.split('.')
+        header, _, signature = detached_jws.split('.')
     except ValueError as e:
         logger.error(f'invalid detached jws: {e}')
         return False
