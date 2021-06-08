@@ -54,8 +54,10 @@ class BaseAuthFlow(ABC):
         tls_client_cert: Optional[str] = None,
         detached_jws: Optional[str] = None,
     ):
+        grant_req_in = grant_req.copy(deep=True)  # let every flow have their own copy of the grant request
+
         self.request = request
-        self.grant_request = grant_req
+        self.grant_request = grant_req_in
         self.config = config
         self.signing_key = signing_key
         self.tls_client_cert = tls_client_cert
