@@ -345,6 +345,12 @@ toml==0.10.2 \
     # via
     #   pytest
     #   pytest-cov
+types-pkg-resources==0.1.2 \
+    --hash=sha256:42d640500de564f1ccc21f918117afadf78039e4fa7f513c647ccf742d609aeb
+    # via -r test_requirements.in
+types-pyyaml==0.1.5 \
+    --hash=sha256:05d7543681e9f200a51377117db2d6ca5897eac622f971bc5204fc1cc61542b1
+    # via -r test_requirements.in
 typing-extensions==3.10.0.0 \
     --hash=sha256:50b6f157849174217d0656f99dc82fe932884fb250826c18350e159ec6cdf342 \
     --hash=sha256:779383f6086d90c99ae41cf0ff39aac8a7937a9283ce0a414e5dd782f4c94a84
