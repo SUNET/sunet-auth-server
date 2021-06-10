@@ -240,6 +240,7 @@ class ConfigFlow(FullFlow):
                 iss=self.config.auth_token_issuer,
                 exp=self.config.auth_token_expires_in,
                 aud=self.config.auth_token_audience,
+                sub=self.request.context.key_reference,
             )
 
             # Update the claims with any claims found in config for this key

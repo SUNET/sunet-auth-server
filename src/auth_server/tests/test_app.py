@@ -416,4 +416,5 @@ class TestApp(TestCase):
         assert access_token['bound'] is False
         # Verify token and check claims
         claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims['sub'] == key_reference
         assert claims['test_claim'] == 'test_claim_value'
