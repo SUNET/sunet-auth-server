@@ -129,9 +129,10 @@ brotlipy==0.7.0 \
     # via
     #   -c requirements.txt
     #   aiohttp
-caio==0.8.1 \
-    --hash=sha256:05741338a0fd7e4bf3d20e969a0e4a5687bc60fa81cbebe6230034650520a6e2 \
-    --hash=sha256:99c92f4bb16b7aebf80051f7e76ada3b954c287f4900eedf0cb23ef2590f7311
+caio==0.8.4 \
+    --hash=sha256:7a948072859730e01add7021b48ed7dbd905fc4bc9eb280d550c2015b09568f8 \
+    --hash=sha256:c49fef200796ac876a3507d2b07478c3920c48968dcef26ff928d191cd89d041 \
+    --hash=sha256:f7ee73b182d732bbca937df3ce13767641328f8fc69f92605aaab06feba5a125
     # via
     #   -c requirements.txt
     #   aiofile
@@ -263,9 +264,9 @@ jedi==0.18.0 \
     --hash=sha256:18456d83f65f400ab0c2d3319e48520420ef43b23a086fdc05dff34132f0fb93 \
     --hash=sha256:92550a404bad8afed881a137ec9a461fed49eca661414be45059329614ed0707
     # via ipython
-jwcrypto==0.9 \
-    --hash=sha256:5a608f494801433946697a5195c35450c4ae1374d484b56a44499953b35de52e \
-    --hash=sha256:c357f62eed1edbd0b025b302ea8b09c262989048dabce8a325128ebfdc54c84f
+jwcrypto==0.9.1 \
+    --hash=sha256:12976a09895ec0076ce17c49ab7be64d6e63bcd7fd9a773e3fedf8011537a5f6 \
+    --hash=sha256:63531529218ba9869e14ef8c9e7b516865ede3facf9b0ef3d3ba68014da211f9
     # via
     #   -c requirements.txt
     #   -r requirements.in
@@ -286,6 +287,16 @@ multidict==5.1.0 \
     #   -c requirements.txt
     #   aiohttp
     #   yarl
+mypy-extensions==0.4.3 \
+    --hash=sha256:090fedd75945a69ae91ce1303b5824f428daf5a028d2f6ab8a299250a846f15d \
+    --hash=sha256:2d82818f5bb3e369420cb3c4060a7970edba416647068eb4c5343488a6c604a8
+    # via mypy
+mypy==0.901 \
+    --hash=sha256:053b92ebae901fc7954677949049f70133f2f63e3e83dc100225c26d6a46fe95 \
+    --hash=sha256:18753a8bb9bcf031ff10009852bd48d781798ecbccf45be5449892e6af4e3f9f \
+    --hash=sha256:61b10ba18a01d05fc46adbf4f18b0e92178f6b5fd0f45926ffc2a408b5419728 \
+    --hash=sha256:bf347c327c48d963bdef5bf365215d3e98b5fddbe5069fc796cec330e8235a20
+    # via -r test_requirements.in
 packaging==20.9 \
     --hash=sha256:5b327ac1320dc863dca72f4514ecc086f31186744b84a230374cc1fd776feae5 \
     --hash=sha256:67714da7f7bc052e064859c05c595155bd1ee9f69f76557e21f051443c20947a
@@ -391,6 +402,7 @@ toml==0.10.2 \
     --hash=sha256:806143ae5bfb6a3c6e736a764057db0e6a0e05e338b5630894a5f779cabb4f9b \
     --hash=sha256:b3bda1d108d5dd99f4a20d24d9c348e91c4db7ab1b749200bded2f839ccbe68f
     # via
+    #   mypy
     #   pytest
     #   pytest-cov
 traitlets==5.0.5 \
@@ -420,6 +432,7 @@ typing-extensions==3.10.0.0 \
     # via
     #   -c requirements.txt
     #   aiohttp
+    #   mypy
     #   pydantic
 urllib3==1.26.5 \
     --hash=sha256:753a0374df26658f99d826cfe40394a686d05985786d946fbe4165b5148f5a7c \
