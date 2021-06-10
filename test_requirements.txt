@@ -125,9 +125,10 @@ brotlipy==0.7.0 \
     # via
     #   -c requirements.txt
     #   aiohttp
-caio==0.8.1 \
-    --hash=sha256:05741338a0fd7e4bf3d20e969a0e4a5687bc60fa81cbebe6230034650520a6e2 \
-    --hash=sha256:99c92f4bb16b7aebf80051f7e76ada3b954c287f4900eedf0cb23ef2590f7311
+caio==0.8.4 \
+    --hash=sha256:7a948072859730e01add7021b48ed7dbd905fc4bc9eb280d550c2015b09568f8 \
+    --hash=sha256:c49fef200796ac876a3507d2b07478c3920c48968dcef26ff928d191cd89d041 \
+    --hash=sha256:f7ee73b182d732bbca937df3ce13767641328f8fc69f92605aaab06feba5a125
     # via
     #   -c requirements.txt
     #   aiofile
@@ -207,9 +208,9 @@ deprecated==1.2.12 \
     # via
     #   -c requirements.txt
     #   jwcrypto
-fastapi==0.65.1 \
-    --hash=sha256:478b7e0cbb52c9913b9903d88ae14195cb8a479c4596e0b2f2238d317840a7dc \
-    --hash=sha256:7619282fbce0ec53c7dfa3fa262280c00ace9f6d772cfd06e4ab219dce66985e
+fastapi==0.65.2 \
+    --hash=sha256:39569a18914075b2f1aaa03bcb9dc96a38e0e5dabaf3972e088c9077dfffa379 \
+    --hash=sha256:8359e55d8412a5571c0736013d90af235d6949ec4ce978e9b63500c8f4b6f714
     # via
     #   -c requirements.txt
     #   -r requirements.in
@@ -243,9 +244,9 @@ iniconfig==1.1.1 \
     --hash=sha256:011e24c64b7f47f6ebd835bb12a743f2fbe9a26d4cecaa7f53bc4f35ee9da8b3 \
     --hash=sha256:bc3af051d7d14b2ee5ef9969666def0cd1a000e121eaea580d4a313df4b37f32
     # via pytest
-jwcrypto==0.9 \
-    --hash=sha256:5a608f494801433946697a5195c35450c4ae1374d484b56a44499953b35de52e \
-    --hash=sha256:c357f62eed1edbd0b025b302ea8b09c262989048dabce8a325128ebfdc54c84f
+jwcrypto==0.9.1 \
+    --hash=sha256:12976a09895ec0076ce17c49ab7be64d6e63bcd7fd9a773e3fedf8011537a5f6 \
+    --hash=sha256:63531529218ba9869e14ef8c9e7b516865ede3facf9b0ef3d3ba68014da211f9
     # via
     #   -c requirements.txt
     #   -r requirements.in
@@ -262,6 +263,16 @@ multidict==5.1.0 \
     #   -c requirements.txt
     #   aiohttp
     #   yarl
+mypy-extensions==0.4.3 \
+    --hash=sha256:090fedd75945a69ae91ce1303b5824f428daf5a028d2f6ab8a299250a846f15d \
+    --hash=sha256:2d82818f5bb3e369420cb3c4060a7970edba416647068eb4c5343488a6c604a8
+    # via mypy
+mypy==0.901 \
+    --hash=sha256:053b92ebae901fc7954677949049f70133f2f63e3e83dc100225c26d6a46fe95 \
+    --hash=sha256:18753a8bb9bcf031ff10009852bd48d781798ecbccf45be5449892e6af4e3f9f \
+    --hash=sha256:61b10ba18a01d05fc46adbf4f18b0e92178f6b5fd0f45926ffc2a408b5419728 \
+    --hash=sha256:bf347c327c48d963bdef5bf365215d3e98b5fddbe5069fc796cec330e8235a20
+    # via -r test_requirements.in
 packaging==20.9 \
     --hash=sha256:5b327ac1320dc863dca72f4514ecc086f31186744b84a230374cc1fd776feae5 \
     --hash=sha256:67714da7f7bc052e064859c05c595155bd1ee9f69f76557e21f051443c20947a
@@ -343,13 +354,23 @@ toml==0.10.2 \
     --hash=sha256:806143ae5bfb6a3c6e736a764057db0e6a0e05e338b5630894a5f779cabb4f9b \
     --hash=sha256:b3bda1d108d5dd99f4a20d24d9c348e91c4db7ab1b749200bded2f839ccbe68f
     # via
+    #   mypy
     #   pytest
     #   pytest-cov
+types-cryptography==0.1.2 \
+    --hash=sha256:670a82d453d0faa4fa587380324680640ae7f1e28bf3b8d8efd5a3cc5c521d8e
+    # via -r test_requirements.in
+types-enum34==0.1.5 \
+    --hash=sha256:8ea6c9ba83103abd8802f2d459f5b08e59cfcff38ef530c007735296a06a35e3
+    # via types-cryptography
+types-ipaddress==0.1.2 \
+    --hash=sha256:1074af46f90b81ec2102999d49c557b63fe648df2baba407949f87e7140c7758
+    # via types-cryptography
 types-pkg-resources==0.1.2 \
     --hash=sha256:42d640500de564f1ccc21f918117afadf78039e4fa7f513c647ccf742d609aeb
     # via -r test_requirements.in
-types-pyyaml==0.1.5 \
-    --hash=sha256:05d7543681e9f200a51377117db2d6ca5897eac622f971bc5204fc1cc61542b1
+types-pyyaml==0.1.6 \
+    --hash=sha256:8620045462a0ae1ecff7e97041905abdedc7afdff7ea66cac31df29fb1af6fa3
     # via -r test_requirements.in
 typing-extensions==3.10.0.0 \
     --hash=sha256:50b6f157849174217d0656f99dc82fe932884fb250826c18350e159ec6cdf342 \
@@ -357,6 +378,7 @@ typing-extensions==3.10.0.0 \
     # via
     #   -c requirements.txt
     #   aiohttp
+    #   mypy
     #   pydantic
 urllib3==1.26.5 \
     --hash=sha256:753a0374df26658f99d826cfe40394a686d05985786d946fbe4165b5148f5a7c \

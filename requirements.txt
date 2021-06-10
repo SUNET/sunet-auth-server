@@ -38,9 +38,10 @@ brotlipy==0.7.0 \
     --hash=sha256:36def0b859beaf21910157b4c33eb3b06d8ce459c942102f16988cca6ea164df \
     --hash=sha256:4bac11c1ffba9eaa2894ec958a44e7f17778b3303c2ee9f99c39fcc511c26668
     # via aiohttp
-caio==0.8.1 \
-    --hash=sha256:05741338a0fd7e4bf3d20e969a0e4a5687bc60fa81cbebe6230034650520a6e2 \
-    --hash=sha256:99c92f4bb16b7aebf80051f7e76ada3b954c287f4900eedf0cb23ef2590f7311
+caio==0.8.4 \
+    --hash=sha256:7a948072859730e01add7021b48ed7dbd905fc4bc9eb280d550c2015b09568f8 \
+    --hash=sha256:c49fef200796ac876a3507d2b07478c3920c48968dcef26ff928d191cd89d041 \
+    --hash=sha256:f7ee73b182d732bbca937df3ce13767641328f8fc69f92605aaab06feba5a125
     # via aiofile
 cchardet==2.1.7 \
     --hash=sha256:90086e5645f8a1801350f4cc6cb5d5bf12d3fa943811bb08667744ec1ecc9ccd \
@@ -93,9 +94,9 @@ idna==2.10 \
     # via
     #   -c constraints.txt
     #   yarl
-jwcrypto==0.9 \
-    --hash=sha256:5a608f494801433946697a5195c35450c4ae1374d484b56a44499953b35de52e \
-    --hash=sha256:c357f62eed1edbd0b025b302ea8b09c262989048dabce8a325128ebfdc54c84f
+jwcrypto==0.9.1 \
+    --hash=sha256:12976a09895ec0076ce17c49ab7be64d6e63bcd7fd9a773e3fedf8011537a5f6 \
+    --hash=sha256:63531529218ba9869e14ef8c9e7b516865ede3facf9b0ef3d3ba68014da211f9
     # via -r requirements.in
 loguru==0.5.3 \
     --hash=sha256:b28e72ac7a98be3d28ad28570299a393dfcd32e5e3f6a353dec94675767b6319 \

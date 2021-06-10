@@ -3,5 +3,8 @@
 requests
 pytest-cov>=2.7.1
 pytest>=5.2.0
+mypy
+# type stubs for mypy
 types-PyYAML
 types-pkg_resources
+types-cryptography

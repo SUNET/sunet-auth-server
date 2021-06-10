@@ -215,9 +215,9 @@ deprecated==1.2.12 \
     # via
     #   -c requirements.txt
     #   jwcrypto
-fastapi==0.65.1 \
-    --hash=sha256:478b7e0cbb52c9913b9903d88ae14195cb8a479c4596e0b2f2238d317840a7dc \
-    --hash=sha256:7619282fbce0ec53c7dfa3fa262280c00ace9f6d772cfd06e4ab219dce66985e
+fastapi==0.65.2 \
+    --hash=sha256:39569a18914075b2f1aaa03bcb9dc96a38e0e5dabaf3972e088c9077dfffa379 \
+    --hash=sha256:8359e55d8412a5571c0736013d90af235d6949ec4ce978e9b63500c8f4b6f714
     # via
     #   -c requirements.txt
     #   -r requirements.in
@@ -399,11 +399,20 @@ traitlets==5.0.5 \
     # via
     #   ipython
     #   matplotlib-inline
+types-cryptography==0.1.2 \
+    --hash=sha256:670a82d453d0faa4fa587380324680640ae7f1e28bf3b8d8efd5a3cc5c521d8e
+    # via -r test_requirements.in
+types-enum34==0.1.5 \
+    --hash=sha256:8ea6c9ba83103abd8802f2d459f5b08e59cfcff38ef530c007735296a06a35e3
+    # via types-cryptography
+types-ipaddress==0.1.2 \
+    --hash=sha256:1074af46f90b81ec2102999d49c557b63fe648df2baba407949f87e7140c7758
+    # via types-cryptography
 types-pkg-resources==0.1.2 \
     --hash=sha256:42d640500de564f1ccc21f918117afadf78039e4fa7f513c647ccf742d609aeb
     # via -r test_requirements.in
-types-pyyaml==0.1.5 \
-    --hash=sha256:05d7543681e9f200a51377117db2d6ca5897eac622f971bc5204fc1cc61542b1
+types-pyyaml==0.1.6 \
+    --hash=sha256:8620045462a0ae1ecff7e97041905abdedc7afdff7ea66cac31df29fb1af6fa3
     # via -r test_requirements.in
 typing-extensions==3.10.0.0 \
     --hash=sha256:50b6f157849174217d0656f99dc82fe932884fb250826c18350e159ec6cdf342 \
