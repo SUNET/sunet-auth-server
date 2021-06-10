@@ -78,7 +78,7 @@ async def transaction(
             raise HTTPException(status_code=e.status_code, detail=e.detail)
 
         if isinstance(res, GrantResponse):
-            logger.info(f'flow {auth_flow} returned GrantResponse')
+            logger.info(f'flow {auth_flow.get_name()} returned GrantResponse')
             logger.debug(res.dict(exclude_unset=True))
             return res
 
