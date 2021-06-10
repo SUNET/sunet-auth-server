@@ -57,7 +57,7 @@ class AuthServerConfig(BaseSettings):
     tls_fed_metadata_max_age: timedelta = Field(default='PT1H')
     keystore_path: Path = Field(default='keystore.jwks')
     auth_token_issuer: str = Field(default='')
-    auth_token_audience: str = Field(default='')
+    auth_token_audience: Optional[str] = Field(default=None)
     auth_token_expires_in: timedelta = Field(default='P10D')
     proof_jws_max_age: timedelta = Field(default='PT5M')
     client_keys: Dict[str, ClientKey] = Field(default={})

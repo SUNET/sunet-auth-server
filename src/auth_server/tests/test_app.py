@@ -3,6 +3,7 @@ import base64
 import json
 from datetime import timedelta
 from os import environ
+from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Dict, Optional
 from unittest import TestCase, mock
@@ -48,7 +49,7 @@ class MockResponse:
 class TestApp(TestCase):
     def setUp(self) -> None:
         self.datadir = pkg_resources.resource_filename(__name__, 'data')
-        self.config = {
+        self.config: Dict[str, Any] = {
             'testing': 'true',
             'log_level': 'DEBUG',
             'keystore_path': f'{self.datadir}/testing_jwks.json',
@@ -376,7 +377,7 @@ class TestApp(TestCase):
             tls_fed_jwks.import_keyset(f.read())
 
         entity_id = 'https://test.localhost'
-        metadata = create_tls_fed_metadata(self.datadir, entity_id=entity_id, client_cert=self.client_cert_str)
+        metadata = create_tls_fed_metadata(Path(self.datadir), entity_id=entity_id, client_cert=self.client_cert_str)
         metadata_jws = tls_fed_metadata_to_jws(
             metadata,
             key=tls_fed_jwks.get_key('metadata_signing_key_id'),
@@ -398,6 +399,7 @@ class TestApp(TestCase):
 
     def test_config_flow(self):
         self.config['auth_flows'] = json.dumps(['TestFlow', 'ConfigFlow'])
+        del self.config['auth_token_audience']  # auth_token_audience defaults to None
         client_key = ClientKey.parse_obj(
             {'proof': Proof.MTLS, 'cert': self.client_cert_str, 'claims': {'test_claim': 'test_claim_value'}}
         )
@@ -418,3 +420,4 @@ class TestApp(TestCase):
         claims = self._get_access_token_claims(access_token=access_token, client=self.client)
         assert claims['sub'] == key_reference
         assert claims['test_claim'] == 'test_claim_value'
+        assert 'aud' not in claims
