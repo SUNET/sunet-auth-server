@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 import logging
+from typing import Dict
 
 from jwcrypto import jws
 from pydantic import ValidationError
+from starlette.datastructures import Headers
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
@@ -47,6 +49,10 @@ class JOSEMiddleware(BaseHTTPMiddleware, ContextRequestMixin):
 
     async def dispatch(self, request: Request, call_next):
         if request.headers.get('content-type') == 'application/jose':
+            # Return a more helpful error message for a common mistake
+            return return_error_response(status_code=422, detail='content-type needs to be application/jose+json')
+
+        if request.headers.get('content-type') == 'application/jose+json':
             config = load_config()
             request = self.make_context_request(request)
             logger.info('got application/jose request')

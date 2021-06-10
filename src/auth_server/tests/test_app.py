@@ -211,7 +211,7 @@ class TestApp(TestCase):
         )
         data = _jws.serialize(compact=True)
 
-        client_header = {'Content-Type': 'application/jose'}
+        client_header = {'Content-Type': 'application/jose+json'}
         response = self.client.post("/transaction", data=data, headers=client_header)
 
         assert response.status_code == 200
