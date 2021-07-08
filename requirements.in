@@ -7,6 +7,7 @@ async_lru
 jwcrypto
 xmltodict
 loguru
+motor
 uvicorn[standard]
 gunicorn
 # jwcrypto needs six
