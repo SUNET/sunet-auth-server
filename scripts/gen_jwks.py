@@ -10,7 +10,7 @@ __author__ = 'lundberg'
 
 def main(args: argparse.Namespace):
     print('Creating new jwks')
-    key = jwk.JWK.generate(kid='default', kty='EC', crv='P-256')
+    key = jwk.JWK.generate(kid=args.kid, kty='EC', crv='P-256')
     jwks = jwk.JWKSet()
     jwks.add(key)
     if args.out is not None:
@@ -27,5 +27,6 @@ def main(args: argparse.Namespace):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Validate and deserialize a JWT token')
+    parser.add_argument('--kid', '-k', help='key id', type=str, required=True)
     parser.add_argument('--out', '-o', help='out file', default=None, type=str)
     main(args=parser.parse_args())

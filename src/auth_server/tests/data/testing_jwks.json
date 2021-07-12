@@ -1,1 +1,1 @@
-{"keys": [{"kty": "EC", "kid": "default", "crv": "P-256", "x": "RQ4UriZV8y1g97KSZEDzrEAHeN0K0yvfiNjyNjBsqo8", "y": "eRmcA40T-NIFxostV1E7-GDsavCZ3PVAmzDou-uIpvo", "d": "lxsVly5BT5yLGApIi96Tr3knMkePRXOQNsifaRjGxb4"}]}
+{"keys": [{"kty": "EC", "kid": "test-kid", "crv": "P-256", "x": "RQ4UriZV8y1g97KSZEDzrEAHeN0K0yvfiNjyNjBsqo8", "y": "eRmcA40T-NIFxostV1E7-GDsavCZ3PVAmzDou-uIpvo", "d": "lxsVly5BT5yLGApIi96Tr3knMkePRXOQNsifaRjGxb4"}]}

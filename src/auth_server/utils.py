@@ -3,12 +3,13 @@ import importlib
 import json
 import logging
 from functools import lru_cache
-from typing import Any, Callable, Iterable, Mapping, Sequence, Union
+from typing import Any, Callable, Mapping, Sequence, Union, Generator
+from uuid import uuid4
 
 from cryptography.x509 import Certificate, load_pem_x509_certificate
 from jwcrypto import jwk
 
-from auth_server.config import load_config
+from auth_server.config import load_config, ConfigurationError
 
 __author__ = 'lundberg'
 
@@ -36,10 +37,11 @@ def load_jwks() -> jwk.JWKSet:
 
 @lru_cache()
 def get_signing_key() -> jwk.JWK:
+    config = load_config()
     jwks = load_jwks()
-    # Hack to be backwards compatible with thiss-auth
-    # TODO: use jwks.get_key('default')
-    signing_key = list(jwks['keys'])[0]
+    signing_key = jwks.get_key(config.signing_key_id)
+    if signing_key is None:
+        raise ConfigurationError(f'no JWK with id {config.signing_key_id} found in JWKS')
     return signing_key
 
 
@@ -57,9 +59,9 @@ def import_class(class_path: str) -> Callable:
     return klass
 
 
-def get_values(key: str, obj: Union[Mapping, Sequence]) -> Iterable[Any]:
+def get_values(key: str, obj: Union[Mapping, Sequence]) -> Generator[Any, None, None]:
     """
-    Recurse through a dict like object and return all values for the specified key
+    Recurse through a dict-like object and return all values for the specified key
 
     :param key: key to look for
     :param obj: structure to search in
