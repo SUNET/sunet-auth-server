@@ -44,7 +44,7 @@ class BaseDB(object):
             self._coll = self._coll.with_options(write_concern=WriteConcern(w='majority'))
 
     def __repr__(self):
-        return f'<AsyncMongoDB {self.__class__.__name__}: {self._db_name}.{self._coll_name}>'
+        return f'<AsyncBaseDB {self.__class__.__name__}: {self._db_name}.{self._coll_name}>'
 
     __str__ = __repr__
 
