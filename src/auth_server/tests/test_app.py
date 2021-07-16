@@ -53,6 +53,7 @@ class TestApp(TestCase):
             'testing': 'true',
             'log_level': 'DEBUG',
             'keystore_path': f'{self.datadir}/testing_jwks.json',
+            'signing_key_id': 'test-kid',
             'mdq_server': 'http://localhost/mdq',
             'auth_token_audience': 'some_audience',
             'auth_flows': json.dumps(['FullFlow']),
@@ -119,7 +120,7 @@ class TestApp(TestCase):
         jwk = ECJWK(**response.json())
         assert jwk.dict(exclude_none=True) == response.json()
         assert jwk.kty == 'EC'
-        assert jwk.kid == 'default'
+        assert jwk.kid == 'test-kid'
         assert jwk.crv == 'P-256'
         assert jwk.x == 'RQ4UriZV8y1g97KSZEDzrEAHeN0K0yvfiNjyNjBsqo8'
         assert jwk.y == 'eRmcA40T-NIFxostV1E7-GDsavCZ3PVAmzDou-uIpvo'
