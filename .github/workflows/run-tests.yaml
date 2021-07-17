@@ -8,7 +8,7 @@ on: [push, pull_request]
 jobs:
 
   unittests:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     strategy:
       matrix:
         python-version: [3.8]
@@ -29,22 +29,21 @@ jobs:
 
       - name: Fetch docker images
         run: |
-          #docker pull docker.sunet.se/eduid/redis:latest
-          #docker pull docker.sunet.se/eduid/mongodb:latest
+          docker pull docker.sunet.se/eduid/mongodb:latest
 
       - name: Test with pytest
         run: |
           make test
 
   typecheck:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
 
-      - name: Set up Python 3.x
+      - name: Set up Python 3.8
         uses: actions/setup-python@v2
         with:
-          python-version: 3.x
+          python-version: 3.8
 
       - name: Install dependencies
         run: |
