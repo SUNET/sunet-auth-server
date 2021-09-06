@@ -350,7 +350,7 @@ class MDQFlow(CommonRules):
         return None
 
     async def create_auth_token(self) -> Optional[GrantResponse]:
-        if not self.proof_ok and not self.mdq_data:
+        if not self.proof_ok or not self.mdq_data:
             return None
 
         # Get data from metadata
@@ -420,7 +420,7 @@ class TLSFEDFlow(MDQFlow):
         return None
 
     async def create_auth_token(self) -> Optional[GrantResponse]:
-        if not self.proof_ok and not self.entity:
+        if not self.proof_ok or not self.entity:
             return None
 
         base_claims = await super()._create_claims(source=self.entity.issuer)
