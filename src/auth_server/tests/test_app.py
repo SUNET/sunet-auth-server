@@ -18,7 +18,7 @@ from starlette.testclient import TestClient
 
 from auth_server.api import init_auth_server_api
 from auth_server.config import ClientKey, load_config
-from auth_server.models.gnap import AccessTokenRequest, AccessTokenRequestFlags, Client, GrantRequest, Key, Proof
+from auth_server.models.gnap import AccessTokenFlags, AccessTokenRequest, Client, GrantRequest, Key, Proof
 from auth_server.models.jose import ECJWK, JWSType, SupportedAlgorithms, SupportedHTTPMethods
 from auth_server.models.status import Status
 from auth_server.tests.utils import create_tls_fed_metadata, tls_fed_metadata_to_jws
@@ -135,13 +135,13 @@ class TestApp(TestCase):
 
         req = GrantRequest(
             client=Client(key=Key(proof=Proof.TEST)),
-            access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
+            access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
         )
         response = self.client.post("/transaction", json=req.dict(exclude_none=True))
         assert response.status_code == 200
         assert 'access_token' in response.json()
         access_token = response.json()['access_token']
-        assert access_token['bound'] is False
+        assert AccessTokenFlags.BEARER.value in access_token['flags']
 
         # Verify token and check claims
         claims = self._get_access_token_claims(access_token=access_token, client=self.client)
@@ -162,13 +162,13 @@ class TestApp(TestCase):
 
         req = GrantRequest(
             client=Client(key=Key(proof=Proof.TEST)),
-            access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
+            access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
         )
         response = self.client.post("/transaction", json=req.dict(exclude_none=True))
         assert response.status_code == 200
         assert 'access_token' in response.json()
         access_token = response.json()['access_token']
-        assert access_token['bound'] is False
+        assert AccessTokenFlags.BEARER.value in access_token['flags']
 
         # Verify token and check claims
         claims = self._get_access_token_claims(access_token=access_token, client=self.client)
@@ -180,15 +180,14 @@ class TestApp(TestCase):
         mock_mdq.return_value = MockResponse(content=self.mdq_response)
 
         req = GrantRequest(
-            client=Client(key='test.localhost'),
-            access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
+            client=Client(key='test.localhost'), access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
         )
         client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
         response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
         assert response.status_code == 200
         assert 'access_token' in response.json()
         access_token = response.json()['access_token']
-        assert access_token['bound'] is False
+        assert AccessTokenFlags.BEARER.value in access_token['flags']
         assert access_token['value'] is not None
 
     def test_transaction_jws(self):
@@ -196,7 +195,7 @@ class TestApp(TestCase):
         client_jwk = ECJWK(**client_key_dict)
         req = GrantRequest(
             client=Client(key=Key(proof=Proof.JWS, jwk=client_jwk)),
-            access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
+            access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
         )
         jws_header = {
             'typ': JWSType.JWS,
@@ -218,7 +217,7 @@ class TestApp(TestCase):
         assert response.status_code == 200
         assert 'access_token' in response.json()
         access_token = response.json()['access_token']
-        assert access_token['bound'] is False
+        assert AccessTokenFlags.BEARER.value in access_token['flags']
         assert access_token['value'] is not None
 
     def test_transaction_jwsd(self):
@@ -226,7 +225,7 @@ class TestApp(TestCase):
         client_jwk = ECJWK(**client_key_dict)
         req = GrantRequest(
             client=Client(key=Key(proof=Proof.JWSD, jwk=client_jwk)),
-            access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
+            access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
         )
         jws_header = {
             'typ': JWSType.JWSD,
@@ -251,7 +250,7 @@ class TestApp(TestCase):
         assert response.status_code == 200
         assert 'access_token' in response.json()
         access_token = response.json()['access_token']
-        assert access_token['bound'] is False
+        assert AccessTokenFlags.BEARER.value in access_token['flags']
         assert access_token['value'] is not None
 
     @mock.patch('aiohttp.ClientSession.get', new_callable=AsyncMock)
@@ -262,21 +261,21 @@ class TestApp(TestCase):
         mock_mdq.return_value = MockResponse(content=self.mdq_response)
 
         req = GrantRequest(
-            client=Client(key='test.localhost'),
-            access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
+            client=Client(key='test.localhost'), access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
         )
         client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
         response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
         assert response.status_code == 200
         assert 'access_token' in response.json()
         access_token = response.json()['access_token']
-        assert access_token['bound'] is False
+        assert AccessTokenFlags.BEARER.value in access_token['flags']
         assert access_token['value'] is not None
 
         # Verify token and check claims
         claims = self._get_access_token_claims(access_token=access_token, client=self.client)
         assert claims['entity_id'] == 'https://test.localhost'
         assert claims['scopes'] == ['localhost']
+        assert claims['source'] == 'http://www.swamid.se/'
 
     @mock.patch('aiohttp.ClientSession.get', new_callable=AsyncMock)
     def test_tls_fed_flow_remote_metadata(self, mock_metadata):
@@ -296,7 +295,7 @@ class TestApp(TestCase):
         metadata_jws = tls_fed_metadata_to_jws(
             metadata,
             key=tls_fed_jwks.get_key('metadata_signing_key_id'),
-            issuer='metdata.example.com',
+            issuer='metadata.example.com',
             expires=timedelta(days=14),
             alg=SupportedAlgorithms.ES256,
         )
@@ -304,14 +303,14 @@ class TestApp(TestCase):
 
         # Start transaction
         req = GrantRequest(
-            client=Client(key=entity_id), access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
+            client=Client(key=entity_id), access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
         )
         client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
         response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
         assert response.status_code == 200
         assert 'access_token' in response.json()
         access_token = response.json()['access_token']
-        assert access_token['bound'] is False
+        assert AccessTokenFlags.BEARER.value in access_token['flags']
         assert access_token['value'] is not None
 
         # Verify token and check claims
@@ -319,6 +318,7 @@ class TestApp(TestCase):
         assert claims['entity_id'] == 'https://test.localhost'
         assert claims['scopes'] == ['test.localhost']
         assert claims['organization_id'] == 'SE0123456789'
+        assert claims['source'] == 'metadata.example.com'
 
     def test_tls_fed_flow_local_metadata(self):
         # Create metadata jws and save it as a temporary file
@@ -331,7 +331,7 @@ class TestApp(TestCase):
         metadata_jws = tls_fed_metadata_to_jws(
             metadata,
             key=tls_fed_jwks.get_key('metadata_signing_key_id'),
-            issuer='metdata.example.com',
+            issuer='metadata.example.com',
             expires=timedelta(days=14),
             alg=SupportedAlgorithms.ES256,
             compact=False,
@@ -348,14 +348,14 @@ class TestApp(TestCase):
 
             # Start transaction
             req = GrantRequest(
-                client=Client(key=entity_id), access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
+                client=Client(key=entity_id), access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
             )
             client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
             response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
             assert response.status_code == 200
             assert 'access_token' in response.json()
             access_token = response.json()['access_token']
-            assert access_token['bound'] is False
+            assert AccessTokenFlags.BEARER.value in access_token['flags']
             assert access_token['value'] is not None
 
             # Verify token and check claims
@@ -363,6 +363,7 @@ class TestApp(TestCase):
             assert claims['entity_id'] == 'https://test.localhost'
             assert claims['scopes'] == ['test.localhost']
             assert claims['organization_id'] == 'SE0123456789'
+            assert claims['source'] == 'metadata.example.com'
 
     @mock.patch('aiohttp.ClientSession.get', new_callable=AsyncMock)
     def test_tls_fed_flow_expired_entity(self, mock_metadata):
@@ -382,7 +383,7 @@ class TestApp(TestCase):
         metadata_jws = tls_fed_metadata_to_jws(
             metadata,
             key=tls_fed_jwks.get_key('metadata_signing_key_id'),
-            issuer='metdata.example.com',
+            issuer='metadata.example.com',
             expires=timedelta(days=-1),
             alg=SupportedAlgorithms.ES256,
         )
@@ -392,7 +393,7 @@ class TestApp(TestCase):
         get_tls_fed_metadata.cache_clear()
         # Start transaction
         req = GrantRequest(
-            client=Client(key=entity_id), access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
+            client=Client(key=entity_id), access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
         )
         client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
         response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
@@ -409,16 +410,51 @@ class TestApp(TestCase):
         self._update_app_config(config=self.config)
 
         req = GrantRequest(
-            client=Client(key=key_reference), access_token=[AccessTokenRequest(flags=[AccessTokenRequestFlags.BEARER])],
+            client=Client(key=key_reference), access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
         )
         client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
         response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
         assert response.status_code == 200
         assert 'access_token' in response.json()
         access_token = response.json()['access_token']
-        assert access_token['bound'] is False
+        assert AccessTokenFlags.BEARER.value in access_token['flags']
         # Verify token and check claims
         claims = self._get_access_token_claims(access_token=access_token, client=self.client)
         assert claims['sub'] == key_reference
         assert claims['test_claim'] == 'test_claim_value'
+        assert claims['source'] == 'config'
         assert 'aud' not in claims
+
+    def test_requested_access_in_jwt(self):
+        self.config['auth_flows'] = json.dumps(['TestFlow'])
+        self._update_app_config(config=self.config)
+
+        grant_request = {
+            'access_token': {
+                'flags': ['bearer'],
+                'access': ['test_access_string', {'type': 'test_access', 'scope': 'a_scope'}],
+            },
+            'client': {'key': {'proof': 'test'}},
+        }
+
+        response = self.client.post("/transaction", json=grant_request)
+        assert response.status_code == 200
+        assert 'access_token' in response.json()
+        access_token = response.json()['access_token']
+        assert AccessTokenFlags.BEARER.value in access_token['flags']
+        assert 'access' in access_token
+        assert 'test_access_string' in access_token['access']
+        for item in access_token['access']:
+            if isinstance(item, dict):
+                assert 'scope' in item
+                assert item['scope'] == 'a_scope'
+
+        # Verify token and check claims
+        claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims['aud'] == 'some_audience'
+        assert 'requested_access' in claims
+        assert 'test_access_string' in claims['requested_access']
+        for item in claims['requested_access']:
+            if isinstance(item, dict):
+                assert 'scope' in item
+                assert item['scope'] == 'a_scope'

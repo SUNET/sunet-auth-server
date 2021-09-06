@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -69,7 +69,9 @@ class RegisteredClaims(BaseModel):
 
 class Claims(RegisteredClaims):
     version: int = 1
+    source: Optional[str] = None
     origins: Optional[List[str]] = None  # What should we use this for?
+    requested_access: Optional[List[Union[str, Dict[str, Any]]]] = None
 
 
 class MDQClaims(Claims):

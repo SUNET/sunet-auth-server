@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from abc import ABC
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from fastapi import HTTPException
 from jwcrypto import jwt
@@ -13,7 +13,16 @@ from jwcrypto.jwk import JWK
 from auth_server.config import AuthServerConfig, ConfigurationError
 from auth_server.context import ContextRequest
 from auth_server.mdq import MDQData, mdq_data_to_key, xml_mdq_get
-from auth_server.models.gnap import AccessTokenResponse, Client, GrantRequest, GrantResponse, Key, Proof
+from auth_server.models.gnap import (
+    Access,
+    AccessTokenFlags,
+    AccessTokenResponse,
+    Client,
+    GrantRequest,
+    GrantResponse,
+    Key,
+    Proof,
+)
 from auth_server.models.jose import Claims, MDQClaims, TLSFEDClaims
 from auth_server.proof.common import lookup_client_key_from_config
 from auth_server.proof.jws import check_jws_proof, check_jwsd_proof
@@ -63,6 +72,7 @@ class BaseAuthFlow(ABC):
         self.tls_client_cert = tls_client_cert
         self.detached_jws = detached_jws
         self.proof_ok: bool = False
+        self.requested_access: List[Union[str, Access]] = []
         self.grant_response: Optional[GrantResponse] = None
         self.mdq_data: Optional[MDQData] = None
         self.config_claims: Optional[Dict[str, Any]] = None
@@ -81,7 +91,23 @@ class BaseAuthFlow(ABC):
     @staticmethod
     async def steps() -> List[str]:
         # This is the order the methods in the flow will be called
-        return ['lookup_client', 'lookup_client_key', 'validate_proof', 'create_auth_token']
+        return [
+            'lookup_client',
+            'lookup_client_key',
+            'validate_proof',
+            'handle_access_token',
+            'create_auth_token',
+        ]
+
+    async def _create_claims(self, source: Optional[str]) -> Claims:
+        return Claims(
+            iss=self.config.auth_token_issuer,
+            exp=self.config.auth_token_expires_in,
+            aud=self.config.auth_token_audience,
+            sub=self.request.context.key_reference,
+            requested_access=self.requested_access,
+            source=source,
+        )
 
     async def lookup_client(self) -> Optional[GrantResponse]:
         raise NotImplementedError()
@@ -90,6 +116,9 @@ class BaseAuthFlow(ABC):
         raise NotImplementedError()
 
     async def validate_proof(self) -> Optional[GrantResponse]:
+        raise NotImplementedError()
+
+    async def handle_access(self) -> Optional[GrantResponse]:
         raise NotImplementedError()
 
     async def create_auth_token(self) -> Optional[GrantResponse]:
@@ -124,6 +153,16 @@ class CommonRules(BaseAuthFlow):
 
         if not isinstance(self.grant_request.client.key, Key):
             raise NextFlowException(status_code=400, detail='key by reference not supported')
+        return None
+
+    async def handle_access_token(self) -> Optional[GrantResponse]:
+        if isinstance(self.grant_request.access_token, list):
+            if len(self.grant_request.access_token) > 1:
+                raise NextFlowException(status_code=400, detail='multiple access token requests not supported')
+            self.grant_request.access_token = self.grant_request.access_token[0]
+        # TODO: How do we want to validate the access request?
+        if self.grant_request.access_token.access:
+            self.requested_access = self.grant_request.access_token.access
         return None
 
 
@@ -185,15 +224,15 @@ class FullFlow(CommonRules):
 
     async def create_auth_token(self) -> Optional[GrantResponse]:
         if self.proof_ok:
+            claims = await self._create_claims(source=None)
             # Create access token
-            claims = Claims(
-                iss=self.config.auth_token_issuer,
-                exp=self.config.auth_token_expires_in,
-                aud=self.config.auth_token_audience,
-            )
             token = jwt.JWT(header={'alg': 'ES256'}, claims=claims.to_rfc7519())
             token.make_signed_token(self.signing_key)
-            auth_response = GrantResponse(access_token=AccessTokenResponse(bound=False, value=token.serialize()))
+            auth_response = GrantResponse(
+                access_token=AccessTokenResponse(
+                    flags=[AccessTokenFlags.BEARER], access=self.requested_access, value=token.serialize()
+                )
+            )
             logger.info(f'OK:{self.request.context.key_reference}:{self.config.auth_token_audience}')
             logger.debug(f'claims: {claims.to_rfc7519()}')
             return auth_response
@@ -209,6 +248,22 @@ class TestFlow(FullFlow):
         if self.grant_request.client.key.proof is Proof.TEST:
             logger.warning(f'TEST_MODE - access token will be returned with no proof')
             self.proof_ok = True
+        return None
+
+    async def create_auth_token(self) -> Optional[GrantResponse]:
+        if self.proof_ok:
+            claims = await self._create_claims(source='test mode')
+            # Create access token
+            token = jwt.JWT(header={'alg': 'ES256'}, claims=claims.to_rfc7519())
+            token.make_signed_token(self.signing_key)
+            auth_response = GrantResponse(
+                access_token=AccessTokenResponse(
+                    flags=[AccessTokenFlags.BEARER], access=self.requested_access, value=token.serialize()
+                )
+            )
+            logger.info(f'OK:{self.request.context.key_reference}:{self.config.auth_token_audience}')
+            logger.debug(f'claims: {claims.to_rfc7519()}')
+            return auth_response
         return None
 
 
@@ -235,22 +290,17 @@ class ConfigFlow(FullFlow):
 
     async def create_auth_token(self) -> Optional[GrantResponse]:
         if self.proof_ok:
-            # Create access token
-            claims = Claims(
-                iss=self.config.auth_token_issuer,
-                exp=self.config.auth_token_expires_in,
-                aud=self.config.auth_token_audience,
-                sub=self.request.context.key_reference,
-            )
-
+            claims = await self._create_claims(source='config')
             # Update the claims with any claims found in config for this key
             claims_dict = claims.to_rfc7519()
             if self.config_claims is not None:
                 claims_dict.update(self.config_claims)
-
+            # Create access token
             token = jwt.JWT(header={'alg': 'ES256'}, claims=claims_dict)
             token.make_signed_token(self.signing_key)
-            auth_response = GrantResponse(access_token=AccessTokenResponse(bound=False, value=token.serialize()))
+            auth_response = GrantResponse(
+                access_token=AccessTokenResponse(flags=[AccessTokenFlags.BEARER], value=token.serialize())
+            )
             logger.info(f'OK:{self.request.context.key_reference}:{self.config.auth_token_audience}')
             logger.debug(f'claims: {claims_dict}')
             return auth_response
@@ -311,18 +361,25 @@ class MDQFlow(CommonRules):
             scopes = []
             for scope in get_values('urn:mace:shibboleth:metadata:1.0:Scope', self.mdq_data.metadata):
                 scopes.append(scope['#text'])
-
-            # Create access token
-            claims = MDQClaims(
-                iss=self.config.auth_token_issuer,
-                exp=self.config.auth_token_expires_in,
-                aud=self.config.auth_token_audience,
-                entity_id=entity_id,
-                scopes=scopes,
+            # source
+            registration_info = list(
+                get_values('urn:oasis:names:tc:SAML:metadata:rpi:RegistrationInfo', self.mdq_data.metadata)
             )
+            try:
+                source = registration_info[0]['@registrationAuthority']
+            except (IndexError, KeyError):
+                source = self.config.mdq_server  # Default source to mdq server if registrationAuthority is not set
+
+            base_claims = await super()._create_claims(source=source)
+            claims = MDQClaims(**base_claims.dict(exclude_none=True), entity_id=entity_id, scopes=scopes)
+            # Create access token
             token = jwt.JWT(header={'alg': 'ES256'}, claims=claims.to_rfc7519())
             token.make_signed_token(self.signing_key)
-            auth_response = GrantResponse(access_token=AccessTokenResponse(bound=False, value=token.serialize()))
+            auth_response = GrantResponse(
+                access_token=AccessTokenResponse(
+                    flags=[AccessTokenFlags.BEARER], access=self.requested_access, value=token.serialize()
+                )
+            )
             logger.info(f'OK:{self.request.context.key_reference}:{self.config.auth_token_audience}')
             logger.debug(f'claims: {claims.to_rfc7519()}')
             return auth_response
@@ -360,18 +417,21 @@ class TLSFEDFlow(MDQFlow):
 
     async def create_auth_token(self) -> Optional[GrantResponse]:
         if self.proof_ok and self.entity:
-            # Create access token
+            base_claims = await super()._create_claims(source=self.entity.issuer)
             claims = TLSFEDClaims(
-                iss=self.config.auth_token_issuer,
-                exp=self.config.auth_token_expires_in,
-                aud=self.config.auth_token_audience,
+                **base_claims.dict(exclude_none=True),
                 entity_id=self.entity.entity_id,
                 scopes=self.entity.scopes,
                 organization_id=self.entity.organization_id,
             )
+            # Create access token
             token = jwt.JWT(header={'alg': 'ES256'}, claims=claims.to_rfc7519())
             token.make_signed_token(self.signing_key)
-            auth_response = GrantResponse(access_token=AccessTokenResponse(bound=False, value=token.serialize()))
+            auth_response = GrantResponse(
+                access_token=AccessTokenResponse(
+                    flags=[AccessTokenFlags.BEARER], access=self.requested_access, value=token.serialize()
+                )
+            )
             logger.info(f'OK:{self.request.context.key_reference}:{self.config.auth_token_audience}')
             logger.debug(f'claims: {claims.to_rfc7519()}')
             return auth_response
