@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
 import logging
-from typing import Dict
 
 from jwcrypto import jws
 from pydantic import ValidationError
-from starlette.datastructures import Headers
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
