@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Extra, Field
 
 from auth_server.time_utils import utc_now
 
@@ -72,6 +72,11 @@ class Claims(RegisteredClaims):
     source: Optional[str] = None
     origins: Optional[List[str]] = None  # What should we use this for?
     requested_access: Optional[List[Union[str, Dict[str, Any]]]] = None
+
+
+class ConfigClaims(Claims):
+    class Config:
+        extra = Extra.allow
 
 
 class MDQClaims(Claims):
