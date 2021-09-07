@@ -33,47 +33,56 @@ class Key(BaseModel):
         allow_population_by_field_name = True
 
 
-class AccessType(str, Enum):
-    """
-    Can really be anything, let's start with access
-    """
-
-    ACCESS = 'access'
-
-
-class AccessAction(str, Enum):
-    """
-    Can really be anything, let's start with read/write
-    """
-
-    ALL = 'all'
-    READ = 'read'
-    WRITE = 'write'
-
-
 class Access(BaseModel):
-    type: Optional[AccessType] = Field(default=AccessType.ACCESS)
-    actions: Optional[List[AccessAction]] = Field(default=[AccessAction.ALL])
-    locations: Optional[List[AnyUrl]] = []
-    datatypes: Optional[List[str]] = []
+    # The value of the "type" field is under the control of the AS.  This
+    # field MUST be compared using an exact byte match of the string value
+    # against known types by the AS.  The AS MUST ensure that there is no
+    # collision between different authorization data types that it
+    # supports.  The AS MUST NOT do any collation or normalization of data
+    # types during comparison.  It is RECOMMENDED that designers of
+    # general-purpose APIs use a URI for this field to avoid collisions
+    # between multiple API types protected by a single AS.
+    type: str
+    # The types of actions the client instance will take at the RS as an
+    # array of strings.  For example, a client instance asking for a
+    # combination of "read" and "write" access.
+    actions: Optional[List[str]] = None
+    # The location of the RS as an array of strings. These strings are
+    # typically URIs identifying the location of the RS.
+    locations: Optional[List[str]] = None
+    # The kinds of data available to the client instance at the RS's API
+    # as an array of strings.  For example, a client instance asking for
+    # access to raw "image" data and "metadata" at a photograph API.
+    datatypes: Optional[List[str]] = None
+    # A string identifier indicating a specific resource at the RS. For
+    # example, a patient identifier for a medical API or a bank account
+    # number for a financial API.
+    identifier: Optional[str] = None
+    # The types or levels of privilege being requested at the resource.
+    # For example, a client instance asking for administrative level
+    # access, or access when the resource owner is no longer online.
+    privileges: Optional[List[str]] = None
+    # Sunet addition for requesting access to a specified scope
+    scope: Optional[str] = None
 
 
-class AccessTokenRequestFlags(str, Enum):
+class AccessTokenFlags(str, Enum):
     BEARER = 'bearer'
+    DURABLE = 'durable'
     SPLIT = 'split'
 
 
 class AccessTokenRequest(BaseModel):
-    access: Optional[List[Access]] = []
+    access: Optional[List[Union[str, Access]]] = None
     # TODO: label is REQUIRED if used as part of a multiple access token request
     label: Optional[str] = None
-    flags: Optional[List[AccessTokenRequestFlags]] = []
+    flags: Optional[List[AccessTokenFlags]] = None
 
 
 # TODO: sub_ids should correspond to User sub_ids and assertion values
 class Subject(BaseModel):
-    sub_ids: Optional[List[str]] = []
-    assertions: Optional[List[str]] = []
+    sub_ids: Optional[List[str]] = None
+    assertions: Optional[List[str]] = None
 
 
 class Display(BaseModel):
@@ -88,15 +97,11 @@ class Client(BaseModel):
     display: Optional[Display] = None
 
 
-class ClientInstance(BaseModel):
-    instance_id: str
-
-
 # TODO: Check https://datatracker.ietf.org/doc/html/draft-ietf-secevent-subject-identifiers-06 for
 #   implementation details when needed
 class User(BaseModel):
-    sub_ids: Optional[List[Dict[str, str]]] = []
-    assertions: Optional[Dict[str, str]] = {}
+    sub_ids: Optional[List[Dict[str, str]]] = None
+    assertions: Optional[Dict[str, str]] = None
 
 
 class StartInteraction(str, Enum):
@@ -123,7 +128,7 @@ class FinishInteraction(BaseModel):
 
 
 class Hints(BaseModel):
-    ui_locales: Optional[List[str]]
+    ui_locales: Optional[List[str]] = None
 
 
 class InteractionRequest(BaseModel):
@@ -135,11 +140,9 @@ class InteractionRequest(BaseModel):
 class GrantRequest(BaseModel):
     access_token: Union[AccessTokenRequest, List[AccessTokenRequest]]
     subject: Optional[Subject] = None
-    client: Union[str, ClientInstance, Client]
+    client: Union[str, Client]
     user: Optional[Union[str, User]] = None
     interact: Optional[InteractionRequest] = None
-    capabilities: Optional[List[str]] = None
-    existing_grant: Optional[str]
 
 
 class ContinueAccessToken(BaseModel):
@@ -167,14 +170,12 @@ class InteractionResponse(BaseModel):
 
 class AccessTokenResponse(BaseModel):
     value: str
-    bound: Optional[bool] = None
     label: Optional[str] = None
     manage: Optional[AnyUrl] = None
     access: Optional[List[Union[str, Access]]] = None
     expires_in: Optional[int] = Field(default=None, description='seconds until expiry')
     key: Optional[Union[str, Key]] = None
-    durable: Optional[bool] = None
-    split: Optional[bool] = None
+    flags: Optional[List[AccessTokenFlags]] = None
 
 
 class SubjectResponse(Subject):

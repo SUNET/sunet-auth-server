@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import logging
-from abc import ABC
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from fastapi import HTTPException
 from jwcrypto import jwt
@@ -13,8 +12,17 @@ from jwcrypto.jwk import JWK
 from auth_server.config import AuthServerConfig, ConfigurationError
 from auth_server.context import ContextRequest
 from auth_server.mdq import MDQData, mdq_data_to_key, xml_mdq_get
-from auth_server.models.gnap import AccessTokenResponse, Client, GrantRequest, GrantResponse, Key, Proof
-from auth_server.models.jose import Claims, MDQClaims, TLSFEDClaims
+from auth_server.models.gnap import (
+    Access,
+    AccessTokenFlags,
+    AccessTokenResponse,
+    Client,
+    GrantRequest,
+    GrantResponse,
+    Key,
+    Proof,
+)
+from auth_server.models.jose import Claims, ConfigClaims, MDQClaims, TLSFEDClaims
 from auth_server.proof.common import lookup_client_key_from_config
 from auth_server.proof.jws import check_jws_proof, check_jwsd_proof
 from auth_server.proof.mtls import check_mtls_proof
@@ -44,7 +52,7 @@ class StopTransactionException(HTTPException):
     pass
 
 
-class BaseAuthFlow(ABC):
+class BaseAuthFlow:
     def __init__(
         self,
         request: ContextRequest,
@@ -63,9 +71,10 @@ class BaseAuthFlow(ABC):
         self.tls_client_cert = tls_client_cert
         self.detached_jws = detached_jws
         self.proof_ok: bool = False
+        self.requested_access: List[Union[str, Access]] = []
         self.grant_response: Optional[GrantResponse] = None
         self.mdq_data: Optional[MDQData] = None
-        self.config_claims: Optional[Dict[str, Any]] = None
+        self.config_claims: Dict[str, Any] = {}
 
     class Meta:
         version: int = 1
@@ -81,7 +90,22 @@ class BaseAuthFlow(ABC):
     @staticmethod
     async def steps() -> List[str]:
         # This is the order the methods in the flow will be called
-        return ['lookup_client', 'lookup_client_key', 'validate_proof', 'create_auth_token']
+        return [
+            'lookup_client',
+            'lookup_client_key',
+            'validate_proof',
+            'handle_access_token',
+            'create_auth_token',
+        ]
+
+    async def _create_claims(self) -> Claims:
+        return Claims(
+            iss=self.config.auth_token_issuer,
+            exp=self.config.auth_token_expires_in,
+            aud=self.config.auth_token_audience,
+            sub=self.request.context.key_reference,
+            requested_access=self.requested_access,
+        )
 
     async def lookup_client(self) -> Optional[GrantResponse]:
         raise NotImplementedError()
@@ -90,6 +114,9 @@ class BaseAuthFlow(ABC):
         raise NotImplementedError()
 
     async def validate_proof(self) -> Optional[GrantResponse]:
+        raise NotImplementedError()
+
+    async def handle_access(self) -> Optional[GrantResponse]:
         raise NotImplementedError()
 
     async def create_auth_token(self) -> Optional[GrantResponse]:
@@ -108,7 +135,7 @@ class BaseAuthFlow(ABC):
         return None
 
 
-class CommonRules(BaseAuthFlow):
+class CommonFlow(BaseAuthFlow):
     """
     Gather current flow rules and implementation limitations here
     """
@@ -119,17 +146,46 @@ class CommonRules(BaseAuthFlow):
         return None
 
     async def lookup_client_key(self) -> Optional[GrantResponse]:
-        # please mypy, enforced in CommonRules or previous steps
+        # please mypy, enforced in CommonFlow or previous steps
         assert isinstance(self.grant_request.client, Client)
 
         if not isinstance(self.grant_request.client.key, Key):
             raise NextFlowException(status_code=400, detail='key by reference not supported')
         return None
 
+    async def handle_access_token(self) -> Optional[GrantResponse]:
+        if isinstance(self.grant_request.access_token, list):
+            if len(self.grant_request.access_token) > 1:
+                raise NextFlowException(status_code=400, detail='multiple access token requests not supported')
+            self.grant_request.access_token = self.grant_request.access_token[0]
+        # TODO: How do we want to validate the access request?
+        if self.grant_request.access_token.access:
+            self.requested_access = self.grant_request.access_token.access
+        return None
 
-class FullFlow(CommonRules):
+    async def create_auth_token(self) -> Optional[GrantResponse]:
+        if not self.proof_ok:
+            return None
+
+        # Create claims
+        claims = await self._create_claims()
+
+        # Create access token
+        token = jwt.JWT(header={'alg': 'ES256'}, claims=claims.to_rfc7519())
+        token.make_signed_token(self.signing_key)
+        auth_response = GrantResponse(
+            access_token=AccessTokenResponse(
+                flags=[AccessTokenFlags.BEARER], access=self.requested_access, value=token.serialize()
+            )
+        )
+        logger.info(f'OK:{self.request.context.key_reference}:{self.config.auth_token_audience}')
+        logger.debug(f'claims: {claims}')
+        return auth_response
+
+
+class FullFlow(CommonFlow):
     async def lookup_client_key(self) -> Optional[GrantResponse]:
-        # please mypy, enforced in CommonRules or previous steps
+        # please mypy, enforced in CommonFlow or previous steps
         assert isinstance(self.grant_request.client, Client)
 
         # First look for a key in config
@@ -155,7 +211,7 @@ class FullFlow(CommonRules):
         return None
 
     async def validate_proof(self) -> Optional[GrantResponse]:
-        # please mypy, enforced in CommonRules or previous steps
+        # please mypy, enforced in CommonFlow or previous steps
         assert isinstance(self.grant_request.client, Client)
         assert isinstance(self.grant_request.client.key, Key)
 
@@ -183,26 +239,15 @@ class FullFlow(CommonRules):
             raise NextFlowException(status_code=400, detail='no supported proof method')
         return None
 
-    async def create_auth_token(self) -> Optional[GrantResponse]:
-        if self.proof_ok:
-            # Create access token
-            claims = Claims(
-                iss=self.config.auth_token_issuer,
-                exp=self.config.auth_token_expires_in,
-                aud=self.config.auth_token_audience,
-            )
-            token = jwt.JWT(header={'alg': 'ES256'}, claims=claims.to_rfc7519())
-            token.make_signed_token(self.signing_key)
-            auth_response = GrantResponse(access_token=AccessTokenResponse(bound=False, value=token.serialize()))
-            logger.info(f'OK:{self.request.context.key_reference}:{self.config.auth_token_audience}')
-            logger.debug(f'claims: {claims.to_rfc7519()}')
-            return auth_response
-        return None
-
 
 class TestFlow(FullFlow):
+    async def _create_claims(self) -> Claims:
+        claims = await super()._create_claims()
+        claims.source = 'test mode'
+        return claims
+
     async def validate_proof(self) -> Optional[GrantResponse]:
-        # please mypy, enforced in CommonRules or previous steps
+        # please mypy, enforced in CommonFlow or previous steps
         assert isinstance(self.grant_request.client, Client)
         assert isinstance(self.grant_request.client.key, Key)
 
@@ -213,8 +258,17 @@ class TestFlow(FullFlow):
 
 
 class ConfigFlow(FullFlow):
+    async def _create_claims(self) -> ConfigClaims:
+        base_claims = await super()._create_claims()
+        # Update the claims with any claims found in config for this key
+        claims_dict = base_claims.dict(exclude_none=True)
+        claims_dict.update(self.config_claims)
+        if 'source' not in claims_dict:
+            claims_dict['source'] = 'config'
+        return ConfigClaims(**claims_dict)
+
     async def lookup_client_key(self) -> Optional[GrantResponse]:
-        # please mypy, enforced in CommonRules or previous steps
+        # please mypy, enforced in CommonFlow or previous steps
         assert isinstance(self.grant_request.client, Client)
 
         if not isinstance(self.grant_request.client.key, str):
@@ -233,33 +287,56 @@ class ConfigFlow(FullFlow):
             self.config_claims = self.config.client_keys[self.request.context.key_reference].claims
         return None
 
-    async def create_auth_token(self) -> Optional[GrantResponse]:
-        if self.proof_ok:
-            # Create access token
-            claims = Claims(
-                iss=self.config.auth_token_issuer,
-                exp=self.config.auth_token_expires_in,
-                aud=self.config.auth_token_audience,
-                sub=self.request.context.key_reference,
-            )
 
-            # Update the claims with any claims found in config for this key
-            claims_dict = claims.to_rfc7519()
-            if self.config_claims is not None:
-                claims_dict.update(self.config_claims)
+class OnlyMTLSProofFlow(CommonFlow):
+    async def validate_proof(self) -> Optional[GrantResponse]:
+        # please mypy, enforced in CommonFlow or previous steps
+        assert isinstance(self.grant_request.client, Client)
+        assert isinstance(self.grant_request.client.key, Key)
 
-            token = jwt.JWT(header={'alg': 'ES256'}, claims=claims_dict)
-            token.make_signed_token(self.signing_key)
-            auth_response = GrantResponse(access_token=AccessTokenResponse(bound=False, value=token.serialize()))
-            logger.info(f'OK:{self.request.context.key_reference}:{self.config.auth_token_audience}')
-            logger.debug(f'claims: {claims_dict}')
-            return auth_response
+        if self.grant_request.client.key.proof is not Proof.MTLS:
+            raise NextFlowException(status_code=400, detail='MTLS is the only supported proof method')
+        if not self.tls_client_cert:
+            raise NextFlowException(status_code=400, detail='no client certificate found')
+
+        self.proof_ok = await check_mtls_proof(grant_request=self.grant_request, cert=self.tls_client_cert)
+        if not self.proof_ok:
+            raise NextFlowException(status_code=401, detail='no client certificate found')
         return None
 
 
-class MDQFlow(CommonRules):
+class MDQFlow(OnlyMTLSProofFlow):
+    async def _create_claims(self) -> MDQClaims:
+        if not self.mdq_data:
+            raise NextFlowException(status_code=400, detail='missing mdq data')
+
+        # Get data from metadata
+        # entity id
+        entity_descriptor = list(
+            get_values('urn:oasis:names:tc:SAML:2.0:metadata:EntityDescriptor', self.mdq_data.metadata)
+        )
+        try:
+            entity_id = entity_descriptor[0]['@entityID']
+        except (IndexError, KeyError):
+            raise NextFlowException(status_code=401, detail='malformed metadata')
+        # scopes
+        scopes = []
+        for scope in get_values('urn:mace:shibboleth:metadata:1.0:Scope', self.mdq_data.metadata):
+            scopes.append(scope['#text'])
+        # source
+        registration_info = list(
+            get_values('urn:oasis:names:tc:SAML:metadata:rpi:RegistrationInfo', self.mdq_data.metadata)
+        )
+        try:
+            source = registration_info[0]['@registrationAuthority']
+        except (IndexError, KeyError):
+            source = self.config.mdq_server  # Default source to mdq server if registrationAuthority is not set
+
+        base_claims = await super()._create_claims()
+        return MDQClaims(**base_claims.dict(exclude_none=True), entity_id=entity_id, scopes=scopes, source=source)
+
     async def lookup_client_key(self) -> Optional[GrantResponse]:
-        # please mypy, enforced in CommonRules or previous steps
+        # please mypy, enforced in CommonFlow or previous steps
         assert isinstance(self.grant_request.client, Client)
 
         if not isinstance(self.grant_request.client.key, str):
@@ -281,62 +358,28 @@ class MDQFlow(CommonRules):
         self.grant_request.client.key = client_key
         return None
 
-    async def validate_proof(self) -> Optional[GrantResponse]:
-        # please mypy, enforced in CommonRules or previous steps
-        assert isinstance(self.grant_request.client, Client)
-        assert isinstance(self.grant_request.client.key, Key)
 
-        if self.grant_request.client.key.proof is not Proof.MTLS:
-            raise NextFlowException(status_code=400, detail='MTLS is the only supported proof method')
-        if not self.tls_client_cert:
-            raise NextFlowException(status_code=400, detail='no client certificate found')
-
-        self.proof_ok = await check_mtls_proof(grant_request=self.grant_request, cert=self.tls_client_cert)
-        if not self.proof_ok:
-            raise NextFlowException(status_code=401, detail='no client certificate found')
-        return None
-
-    async def create_auth_token(self) -> Optional[GrantResponse]:
-        if self.proof_ok and self.mdq_data:
-            # Get data from metadata
-            # entity id
-            entity_descriptor = list(
-                get_values('urn:oasis:names:tc:SAML:2.0:metadata:EntityDescriptor', self.mdq_data.metadata)
-            )
-            try:
-                entity_id = entity_descriptor[0]['@entityID']
-            except (IndexError, KeyError):
-                raise NextFlowException(status_code=401, detail='malformed metadata')
-            # scopes
-            scopes = []
-            for scope in get_values('urn:mace:shibboleth:metadata:1.0:Scope', self.mdq_data.metadata):
-                scopes.append(scope['#text'])
-
-            # Create access token
-            claims = MDQClaims(
-                iss=self.config.auth_token_issuer,
-                exp=self.config.auth_token_expires_in,
-                aud=self.config.auth_token_audience,
-                entity_id=entity_id,
-                scopes=scopes,
-            )
-            token = jwt.JWT(header={'alg': 'ES256'}, claims=claims.to_rfc7519())
-            token.make_signed_token(self.signing_key)
-            auth_response = GrantResponse(access_token=AccessTokenResponse(bound=False, value=token.serialize()))
-            logger.info(f'OK:{self.request.context.key_reference}:{self.config.auth_token_audience}')
-            logger.debug(f'claims: {claims.to_rfc7519()}')
-            return auth_response
-        return None
-
-
-class TLSFEDFlow(MDQFlow):
+class TLSFEDFlow(OnlyMTLSProofFlow):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.entity: Optional[MetadataEntity] = None
 
+    async def _create_claims(self) -> TLSFEDClaims:
+        if not self.entity:
+            raise NextFlowException(status_code=400, detail='missing metadata entity')
+
+        base_claims = await super()._create_claims()
+        return TLSFEDClaims(
+            **base_claims.dict(exclude_none=True),
+            entity_id=self.entity.entity_id,
+            scopes=self.entity.scopes,
+            organization_id=self.entity.organization_id,
+            source=self.entity.issuer,
+        )
+
     async def lookup_client_key(self) -> Optional[GrantResponse]:
-        # please mypy, enforced in CommonRules or previous steps
+        # please mypy, enforced in CommonFlow or previous steps
         assert isinstance(self.grant_request.client, Client)
 
         if not isinstance(self.grant_request.client.key, str):
@@ -356,23 +399,4 @@ class TLSFEDFlow(MDQFlow):
         if not client_key:
             raise NextFlowException(status_code=400, detail=f'no client key found for {key_id}')
         self.grant_request.client.key = client_key
-        return None
-
-    async def create_auth_token(self) -> Optional[GrantResponse]:
-        if self.proof_ok and self.entity:
-            # Create access token
-            claims = TLSFEDClaims(
-                iss=self.config.auth_token_issuer,
-                exp=self.config.auth_token_expires_in,
-                aud=self.config.auth_token_audience,
-                entity_id=self.entity.entity_id,
-                scopes=self.entity.scopes,
-                organization_id=self.entity.organization_id,
-            )
-            token = jwt.JWT(header={'alg': 'ES256'}, claims=claims.to_rfc7519())
-            token.make_signed_token(self.signing_key)
-            auth_response = GrantResponse(access_token=AccessTokenResponse(bound=False, value=token.serialize()))
-            logger.info(f'OK:{self.request.context.key_reference}:{self.config.auth_token_audience}')
-            logger.debug(f'claims: {claims.to_rfc7519()}')
-            return auth_response
         return None
