@@ -22,7 +22,7 @@ from auth_server.models.gnap import (
     Key,
     Proof,
 )
-from auth_server.models.jose import Claims, ConfigClaims, MDQClaims, TLSFEDClaims
+from auth_server.models.claims import Claims, ConfigClaims, MDQClaims, TLSFEDClaims
 from auth_server.proof.common import lookup_client_key_from_config
 from auth_server.proof.jws import check_jws_proof, check_jwsd_proof
 from auth_server.proof.mtls import check_mtls_proof

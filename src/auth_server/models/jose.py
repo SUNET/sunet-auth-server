@@ -67,27 +67,6 @@ class RegisteredClaims(BaseModel):
         return d
 
 
-class Claims(RegisteredClaims):
-    version: int = 1
-    source: Optional[str] = None
-    origins: Optional[List[str]] = None  # What should we use this for?
-    requested_access: Optional[List[Union[str, Dict[str, Any]]]] = None
-
-
-class ConfigClaims(Claims):
-    class Config:
-        extra = Extra.allow
-
-
-class MDQClaims(Claims):
-    entity_id: str
-    scopes: Optional[List[str]] = None
-
-
-class TLSFEDClaims(MDQClaims):
-    organization_id: Optional[str] = None
-
-
 class JWK(BaseModel):
     kty: KeyType
     use: Optional[KeyUse]
