@@ -71,7 +71,7 @@ class BaseAuthFlow:
         self.tls_client_cert = tls_client_cert
         self.detached_jws = detached_jws
         self.proof_ok: bool = False
-        self.requested_access: List[Union[str, Access]] = []
+        self.requested_access: List[Union[str, Dict[str, Any]]] = []
         self.grant_response: Optional[GrantResponse] = None
         self.mdq_data: Optional[MDQData] = None
         self.config_claims: Dict[str, Any] = {}
@@ -160,7 +160,9 @@ class CommonFlow(BaseAuthFlow):
             self.grant_request.access_token = self.grant_request.access_token[0]
         # TODO: How do we want to validate the access request?
         if self.grant_request.access_token.access:
-            self.requested_access = self.grant_request.access_token.access
+            # serialize access before storing
+            access_token_dict = self.grant_request.access_token.dict(exclude_none=True)
+            self.requested_access = access_token_dict['access']
         return None
 
     async def create_auth_token(self) -> Optional[GrantResponse]:
