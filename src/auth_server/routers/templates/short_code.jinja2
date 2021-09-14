@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Short code</title>
+    <link href="{{ url_for('static', path='/styles.css') }}" rel="stylesheet">
+</head>
+<body>
+    <form>
+        <h4>Input your code</h4>
+
+        <div id="code">
+            <label for="short-code">code:</label>
+            <input type="text" id="short-code" name="short_code">
+        </div>
+
+        <div class="button">
+            <button type="submit">OK</button>
+        </div>
+    </form>
+</body>
+</html>

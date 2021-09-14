@@ -3,12 +3,14 @@ import logging
 from typing import List, Type, cast
 
 from fastapi import FastAPI
+from starlette.staticfiles import StaticFiles
 
 from auth_server.config import AuthServerConfig, load_config
 from auth_server.context import ContextRequestRoute
 from auth_server.flows import BaseAuthFlow, BuiltInFlow, ConfigFlow, FullFlow, MDQFlow, TestFlow, TLSFEDFlow
 from auth_server.log import init_logging
 from auth_server.middleware import JOSEMiddleware
+from auth_server.routers.interaction import interaction_router
 from auth_server.routers.root import root_router
 from auth_server.routers.status import status_router
 from auth_server.utils import import_class
@@ -61,5 +63,7 @@ def init_auth_server_api() -> AuthServer:
     app.router.route_class = ContextRequestRoute
     app.add_middleware(JOSEMiddleware)
     app.include_router(root_router)
+    app.include_router(interaction_router)
     app.include_router(status_router)
+    app.mount("/static", StaticFiles(packages=['auth_server']), name="static")  # defaults to the "statics" directory
     return app

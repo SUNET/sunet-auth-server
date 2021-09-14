@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List, Mapping, Optional
 
 import aiohttp
-from aiofile import async_open
+from aiofiles import open as async_open
 from async_lru import alru_cache
 from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.x509 import load_pem_x509_certificate

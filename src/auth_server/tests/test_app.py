@@ -21,6 +21,8 @@ from auth_server.config import ClientKey, load_config
 from auth_server.models.gnap import AccessTokenFlags, AccessTokenRequest, Client, GrantRequest, Key, Proof
 from auth_server.models.jose import ECJWK, JWSType, SupportedAlgorithms, SupportedHTTPMethods
 from auth_server.models.status import Status
+
+from auth_server.testing import MongoTemporaryInstance
 from auth_server.tests.utils import create_tls_fed_metadata, tls_fed_metadata_to_jws
 from auth_server.time_utils import utc_now
 from auth_server.tls_fed_auth import get_tls_fed_metadata
@@ -48,7 +50,8 @@ class MockResponse:
 
 class TestApp(TestCase):
     def setUp(self) -> None:
-        self.datadir = pkg_resources.resource_filename(__name__, 'data')
+        self.datadir = Path(pkg_resources.resource_filename(__name__, 'data'))
+        self.mongo_db = MongoTemporaryInstance.get_instance()
         self.config: Dict[str, Any] = {
             'testing': 'true',
             'log_level': 'DEBUG',
@@ -57,6 +60,7 @@ class TestApp(TestCase):
             'mdq_server': 'http://localhost/mdq',
             'auth_token_audience': 'some_audience',
             'auth_flows': json.dumps(['FullFlow']),
+            'mongo_uri': self.mongo_db.uri,
         }
         environ.update(self.config)
         self.app = init_auth_server_api()
@@ -458,3 +462,9 @@ class TestApp(TestCase):
             if isinstance(item, dict):
                 assert 'scope' in item
                 assert item['scope'] == 'a_scope'
+
+    def test_transaction_short_code_get(self):
+        response = self.client.get("/interaction/abc123/short-code")
+        assert response.status_code == 200
+        assert '<h4>Input your code</h4>' in response.text
+

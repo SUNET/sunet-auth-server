@@ -76,3 +76,7 @@ def get_values(key: str, obj: Union[Mapping, Sequence]) -> Generator[Any, None, 
         for item in obj:
             for hit in get_values(key, item):
                 yield hit
+
+
+def get_short_hash(length=10) -> str:
+    return uuid4().hex[:length]

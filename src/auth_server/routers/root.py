@@ -83,3 +83,15 @@ async def transaction(
             return res
 
     raise HTTPException(status_code=401, detail='permission denied')
+
+
+@root_router.post('/continue', response_model=GrantResponse, response_model_exclude_unset=True)
+async def continue_transaction(
+    request: ContextRequest,
+    grant_req: GrantRequest,
+    tls_client_cert: Optional[str] = Header(None),
+    detached_jws: Optional[str] = Header(None),
+    config: AuthServerConfig = Depends(load_config),
+    signing_key: JWK = Depends(get_signing_key),
+):
+    pass

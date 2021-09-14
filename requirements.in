@@ -1,8 +1,10 @@
 -c constraints.txt
 fastapi
+python-multipart
 aiohttp[speedups]
 pyyaml
-aiofile
+aiofiles
+jinja2
 async_lru
 jwcrypto
 xmltodict

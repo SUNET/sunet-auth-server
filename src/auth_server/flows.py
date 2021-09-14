@@ -95,6 +95,7 @@ class BaseAuthFlow:
             'lookup_client_key',
             'validate_proof',
             'handle_access_token',
+            'handle_interaction',
             'create_auth_token',
         ]
 
@@ -117,6 +118,9 @@ class BaseAuthFlow:
         raise NotImplementedError()
 
     async def handle_access(self) -> Optional[GrantResponse]:
+        raise NotImplementedError()
+
+    async def handle_interaction(self) -> Optional[GrantResponse]:
         raise NotImplementedError()
 
     async def create_auth_token(self) -> Optional[GrantResponse]:
@@ -151,6 +155,10 @@ class CommonFlow(BaseAuthFlow):
 
         if not isinstance(self.grant_request.client.key, Key):
             raise NextFlowException(status_code=400, detail='key by reference not supported')
+        return None
+
+    async def handle_interaction(self) -> Optional[GrantResponse]:
+        # No interactions by default for now
         return None
 
     async def handle_access_token(self) -> Optional[GrantResponse]:
@@ -238,6 +246,10 @@ class FullFlow(CommonFlow):
         else:
             raise NextFlowException(status_code=400, detail='no supported proof method')
         return None
+
+    async def handle_interaction(self) -> Optional[GrantResponse]:
+        # if isinstance(self.grant_request.interact,
+        pass
 
 
 class TestFlow(FullFlow):
@@ -399,4 +411,7 @@ class TLSFEDFlow(OnlyMTLSProofFlow):
         if not client_key:
             raise NextFlowException(status_code=400, detail=f'no client key found for {key_id}')
         self.grant_request.client.key = client_key
+        return None
+
+    async def handle_interaction(self) -> Optional[GrantResponse]:
         return None
