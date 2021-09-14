@@ -3,13 +3,14 @@
 import json
 from datetime import datetime, timedelta
 from pathlib import PurePath
-from typing import Optional
+from typing import List, Optional
 
 from jwcrypto import jwk, jws
 
 from auth_server.models.jose import SupportedAlgorithms
 from auth_server.models.tls_fed_metadata import Entity
 from auth_server.models.tls_fed_metadata import Model as TLSFEDMetadata
+from auth_server.models.tls_fed_metadata import RegisteredExtensions
 from auth_server.time_utils import utc_now
 
 __author__ = 'lundberg'
@@ -41,8 +42,16 @@ def tls_fed_metadata_to_jws(
 
 
 def create_tls_fed_metadata(
-    datadir: PurePath, entity_id: str, client_cert: str, organization_id: str = 'SE0123456789'
+    datadir: PurePath,
+    entity_id: str,
+    client_cert: str,
+    organization_id: str = 'SE0123456789',
+    scopes: Optional[List[str]] = None,
 ) -> TLSFEDMetadata:
+
+    if scopes is None:
+        scopes = list()
+
     _jwks = jwk.JWKSet()
     with open(f'{datadir}/tls_fed_jwks.json', 'r') as f:
         _jwks.import_keyset(f.read())
@@ -53,10 +62,10 @@ def create_tls_fed_metadata(
                 'entity_id': entity_id,
                 'organization': 'Test Org',
                 'organization_id': organization_id,
-                'scopes': ['test.localhost'],
                 'issuers': [
                     {'x509certificate': f'-----BEGIN CERTIFICATE-----\n{client_cert}\n-----END CERTIFICATE-----'}
                 ],
+                'extensions': {RegisteredExtensions.SAML_SCOPE: {'scope': scopes}},
             }
         )
     ]

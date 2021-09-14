@@ -48,7 +48,7 @@ class MockResponse:
 
 class TestApp(TestCase):
     def setUp(self) -> None:
-        self.datadir = pkg_resources.resource_filename(__name__, 'data')
+        self.datadir = Path(pkg_resources.resource_filename(__name__, 'data'))
         self.config: Dict[str, Any] = {
             'testing': 'true',
             'log_level': 'DEBUG',
@@ -291,7 +291,9 @@ class TestApp(TestCase):
             tls_fed_jwks.import_keyset(f.read())
 
         entity_id = 'https://test.localhost'
-        metadata = create_tls_fed_metadata(self.datadir, entity_id=entity_id, client_cert=self.client_cert_str)
+        metadata = create_tls_fed_metadata(
+            self.datadir, entity_id=entity_id, scopes=['test.localhost'], client_cert=self.client_cert_str
+        )
         metadata_jws = tls_fed_metadata_to_jws(
             metadata,
             key=tls_fed_jwks.get_key('metadata_signing_key_id'),
@@ -327,7 +329,9 @@ class TestApp(TestCase):
             tls_fed_jwks.import_keyset(f.read())
 
         entity_id = 'https://test.localhost'
-        metadata = create_tls_fed_metadata(self.datadir, entity_id=entity_id, client_cert=self.client_cert_str)
+        metadata = create_tls_fed_metadata(
+            self.datadir, entity_id=entity_id, scopes=['test.localhost'], client_cert=self.client_cert_str
+        )
         metadata_jws = tls_fed_metadata_to_jws(
             metadata,
             key=tls_fed_jwks.get_key('metadata_signing_key_id'),
