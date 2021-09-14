@@ -9,7 +9,6 @@ from typing import Any, Dict, Optional
 from unittest import TestCase, mock
 from unittest.mock import AsyncMock
 
-import pkg_resources
 import yaml
 from cryptography import x509
 from cryptography.hazmat.primitives.serialization import Encoding
@@ -48,7 +47,7 @@ class MockResponse:
 
 class TestApp(TestCase):
     def setUp(self) -> None:
-        self.datadir = Path(pkg_resources.resource_filename(__name__, 'data'))
+        self.datadir = Path(__file__).with_name('data')
         self.config: Dict[str, Any] = {
             'testing': 'true',
             'log_level': 'DEBUG',
