@@ -12,6 +12,7 @@ from jwcrypto.jwk import JWK
 from auth_server.config import AuthServerConfig, ConfigurationError
 from auth_server.context import ContextRequest
 from auth_server.mdq import MDQData, mdq_data_to_key, xml_mdq_get
+from auth_server.models.claims import Claims, ConfigClaims, MDQClaims, TLSFEDClaims
 from auth_server.models.gnap import (
     Access,
     AccessTokenFlags,
