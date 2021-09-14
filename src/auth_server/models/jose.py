@@ -2,9 +2,9 @@
 
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Extra, Field
 
 from auth_server.time_utils import utc_now
 
@@ -65,20 +65,6 @@ class RegisteredClaims(BaseModel):
         if self.iat:
             d['iat'] = int(self.iat.timestamp())
         return d
-
-
-class Claims(RegisteredClaims):
-    version: int = 1
-    origins: Optional[List[str]] = None  # What should we use this for?
-
-
-class MDQClaims(Claims):
-    entity_id: str
-    scopes: Optional[List[str]] = None
-
-
-class TLSFEDClaims(MDQClaims):
-    organization_id: Optional[str] = None
 
 
 class JWK(BaseModel):

@@ -3,13 +3,12 @@ import importlib
 import json
 import logging
 from functools import lru_cache
-from typing import Any, Callable, Mapping, Sequence, Union, Generator
-from uuid import uuid4
+from typing import Any, Callable, Generator, Mapping, Sequence, Union
 
 from cryptography.x509 import Certificate, load_pem_x509_certificate
 from jwcrypto import jwk
 
-from auth_server.config import load_config, ConfigurationError
+from auth_server.config import ConfigurationError, load_config
 
 __author__ = 'lundberg'
 
