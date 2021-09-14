@@ -5,16 +5,27 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import AnyUrl, BaseModel, Extra, Field, conint, constr
+
+
+class RegisteredExtensions(str, Enum):
+    SAML_SCOPE = 'https://kontosynk.internetstiftelsen.se/saml-scope'
+
+
+class SAMLScopeExtension(BaseModel):
+    scope: Optional[List[str]] = None
+
+
+Extension = Union[SAMLScopeExtension]
 
 
 class CertIssuers(BaseModel):
     x509certificate: Optional[str] = Field(None, title='X.509 Certificate (PEM)')
 
 
-class Alg(Enum):
+class Alg(str, Enum):
     sha256 = 'sha256'
 
 
@@ -60,6 +71,7 @@ class Entity(BaseModel):
     )
     servers: Optional[List[Endpoint]] = None
     clients: Optional[List[Endpoint]] = None
+    extensions: Optional[Dict[RegisteredExtensions, Extension]]
 
 
 class Model(BaseModel):
