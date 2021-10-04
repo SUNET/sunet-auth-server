@@ -1,10 +1,19 @@
 # -*- coding: utf-8 -*-
+from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional, Union
 
 from pydantic import AnyUrl, BaseModel, Field
 
-from auth_server.models.jose import ECJWK, RSAJWK, SymmetricJWK
+from auth_server.models.jose import (
+    ECJWK,
+    RSAJWK,
+    JOSEHeader,
+    SupportedAlgorithms,
+    SupportedHTTPMethods,
+    SupportedJWSType,
+    SymmetricJWK,
+)
 
 __author__ = 'lundberg'
 
@@ -196,3 +205,18 @@ class GrantResponse(BaseModel):
     instance_id: Optional[str] = None
     user_handle: Optional[str] = None
     error: Optional[Error] = None
+
+
+class GNAPJOSEHeader(JOSEHeader):
+    kid: str
+    alg: SupportedAlgorithms
+    typ: SupportedJWSType
+    htm: SupportedHTTPMethods
+    # The HTTP URI used for this request, including all path and query components.
+    uri: str
+    # A timestamp of when the signature was created, in integer seconds since UNIX Epoch
+    created: datetime
+    # When a request is bound to an access token, the access token hash value. The value MUST be the result of
+    # Base64url encoding (with no padding) the SHA-256 digest of the ASCII encoding of the associated access
+    # token's value.  REQUIRED if the request protects an access token.
+    ath: Optional[str]

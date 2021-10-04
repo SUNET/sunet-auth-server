@@ -9,8 +9,8 @@ from pydantic import ValidationError
 
 from auth_server.config import load_config
 from auth_server.context import ContextRequest
-from auth_server.models.gnap import Client, GrantRequest, Key
-from auth_server.models.jose import JWK, JWSHeader, JWSType, SupportedAlgorithms
+from auth_server.models.gnap import Client, GNAPJOSEHeader, GrantRequest, Key
+from auth_server.models.jose import JWK, SupportedAlgorithms, SupportedJWSType
 from auth_server.time_utils import utc_now
 
 __author__ = 'lundberg'
@@ -30,7 +30,7 @@ async def choose_hash_alg(alg: SupportedAlgorithms):
         raise NotImplementedError(f'No hash alg mapped to {alg}')
 
 
-async def verify_gnap_jws(request: ContextRequest, grant_request: GrantRequest, jws_header: JWSHeader) -> bool:
+async def verify_gnap_jws(request: ContextRequest, grant_request: GrantRequest, jws_header: GNAPJOSEHeader) -> bool:
     config = load_config()
 
     # Please mypy
@@ -66,10 +66,10 @@ async def verify_gnap_jws(request: ContextRequest, grant_request: GrantRequest, 
     return True
 
 
-async def check_jws_proof(request: ContextRequest, grant_request: GrantRequest, jws_header: JWSHeader) -> bool:
+async def check_jws_proof(request: ContextRequest, grant_request: GrantRequest, jws_header: GNAPJOSEHeader) -> bool:
     if request.context.jws_verified:
-        if jws_header.typ is not JWSType.JWS:
-            raise HTTPException(status_code=400, detail=f'typ should be {JWSType.JWS}')
+        if jws_header.typ is not SupportedJWSType.JWS:
+            raise HTTPException(status_code=400, detail=f'typ should be {SupportedJWSType.JWS}')
         return await verify_gnap_jws(request=request, grant_request=grant_request, jws_header=jws_header)
     return False
 
@@ -128,12 +128,12 @@ async def check_jwsd_proof(request: ContextRequest, grant_request: GrantRequest,
         raise HTTPException(status_code=400, detail='no client key found')
 
     try:
-        jws_header = JWSHeader(**_jws.jose_header)
+        jws_header = GNAPJOSEHeader(**_jws.jose_header)
     except ValidationError as e:
         logger.error(f'Missing Detached JWS header: {e}')
         raise HTTPException(status_code=400, detail=str(e))
 
-    if jws_header.typ is not JWSType.JWSD:
-        raise HTTPException(status_code=400, detail=f'typ should be {JWSType.JWSD}')
+    if jws_header.typ is not SupportedJWSType.JWSD:
+        raise HTTPException(status_code=400, detail=f'typ should be {SupportedJWSType.JWSD}')
 
     return await verify_gnap_jws(request=request, grant_request=grant_request, jws_header=jws_header)

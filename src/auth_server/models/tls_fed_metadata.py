@@ -4,10 +4,19 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import List, Optional
 
 from pydantic import AnyUrl, BaseModel, Extra, Field, conint, constr
+
+from auth_server.models.jose import JOSEHeader
+
+
+class TLSFEDJOSEHeader(JOSEHeader):
+    iat: datetime
+    exp: datetime
+    iss: Optional[str]
 
 
 class RegisteredExtensions(str, Enum):

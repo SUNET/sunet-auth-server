@@ -8,14 +8,14 @@ from fastapi.routing import APIRoute
 
 __author__ = 'lundberg'
 
-from auth_server.models.jose import JWSHeader
+from auth_server.models.gnap import GNAPJOSEHeader
 
 
 @dataclass
 class Context:
     key_reference: Optional[str] = None
     jws_verified: bool = False
-    jws_header: Optional[JWSHeader] = None
+    jws_header: Optional[GNAPJOSEHeader] = None
 
     def to_dict(self):
         return asdict(self)

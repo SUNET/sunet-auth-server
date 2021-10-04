@@ -2,9 +2,9 @@
 
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import List, Optional, Union
 
-from pydantic import BaseModel, Extra, Field
+from pydantic import AnyUrl, BaseModel, Field
 
 from auth_server.time_utils import utc_now
 
@@ -116,21 +116,20 @@ class JWKS(BaseModel):
     keys: List[Union[ECJWK, RSAJWK, SymmetricJWK]]
 
 
-class JWSType(str, Enum):
+class SupportedJWSType(str, Enum):
     JWS = 'gnap-binding+jws'
     JWSD = 'gnap-binding+jwsd'
 
 
-class JWSHeader(BaseModel):
-    kid: str
+class JOSEHeader(BaseModel):
+    kid: Optional[str]
     alg: SupportedAlgorithms
-    typ: JWSType
-    htm: SupportedHTTPMethods
-    # The HTTP URI used for this request, including all path and query components.
-    uri: str
-    # A timestamp of when the signature was created, in integer seconds since UNIX Epoch
-    created: datetime
-    # When a request is bound to an access token, the access token hash value. The value MUST be the result of
-    # Base64url encoding (with no padding) the SHA-256 digest of the ASCII encoding of the associated access
-    # token's value.  REQUIRED if the request protects an access token.
-    ath: Optional[str]
+    jku: Optional[AnyUrl]
+    jwk: Optional[Union[ECJWK, RSAJWK, SymmetricJWK]]
+    x5u: Optional[str]
+    x5c: Optional[str]
+    x5t: Optional[str]
+    x5tS256: Optional[str] = Field(alias='x5t#S256')
+    typ: Optional[str]
+    cty: Optional[str]
+    crit: Optional[List]
