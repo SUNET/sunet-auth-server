@@ -214,7 +214,7 @@ class GNAPJOSEHeader(JOSEHeader):
     htm: SupportedHTTPMethods
     # The HTTP URI used for this request, including all path and query components.
     uri: str
-    # A timestamp of when the signature was created, in integer seconds since UNIX Epoch
+    # A timestamp of when the signature was created
     created: datetime
     # When a request is bound to an access token, the access token hash value. The value MUST be the result of
     # Base64url encoding (with no padding) the SHA-256 digest of the ASCII encoding of the associated access
