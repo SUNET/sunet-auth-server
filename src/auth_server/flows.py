@@ -23,7 +23,6 @@ from auth_server.models.gnap import (
     Key,
     Proof,
 )
-from auth_server.models.tls_fed_metadata import RegisteredExtensions
 from auth_server.proof.common import lookup_client_key_from_config
 from auth_server.proof.jws import check_jws_proof, check_jwsd_proof
 from auth_server.proof.mtls import check_mtls_proof
@@ -372,8 +371,8 @@ class TLSFEDFlow(OnlyMTLSProofFlow):
 
         # Get scopes from metadata
         scopes = None
-        if self.entity.extensions and self.entity.extensions.get(RegisteredExtensions.SAML_SCOPE):
-            scopes = self.entity.extensions[RegisteredExtensions.SAML_SCOPE].scope
+        if self.entity.extensions and self.entity.extensions.saml_scope:
+            scopes = self.entity.extensions.saml_scope.scope
 
         base_claims = await super()._create_claims()
         return TLSFEDClaims(
