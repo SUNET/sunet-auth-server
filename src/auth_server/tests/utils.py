@@ -2,8 +2,7 @@
 
 import json
 from datetime import datetime, timedelta
-from pathlib import PurePath
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from jwcrypto import jwk, jws
 
@@ -17,7 +16,7 @@ __author__ = 'lundberg'
 
 
 def tls_fed_metadata_to_jws(
-    metadata: TLSFEDMetadata,
+    metadata: Union[TLSFEDMetadata, str],
     key: jwk.JWK,
     issuer: str,
     expires: timedelta,
@@ -25,7 +24,11 @@ def tls_fed_metadata_to_jws(
     issue_time: Optional[datetime] = None,
     compact: bool = True,
 ) -> bytes:
-    payload = metadata.json(exclude_unset=True)
+    if isinstance(metadata, TLSFEDMetadata):
+        payload = metadata.json(exclude_unset=True)
+    else:
+        payload = metadata
+
     if issue_time is None:
         issue_time = utc_now()
     expire_time = issue_time + expires
@@ -42,19 +45,15 @@ def tls_fed_metadata_to_jws(
 
 
 def create_tls_fed_metadata(
-    datadir: PurePath,
     entity_id: str,
     client_cert: str,
+    cache_ttl: int = 3600,
     organization_id: str = 'SE0123456789',
     scopes: Optional[List[str]] = None,
 ) -> TLSFEDMetadata:
 
     if scopes is None:
         scopes = list()
-
-    _jwks = jwk.JWKSet()
-    with open(f'{datadir}/tls_fed_jwks.json', 'r') as f:
-        _jwks.import_keyset(f.read())
 
     entities = [
         Entity.parse_obj(
@@ -69,4 +68,4 @@ def create_tls_fed_metadata(
             }
         )
     ]
-    return TLSFEDMetadata(version='1.0.0', cache_ttl=3600, entities=entities)
+    return TLSFEDMetadata(version='1.0.0', cache_ttl=cache_ttl, entities=entities)

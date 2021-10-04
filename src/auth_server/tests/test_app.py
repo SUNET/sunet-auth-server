@@ -291,7 +291,7 @@ class TestAuthServer(TestCase):
 
         entity_id = 'https://test.localhost'
         metadata = create_tls_fed_metadata(
-            self.datadir, entity_id=entity_id, scopes=['test.localhost'], client_cert=self.client_cert_str
+            entity_id=entity_id, scopes=['test.localhost'], client_cert=self.client_cert_str
         )
         metadata_jws = tls_fed_metadata_to_jws(
             metadata,
@@ -329,7 +329,7 @@ class TestAuthServer(TestCase):
 
         entity_id = 'https://test.localhost'
         metadata = create_tls_fed_metadata(
-            self.datadir, entity_id=entity_id, scopes=['test.localhost'], client_cert=self.client_cert_str
+            entity_id=entity_id, scopes=['test.localhost'], client_cert=self.client_cert_str
         )
         metadata_jws = tls_fed_metadata_to_jws(
             metadata,
@@ -382,7 +382,7 @@ class TestAuthServer(TestCase):
             tls_fed_jwks.import_keyset(f.read())
 
         entity_id = 'https://test.localhost'
-        metadata = create_tls_fed_metadata(Path(self.datadir), entity_id=entity_id, client_cert=self.client_cert_str)
+        metadata = create_tls_fed_metadata(entity_id=entity_id, client_cert=self.client_cert_str)
         metadata_jws = tls_fed_metadata_to_jws(
             metadata,
             key=tls_fed_jwks.get_key('metadata_signing_key_id'),
