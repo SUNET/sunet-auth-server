@@ -7,9 +7,9 @@ from typing import List, Optional, Union
 from jwcrypto import jwk, jws
 
 from auth_server.models.jose import SupportedAlgorithms
-from auth_server.models.tls_fed_metadata import Entity
+from auth_server.models.tls_fed_metadata import CertIssuers, Entity, Extensions
 from auth_server.models.tls_fed_metadata import Model as TLSFEDMetadata
-from auth_server.models.tls_fed_metadata import RegisteredExtensions
+from auth_server.models.tls_fed_metadata import SAMLScopeExtension
 from auth_server.time_utils import utc_now
 
 __author__ = 'lundberg'
@@ -56,16 +56,15 @@ def create_tls_fed_metadata(
         scopes = list()
 
     entities = [
-        Entity.parse_obj(
-            {
-                'entity_id': entity_id,
-                'organization': 'Test Org',
-                'organization_id': organization_id,
-                'issuers': [
-                    {'x509certificate': f'-----BEGIN CERTIFICATE-----\n{client_cert}\n-----END CERTIFICATE-----'}
-                ],
-                'extensions': {RegisteredExtensions.SAML_SCOPE: {'scope': scopes}},
-            }
+        Entity(
+            # catch 22, mypy says AnyUrl and pydantic expects a str
+            entity_id=entity_id,  # type: ignore
+            organization='Test Org',
+            organization_id=organization_id,
+            issuers=[
+                CertIssuers(x509certificate=f'-----BEGIN CERTIFICATE-----\n{client_cert}\n-----END CERTIFICATE-----')
+            ],
+            extensions=Extensions(saml_scope=SAMLScopeExtension(scope=scopes)),
         )
     ]
     return TLSFEDMetadata(version='1.0.0', cache_ttl=cache_ttl, entities=entities)
