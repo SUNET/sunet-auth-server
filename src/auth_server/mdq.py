@@ -4,13 +4,13 @@ from base64 import b64encode
 from collections import OrderedDict as _OrderedDict
 from dataclasses import dataclass, field
 from enum import Enum
+from pyexpat import ExpatError
 from typing import List, Optional, OrderedDict
 
 import aiohttp
 import xmltodict
 from cryptography.hazmat.primitives.hashes import SHA1, SHA256, Hash
 from cryptography.x509 import Certificate, load_pem_x509_certificate
-from pyexpat import ExpatError
 
 from auth_server.models.gnap import Key, Proof
 from auth_server.utils import get_values
