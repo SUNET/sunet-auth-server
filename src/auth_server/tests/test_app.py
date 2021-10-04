@@ -405,9 +405,7 @@ class TestAuthServer(TestCase):
     def test_config_flow(self):
         self.config['auth_flows'] = json.dumps(['TestFlow', 'ConfigFlow'])
         del self.config['auth_token_audience']  # auth_token_audience defaults to None
-        client_key = ClientKey.parse_obj(
-            {'proof': Proof.MTLS, 'cert': self.client_cert_str, 'claims': {'test_claim': 'test_claim_value'}}
-        )
+        client_key = ClientKey(proof=Proof.MTLS, cert=self.client_cert_str, claims={'test_claim': 'test_claim_value'})
         key_reference = 'test_key_ref'
         self.config['client_keys'] = json.dumps({key_reference: client_key.dict(exclude_unset=True)})
         self._update_app_config(config=self.config)
