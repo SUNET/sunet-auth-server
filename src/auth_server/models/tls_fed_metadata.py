@@ -85,6 +85,8 @@ class Entity(BaseModel):
     )
     servers: Optional[List[Endpoint]] = None
     clients: Optional[List[Endpoint]] = None
+    # added after generation
+    organization_id: Optional[str] = None
     extensions: Optional[Extensions] = None
 
 
