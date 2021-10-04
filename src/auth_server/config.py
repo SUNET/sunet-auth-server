@@ -41,6 +41,7 @@ class TLSFEDMetadata(BaseModel):
     remote: Optional[AnyUrl] = None
     local: Optional[Path] = None
     jwks: Path
+    strict: bool = True  # set to False to load partial metadata on entity errors
 
 
 class AuthServerConfig(BaseSettings):
