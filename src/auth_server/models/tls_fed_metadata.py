@@ -30,6 +30,7 @@ class SAMLScopeExtension(BaseModel):
 class Extensions(BaseModel):
     class Config:
         extra = Extra.allow
+        allow_population_by_field_name = True  # allow registered extension to also be set by name, not only by alias
 
     saml_scope: Optional[SAMLScopeExtension] = Field(default=None, alias=RegisteredExtensions.SAML_SCOPE.value)
 
