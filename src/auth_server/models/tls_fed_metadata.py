@@ -24,10 +24,14 @@ class RegisteredExtensions(str, Enum):
 
 
 class SAMLScopeExtension(BaseModel):
-    scope: Optional[List[str]] = None
+    scope: List[str]
 
 
-Extension = Union[SAMLScopeExtension]
+class Extensions(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    saml_scope: Optional[SAMLScopeExtension] = Field(default=None, alias=RegisteredExtensions.SAML_SCOPE.value)
 
 
 class CertIssuers(BaseModel):
@@ -80,7 +84,7 @@ class Entity(BaseModel):
     )
     servers: Optional[List[Endpoint]] = None
     clients: Optional[List[Endpoint]] = None
-    extensions: Optional[Dict[RegisteredExtensions, Extension]]
+    extensions: Optional[Extensions] = None
 
 
 class Model(BaseModel):
