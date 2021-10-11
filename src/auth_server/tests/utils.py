@@ -2,21 +2,21 @@
 
 import json
 from datetime import datetime, timedelta
-from pathlib import PurePath
-from typing import Optional
+from typing import List, Optional, Union
 
 from jwcrypto import jwk, jws
 
 from auth_server.models.jose import SupportedAlgorithms
-from auth_server.models.tls_fed_metadata import Entity
+from auth_server.models.tls_fed_metadata import CertIssuers, Entity, Extensions
 from auth_server.models.tls_fed_metadata import Model as TLSFEDMetadata
+from auth_server.models.tls_fed_metadata import SAMLScopeExtension
 from auth_server.time_utils import utc_now
 
 __author__ = 'lundberg'
 
 
 def tls_fed_metadata_to_jws(
-    metadata: TLSFEDMetadata,
+    metadata: Union[TLSFEDMetadata, str],
     key: jwk.JWK,
     issuer: str,
     expires: timedelta,
@@ -24,7 +24,11 @@ def tls_fed_metadata_to_jws(
     issue_time: Optional[datetime] = None,
     compact: bool = True,
 ) -> bytes:
-    payload = metadata.json(exclude_unset=True)
+    if isinstance(metadata, TLSFEDMetadata):
+        payload = metadata.json(exclude_unset=True)
+    else:
+        payload = metadata
+
     if issue_time is None:
         issue_time = utc_now()
     expire_time = issue_time + expires
@@ -41,23 +45,26 @@ def tls_fed_metadata_to_jws(
 
 
 def create_tls_fed_metadata(
-    datadir: PurePath, entity_id: str, client_cert: str, organization_id: str = 'SE0123456789'
+    entity_id: str,
+    client_cert: str,
+    cache_ttl: int = 3600,
+    organization_id: str = 'SE0123456789',
+    scopes: Optional[List[str]] = None,
 ) -> TLSFEDMetadata:
-    _jwks = jwk.JWKSet()
-    with open(f'{datadir}/tls_fed_jwks.json', 'r') as f:
-        _jwks.import_keyset(f.read())
+
+    if scopes is None:
+        scopes = list()
 
     entities = [
-        Entity.parse_obj(
-            {
-                'entity_id': entity_id,
-                'organization': 'Test Org',
-                'organization_id': organization_id,
-                'scopes': ['test.localhost'],
-                'issuers': [
-                    {'x509certificate': f'-----BEGIN CERTIFICATE-----\n{client_cert}\n-----END CERTIFICATE-----'}
-                ],
-            }
+        Entity(
+            # catch 22, mypy says AnyUrl and pydantic expects a str
+            entity_id=entity_id,  # type: ignore
+            organization='Test Org',
+            organization_id=organization_id,
+            issuers=[
+                CertIssuers(x509certificate=f'-----BEGIN CERTIFICATE-----\n{client_cert}\n-----END CERTIFICATE-----')
+            ],
+            extensions=Extensions(saml_scope=SAMLScopeExtension(scope=scopes)),
         )
     ]
-    return TLSFEDMetadata(version='1.0.0', cache_ttl=3600, entities=entities)
+    return TLSFEDMetadata(version='1.0.0', cache_ttl=cache_ttl, entities=entities)

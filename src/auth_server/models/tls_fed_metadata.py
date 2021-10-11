@@ -4,17 +4,42 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import Enum
 from typing import List, Optional
 
 from pydantic import AnyUrl, BaseModel, Extra, Field, conint, constr
+
+from auth_server.models.jose import JOSEHeader
+
+
+class TLSFEDJOSEHeader(JOSEHeader):
+    iat: datetime
+    exp: datetime
+    iss: Optional[str]
+
+
+class RegisteredExtensions(str, Enum):
+    SAML_SCOPE = 'https://kontosynk.internetstiftelsen.se/saml-scope'
+
+
+class SAMLScopeExtension(BaseModel):
+    scope: List[str]
+
+
+class Extensions(BaseModel):
+    class Config:
+        extra = Extra.allow
+        allow_population_by_field_name = True  # allow registered extension to also be set by name, not only by alias
+
+    saml_scope: Optional[SAMLScopeExtension] = Field(default=None, alias=RegisteredExtensions.SAML_SCOPE.value)
 
 
 class CertIssuers(BaseModel):
     x509certificate: Optional[str] = Field(None, title='X.509 Certificate (PEM)')
 
 
-class Alg(Enum):
+class Alg(str, Enum):
     sha256 = 'sha256'
 
 
@@ -60,6 +85,9 @@ class Entity(BaseModel):
     )
     servers: Optional[List[Endpoint]] = None
     clients: Optional[List[Endpoint]] = None
+    # added after generation
+    organization_id: Optional[str] = None
+    extensions: Optional[Extensions] = None
 
 
 class Model(BaseModel):

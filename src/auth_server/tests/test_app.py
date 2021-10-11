@@ -9,7 +9,6 @@ from typing import Any, Dict, Optional
 from unittest import TestCase, mock
 from unittest.mock import AsyncMock
 
-import pkg_resources
 import yaml
 from cryptography import x509
 from cryptography.hazmat.primitives.serialization import Encoding
@@ -19,7 +18,7 @@ from starlette.testclient import TestClient
 from auth_server.api import init_auth_server_api
 from auth_server.config import ClientKey, load_config
 from auth_server.models.gnap import AccessTokenFlags, AccessTokenRequest, Client, GrantRequest, Key, Proof
-from auth_server.models.jose import ECJWK, JWSType, SupportedAlgorithms, SupportedHTTPMethods
+from auth_server.models.jose import ECJWK, SupportedAlgorithms, SupportedHTTPMethods, SupportedJWSType
 from auth_server.models.status import Status
 
 from auth_server.testing import MongoTemporaryInstance
@@ -48,10 +47,9 @@ class MockResponse:
         return self._content.decode('utf-8')
 
 
-class TestApp(TestCase):
+class TestAuthServer(TestCase):
     def setUp(self) -> None:
-        self.datadir = Path(pkg_resources.resource_filename(__name__, 'data'))
-        self.mongo_db = MongoTemporaryInstance.get_instance()
+        self.datadir = Path(__file__).with_name('data')
         self.config: Dict[str, Any] = {
             'testing': 'true',
             'log_level': 'DEBUG',
@@ -202,7 +200,7 @@ class TestApp(TestCase):
             access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
         )
         jws_header = {
-            'typ': JWSType.JWS,
+            'typ': SupportedJWSType.JWS,
             'alg': SupportedAlgorithms.ES256.value,
             'kid': self.client_jwk.key_id,
             'htm': SupportedHTTPMethods.POST.value,
@@ -232,7 +230,7 @@ class TestApp(TestCase):
             access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
         )
         jws_header = {
-            'typ': JWSType.JWSD,
+            'typ': SupportedJWSType.JWSD,
             'alg': SupportedAlgorithms.ES256.value,
             'kid': self.client_jwk.key_id,
             'htm': SupportedHTTPMethods.POST.value,
@@ -295,7 +293,9 @@ class TestApp(TestCase):
             tls_fed_jwks.import_keyset(f.read())
 
         entity_id = 'https://test.localhost'
-        metadata = create_tls_fed_metadata(self.datadir, entity_id=entity_id, client_cert=self.client_cert_str)
+        metadata = create_tls_fed_metadata(
+            entity_id=entity_id, scopes=['test.localhost'], client_cert=self.client_cert_str
+        )
         metadata_jws = tls_fed_metadata_to_jws(
             metadata,
             key=tls_fed_jwks.get_key('metadata_signing_key_id'),
@@ -331,7 +331,9 @@ class TestApp(TestCase):
             tls_fed_jwks.import_keyset(f.read())
 
         entity_id = 'https://test.localhost'
-        metadata = create_tls_fed_metadata(self.datadir, entity_id=entity_id, client_cert=self.client_cert_str)
+        metadata = create_tls_fed_metadata(
+            entity_id=entity_id, scopes=['test.localhost'], client_cert=self.client_cert_str
+        )
         metadata_jws = tls_fed_metadata_to_jws(
             metadata,
             key=tls_fed_jwks.get_key('metadata_signing_key_id'),
@@ -383,7 +385,7 @@ class TestApp(TestCase):
             tls_fed_jwks.import_keyset(f.read())
 
         entity_id = 'https://test.localhost'
-        metadata = create_tls_fed_metadata(Path(self.datadir), entity_id=entity_id, client_cert=self.client_cert_str)
+        metadata = create_tls_fed_metadata(entity_id=entity_id, client_cert=self.client_cert_str)
         metadata_jws = tls_fed_metadata_to_jws(
             metadata,
             key=tls_fed_jwks.get_key('metadata_signing_key_id'),
@@ -406,9 +408,7 @@ class TestApp(TestCase):
     def test_config_flow(self):
         self.config['auth_flows'] = json.dumps(['TestFlow', 'ConfigFlow'])
         del self.config['auth_token_audience']  # auth_token_audience defaults to None
-        client_key = ClientKey.parse_obj(
-            {'proof': Proof.MTLS, 'cert': self.client_cert_str, 'claims': {'test_claim': 'test_claim_value'}}
-        )
+        client_key = ClientKey(proof=Proof.MTLS, cert=self.client_cert_str, claims={'test_claim': 'test_claim_value'})
         key_reference = 'test_key_ref'
         self.config['client_keys'] = json.dumps({key_reference: client_key.dict(exclude_unset=True)})
         self._update_app_config(config=self.config)

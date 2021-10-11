@@ -12,6 +12,7 @@ from jwcrypto.jwk import JWK
 from auth_server.config import AuthServerConfig, ConfigurationError
 from auth_server.context import ContextRequest
 from auth_server.mdq import MDQData, mdq_data_to_key, xml_mdq_get
+from auth_server.models.claims import Claims, ConfigClaims, MDQClaims, TLSFEDClaims
 from auth_server.models.gnap import (
     Access,
     AccessTokenFlags,
@@ -22,7 +23,6 @@ from auth_server.models.gnap import (
     Key,
     Proof,
 )
-from auth_server.models.claims import Claims, ConfigClaims, MDQClaims, TLSFEDClaims
 from auth_server.proof.common import lookup_client_key_from_config
 from auth_server.proof.jws import check_jws_proof, check_jwsd_proof
 from auth_server.proof.mtls import check_mtls_proof
@@ -381,11 +381,16 @@ class TLSFEDFlow(OnlyMTLSProofFlow):
         if not self.entity:
             raise NextFlowException(status_code=400, detail='missing metadata entity')
 
+        # Get scopes from metadata
+        scopes = None
+        if self.entity.extensions and self.entity.extensions.saml_scope:
+            scopes = self.entity.extensions.saml_scope.scope
+
         base_claims = await super()._create_claims()
         return TLSFEDClaims(
             **base_claims.dict(exclude_none=True),
             entity_id=self.entity.entity_id,
-            scopes=self.entity.scopes,
+            scopes=scopes,
             organization_id=self.entity.organization_id,
             source=self.entity.issuer,
         )
