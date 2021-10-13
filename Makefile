@@ -1,5 +1,7 @@
 SOURCE=src
+PYTHON=$(shell which python)
 PIPCOMPILE=pip-compile --generate-hashes --upgrade --extra-index-url https://pypi.sunet.se/simple
+PIPSYNC=pip-sync --index-url https://pypi.sunet.se/simple --python-executable $(PYTHON)
 
 test:
 	pytest --log-cli-level DEBUG
@@ -11,14 +13,11 @@ reformat:
 typecheck:
 	mypy --ignore-missing-imports $(SOURCE)
 
-sync_deps: update_deps
-	# Can't use pip-sync until https://github.com/jazzband/pip-tools/issues/1087 is resolved
-	# pip-sync
-	pip freeze | xargs pip uninstall -y || true
-	pip install -r requirements.txt
+sync_deps:
+	$(PIPSYNC) requirements.txt
 
-dev_deps: sync_deps
-	pip install -r dev_requirements.txt
+dev_sync_deps:
+	$(PIPSYNC) dev_requirements.txt
 
 %ments.txt: %ments.in
 	CUSTOM_COMPILE_COMMAND="make update_deps" $(PIPCOMPILE) $< > $@
