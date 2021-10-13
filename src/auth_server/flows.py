@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import logging
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, cast
 
 from fastapi import HTTPException
 from jwcrypto import jwt
 from jwcrypto.jwk import JWK
+from pydantic import AnyUrl
 
 from auth_server.config import AuthServerConfig, ConfigurationError
 from auth_server.context import ContextRequest
@@ -22,12 +23,18 @@ from auth_server.models.gnap import (
     GrantResponse,
     Key,
     Proof,
+    InteractionRequest,
+    StartInteractionMethod,
+    FinishInteractionMethod,
+    InteractionResponse,
+    UserCode,
 )
 from auth_server.proof.common import lookup_client_key_from_config
 from auth_server.proof.jws import check_jws_proof, check_jwsd_proof
 from auth_server.proof.mtls import check_mtls_proof
+from auth_server.routers.interaction import interaction_router
 from auth_server.tls_fed_auth import MetadataEntity, entity_to_key, get_entity
-from auth_server.utils import get_values
+from auth_server.utils import get_values, get_short_hash
 
 __author__ = 'lundberg'
 
@@ -44,6 +51,11 @@ class BuiltInFlow(str, Enum):
 
 # Use this to go to next flow
 class NextFlowException(HTTPException):
+    pass
+
+
+# Use this to pause the flow and do a user interaction
+class InteractionNeededException(HTTPException):
     pass
 
 
@@ -72,7 +84,7 @@ class BaseAuthFlow:
         self.detached_jws = detached_jws
         self.proof_ok: bool = False
         self.requested_access: List[Union[str, Access]] = []
-        self.grant_response: Optional[GrantResponse] = None
+        self.grant_response: GrantResponse = GrantResponse()
         self.mdq_data: Optional[MDQData] = None
         self.config_claims: Dict[str, Any] = {}
 
@@ -117,7 +129,10 @@ class BaseAuthFlow:
     async def validate_proof(self) -> Optional[GrantResponse]:
         raise NotImplementedError()
 
-    async def handle_access(self) -> Optional[GrantResponse]:
+    async def handle_subject(self) -> Optional[GrantResponse]:
+        raise NotImplementedError()
+
+    async def handle_access_token(self) -> Optional[GrantResponse]:
         raise NotImplementedError()
 
     async def handle_interaction(self) -> Optional[GrantResponse]:
@@ -157,10 +172,6 @@ class CommonFlow(BaseAuthFlow):
             raise NextFlowException(status_code=400, detail='key by reference not supported')
         return None
 
-    async def handle_interaction(self) -> Optional[GrantResponse]:
-        # No interactions by default for now
-        return None
-
     async def handle_access_token(self) -> Optional[GrantResponse]:
         if isinstance(self.grant_request.access_token, list):
             if len(self.grant_request.access_token) > 1:
@@ -170,6 +181,55 @@ class CommonFlow(BaseAuthFlow):
         if self.grant_request.access_token.access:
             self.requested_access = self.grant_request.access_token.access
         return None
+
+    async def handle_interaction(self) -> Optional[GrantResponse]:
+        if not isinstance(self.grant_request.interact, InteractionRequest):
+            return None
+
+        interaction_response = InteractionResponse()
+        supported_start_methods = [StartInteractionMethod.REDIRECT, StartInteractionMethod.USER_CODE]
+        supported_finish_methods = [FinishInteractionMethod.REDIRECT, FinishInteractionMethod.PUSH]
+        start_methods = [method for method in self.grant_request.interact.start if method in supported_start_methods]
+        finish_method = None
+
+        if not start_methods:
+            # no start interaction methods shared by client and AS
+            detail = (
+                f'no supported start interaction method found. AS supports '
+                f'{[method.value for method in supported_start_methods]}'
+            )
+            raise NextFlowException(status_code=400, detail=detail)
+
+        if self.grant_request.interact.finish is not None:
+            if self.grant_request.interact.finish not in supported_finish_methods:
+                # no finish interaction methods shared by client and AS
+                detail = (
+                    f'no supported finish interaction method found. AS supports '
+                    f'{[method.value for method in supported_finish_methods]}'
+                )
+                raise NextFlowException(status_code=400, detail=detail)
+            finish_method = self.grant_request.interact.finish.method
+
+        # return all mutually supported interaction methods according to draft
+        if StartInteractionMethod.REDIRECT in start_methods:
+            interaction_response.redirect = cast(
+                AnyUrl, self.request.url_for('redirect', transaction_id=get_short_hash())
+            )
+        if StartInteractionMethod.USER_CODE in start_methods:
+            interaction_response.user_code = UserCode(
+                code=get_short_hash(length=8), url=cast(AnyUrl, self.request.url_for('user_code_input'))
+            )
+
+        # finish method can be one or zero
+        if finish_method is not None:
+            if finish_method in [FinishInteractionMethod.REDIRECT, FinishInteractionMethod.PUSH]:
+                interaction_response.finish = get_short_hash(length=24)
+
+        # TODO: implement continue for interactions with no finish method
+
+        # TODO: save current state
+        self.grant_response.interact = interaction_response
+        return self.grant_response
 
     async def create_auth_token(self) -> Optional[GrantResponse]:
         if not self.proof_ok:
@@ -247,10 +307,6 @@ class FullFlow(CommonFlow):
             raise NextFlowException(status_code=400, detail='no supported proof method')
         return None
 
-    async def handle_interaction(self) -> Optional[GrantResponse]:
-        # if isinstance(self.grant_request.interact,
-        pass
-
 
 class TestFlow(FullFlow):
     async def _create_claims(self) -> Claims:
@@ -314,6 +370,10 @@ class OnlyMTLSProofFlow(CommonFlow):
         self.proof_ok = await check_mtls_proof(grant_request=self.grant_request, cert=self.tls_client_cert)
         if not self.proof_ok:
             raise NextFlowException(status_code=401, detail='no client certificate found')
+        return None
+
+    async def handle_interaction(self) -> Optional[GrantResponse]:
+        # No interaction for metadata based client authentications
         return None
 
 

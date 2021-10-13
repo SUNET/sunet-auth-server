@@ -2,6 +2,7 @@
 __author__ = 'lundberg'
 
 import logging
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form
@@ -14,28 +15,23 @@ from auth_server.templating import TestableJinja2Templates
 logger = logging.getLogger(__name__)
 
 interaction_router = APIRouter(route_class=ContextRequestRoute, prefix='/interaction')
-templates = TestableJinja2Templates(directory="templates")
+templates = TestableJinja2Templates(directory=str(Path(__file__).with_name('templates')))
 
 
-@interaction_router.get('/{transaction_id}')
-async def interaction(request: ContextRequest, transaction_id: str, config: AuthServerConfig = Depends(load_config)):
+@interaction_router.get('/redirect/{transaction_id}')
+async def redirect(request: ContextRequest, transaction_id: str, config: AuthServerConfig = Depends(load_config)):
     pass
 
 
-@interaction_router.get('/{transaction_id}/short-code', response_class=HTMLResponse)
-async def get_short_code(
-    request: ContextRequest, transaction_id: str, config: AuthServerConfig = Depends(load_config),
+@interaction_router.get('/code', response_class=HTMLResponse)
+async def user_code_input(
+    request: ContextRequest, config: AuthServerConfig = Depends(load_config),
 ):
-    return templates.TemplateResponse(
-        "short_code.jinja2", context={'request': request, 'transaction_id': transaction_id}
-    )
+    return templates.TemplateResponse("user_code.jinja2", context={'request': request})
 
 
-@interaction_router.post('/{transaction_id}/short-code')
-async def post_short_code(
-    request: ContextRequest,
-    transaction_id: str,
-    short_code: Optional[str] = Form(...),
-    config: AuthServerConfig = Depends(load_config),
+@interaction_router.post('/code', response_class=HTMLResponse)
+async def user_code_finish(
+    request: ContextRequest, user_code: Optional[str] = Form(...), config: AuthServerConfig = Depends(load_config),
 ):
-    return {'transaction_id': transaction_id, 'short_code': short_code}
+    return {'user_code': user_code}

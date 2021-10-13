@@ -4,6 +4,7 @@ import json
 import logging
 from functools import lru_cache
 from typing import Any, Callable, Generator, Mapping, Sequence, Union
+from uuid import uuid4
 
 from cryptography.x509 import Certificate, load_pem_x509_certificate
 from jwcrypto import jwk
@@ -79,4 +80,6 @@ def get_values(key: str, obj: Union[Mapping, Sequence]) -> Generator[Any, None, 
 
 
 def get_short_hash(length=10) -> str:
+    if length > 32:
+        raise ValueError('Max length is 32')
     return uuid4().hex[:length]

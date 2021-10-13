@@ -50,6 +50,7 @@ class MockResponse:
 class TestAuthServer(TestCase):
     def setUp(self) -> None:
         self.datadir = Path(__file__).with_name('data')
+        self.mongo_db = MongoTemporaryInstance.get_instance()
         self.config: Dict[str, Any] = {
             'testing': 'true',
             'log_level': 'DEBUG',
@@ -463,8 +464,25 @@ class TestAuthServer(TestCase):
                 assert 'scope' in item
                 assert item['scope'] == 'a_scope'
 
-    def test_transaction_short_code_get(self):
-        response = self.client.get("/interaction/abc123/short-code")
+    def test_interaction_user_code_get(self):
+        response = self.client.get("/interaction/code")
         assert response.status_code == 200
         assert '<h4>Input your code</h4>' in response.text
 
+    def test_transaction_interact(self):
+        self.config['auth_flows'] = json.dumps(['TestFlow'])
+        self._update_app_config(config=self.config)
+
+        grant_request = {
+            'access_token': {'flags': ['bearer']},
+            'client': {'key': {'proof': 'test'}},
+            'interact': {'start': ['redirect', 'user_code']},
+        }
+
+        response = self.client.post("/transaction", json=grant_request)
+        assert response.status_code == 200
+        assert 'interact' in response.json()
+        interaction_response = response.json()['interact']
+        assert interaction_response['redirect'] is not None
+        assert interaction_response['user_code']['code'] is not None
+        assert interaction_response['user_code']['url'] is not None

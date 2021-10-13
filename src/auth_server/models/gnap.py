@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Any
 
-from pydantic import AnyUrl, BaseModel, Field
+from pydantic import AnyUrl, BaseModel, Field, Extra
 
 from auth_server.models.jose import (
     ECJWK,
@@ -22,6 +22,11 @@ __author__ = 'lundberg'
 # https://datatracker.ietf.org/doc/html/draft-ietf-gnap-core-protocol
 
 
+class GnapBaseModel(BaseModel):
+    class Config:
+        allow_population_by_field_name = True
+
+
 class Proof(str, Enum):
     DPOP = 'dpop'
     HTTPSIGN = 'httpsign'
@@ -32,17 +37,14 @@ class Proof(str, Enum):
     TEST = 'test'
 
 
-class Key(BaseModel):
+class Key(GnapBaseModel):
     proof: Proof
     jwk: Optional[Union[ECJWK, RSAJWK, SymmetricJWK]] = None
     cert: Optional[str] = None
     cert_S256: Optional[str] = Field(default=None, alias='cert#S256')
 
-    class Config:
-        allow_population_by_field_name = True
 
-
-class Access(BaseModel):
+class Access(GnapBaseModel):
     # The value of the "type" field is under the control of the AS.  This
     # field MUST be compared using an exact byte match of the string value
     # against known types by the AS.  The AS MUST ensure that there is no
@@ -81,39 +83,61 @@ class AccessTokenFlags(str, Enum):
     SPLIT = 'split'
 
 
-class AccessTokenRequest(BaseModel):
+class AccessTokenRequest(GnapBaseModel):
     access: Optional[List[Union[str, Access]]] = None
     # TODO: label is REQUIRED if used as part of a multiple access token request
     label: Optional[str] = None
     flags: Optional[List[AccessTokenFlags]] = None
 
 
-# TODO: sub_ids should correspond to User sub_ids and assertion values
-class Subject(BaseModel):
-    sub_ids: Optional[List[str]] = None
-    assertions: Optional[List[str]] = None
+class SubjectIdentifierFormat(str, Enum):
+    ACCOUNT = 'account'
+    ALIASES = 'aliases'
+    DID = 'did'
+    EMAIL = 'email'
+    ISS_SUB = 'iss_sub'
+    OPAQUE = 'opaque'
+    PHONE_NUMBER = 'phone_number'
 
 
-class Display(BaseModel):
+class SubjectAssertion(str, Enum):
+    ID_TOKEN = 'id_token'
+    SAML2 = 'saml2'
+
+
+class Subject(GnapBaseModel):
+    formats: Optional[List[SubjectIdentifierFormat]] = None
+    assertions: Optional[List[SubjectAssertion]] = None
+
+
+class Display(GnapBaseModel):
     name: Optional[str] = None
     uri: Optional[str] = None
     logo_uri: Optional[str] = None
 
 
-class Client(BaseModel):
+class Client(GnapBaseModel):
     key: Union[str, Key]
     class_id: Optional[str] = None
     display: Optional[Display] = None
 
 
-# TODO: Check https://datatracker.ietf.org/doc/html/draft-ietf-secevent-subject-identifiers-06 for
-#   implementation details when needed
-class User(BaseModel):
-    sub_ids: Optional[List[Dict[str, str]]] = None
-    assertions: Optional[Dict[str, str]] = None
+# TODO: implement sub_ids from ietf-secevent-subject-identifiers
+class SubjectIdentifier(GnapBaseModel):
+    format: SubjectIdentifierFormat
+
+    class Config:
+        extra = Extra.allow
 
 
-class StartInteraction(str, Enum):
+class User(GnapBaseModel):
+    sub_ids: Optional[List[SubjectIdentifier]] = None
+    # An object containing assertions as values keyed on the assertion type.
+    # Possible keys include "id_token" for an [OIDC] ID Token and "saml2" for a SAML 2 assertion.
+    assertions: Optional[Dict[SubjectAssertion, Dict[str, Any]]] = None
+
+
+class StartInteractionMethod(str, Enum):
     REDIRECT = 'redirect'
     APP = 'app'
     USER_CODE = 'user_code'
@@ -129,24 +153,24 @@ class HashMethod(str, Enum):
     SHA3 = 'sha3'
 
 
-class FinishInteraction(BaseModel):
+class FinishInteraction(GnapBaseModel):
     method: FinishInteractionMethod
     uri: AnyUrl
     nonce: str
-    hash_method: Optional[HashMethod] = None
+    hash_method: HashMethod = Field(default=HashMethod.SHA3)
 
 
-class Hints(BaseModel):
+class Hints(GnapBaseModel):
     ui_locales: Optional[List[str]] = None
 
 
-class InteractionRequest(BaseModel):
-    start: List[StartInteraction]
+class InteractionRequest(GnapBaseModel):
+    start: List[StartInteractionMethod]
     finish: Optional[FinishInteraction] = None
     hints: Optional[Hints] = None
 
 
-class GrantRequest(BaseModel):
+class GrantRequest(GnapBaseModel):
     access_token: Union[AccessTokenRequest, List[AccessTokenRequest]]
     subject: Optional[Subject] = None
     client: Union[str, Client]
@@ -154,30 +178,30 @@ class GrantRequest(BaseModel):
     interact: Optional[InteractionRequest] = None
 
 
-class ContinueAccessToken(BaseModel):
+class ContinueAccessToken(GnapBaseModel):
     bound: bool
     value: str
 
 
-class Continue(BaseModel):
+class Continue(GnapBaseModel):
     uri: AnyUrl
     wait: Optional[int]
     access_token: ContinueAccessToken
 
 
-class UserCode(BaseModel):
+class UserCode(GnapBaseModel):
     code: str
     url: Optional[AnyUrl] = None
 
 
-class InteractionResponse(BaseModel):
+class InteractionResponse(GnapBaseModel):
     redirect: Optional[AnyUrl] = None
     app: Optional[AnyUrl] = None
     user_code: Optional[UserCode] = None
     finish: Optional[str] = None
 
 
-class AccessTokenResponse(BaseModel):
+class AccessTokenResponse(GnapBaseModel):
     value: str
     label: Optional[str] = None
     manage: Optional[AnyUrl] = None
@@ -197,7 +221,7 @@ class Error(str, Enum):
     UNKNOWN_REQUEST = 'unknown_request'
 
 
-class GrantResponse(BaseModel):
+class GrantResponse(GnapBaseModel):
     continue_: Optional[Continue] = Field(default=None, alias='continue')
     access_token: Optional[AccessTokenResponse] = None
     interact: Optional[InteractionResponse] = None
