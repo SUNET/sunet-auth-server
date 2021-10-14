@@ -20,7 +20,6 @@ from auth_server.config import ClientKey, load_config
 from auth_server.models.gnap import AccessTokenFlags, AccessTokenRequest, Client, GrantRequest, Key, Proof
 from auth_server.models.jose import ECJWK, SupportedAlgorithms, SupportedHTTPMethods, SupportedJWSType
 from auth_server.models.status import Status
-
 from auth_server.testing import MongoTemporaryInstance
 from auth_server.tests.utils import create_tls_fed_metadata, tls_fed_metadata_to_jws
 from auth_server.time_utils import utc_now
@@ -58,7 +57,7 @@ class TestAuthServer(TestCase):
             'signing_key_id': 'test-kid',
             'mdq_server': 'http://localhost/mdq',
             'auth_token_audience': 'some_audience',
-            'auth_flows': json.dumps(['FullFlow']),
+            'auth_flows': json.dumps(['TestFlow']),
             'mongo_uri': self.mongo_db.uri,
         }
         environ.update(self.config)
@@ -133,9 +132,6 @@ class TestAuthServer(TestCase):
         assert response.status_code == 200
 
     def test_transaction_test_mode(self):
-        self.config['auth_flows'] = json.dumps(['FullFlow', 'TestFlow'])
-        self._update_app_config(config=self.config)
-
         req = GrantRequest(
             client=Client(key=Key(proof=Proof.TEST)),
             access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
@@ -180,6 +176,9 @@ class TestAuthServer(TestCase):
 
     @mock.patch('aiohttp.ClientSession.get', new_callable=AsyncMock)
     def test_transaction_mtls_mdq_with_key_reference(self, mock_mdq):
+        self.config['auth_flows'] = json.dumps(['TestFlow', 'MDQFlow'])
+        self._update_app_config(config=self.config)
+
         mock_mdq.return_value = MockResponse(content=self.mdq_response)
 
         req = GrantRequest(
@@ -258,7 +257,7 @@ class TestAuthServer(TestCase):
 
     @mock.patch('aiohttp.ClientSession.get', new_callable=AsyncMock)
     def test_mdq_flow(self, mock_mdq):
-        self.config['auth_flows'] = json.dumps(['MDQFlow'])
+        self.config['auth_flows'] = json.dumps(['TestFlow', 'MDQFlow'])
         self._update_app_config(config=self.config)
 
         mock_mdq.return_value = MockResponse(content=self.mdq_response)
@@ -282,7 +281,7 @@ class TestAuthServer(TestCase):
 
     @mock.patch('aiohttp.ClientSession.get', new_callable=AsyncMock)
     def test_tls_fed_flow_remote_metadata(self, mock_metadata):
-        self.config['auth_flows'] = json.dumps(['TLSFEDFlow'])
+        self.config['auth_flows'] = json.dumps(['TestFlow', 'TLSFEDFlow'])
         self.config['tls_fed_metadata'] = json.dumps(
             [{'remote': 'https://metadata.example.com/metadata.jws', 'jwks': f'{self.datadir}/tls_fed_jwks.json'}]
         )
@@ -347,7 +346,7 @@ class TestAuthServer(TestCase):
         with NamedTemporaryFile() as f:
             f.write(metadata_jws)
             f.flush()
-            self.config['auth_flows'] = json.dumps(['TLSFEDFlow'])
+            self.config['auth_flows'] = json.dumps(['TestFlow', 'TLSFEDFlow'])
             self.config['tls_fed_metadata'] = json.dumps(
                 [{'local': f'{f.name}', 'jwks': f'{self.datadir}/tls_fed_jwks.json'}]
             )
@@ -431,9 +430,6 @@ class TestAuthServer(TestCase):
         assert 'aud' not in claims
 
     def test_requested_access_in_jwt(self):
-        self.config['auth_flows'] = json.dumps(['TestFlow'])
-        self._update_app_config(config=self.config)
-
         grant_request = {
             'access_token': {
                 'flags': ['bearer'],
