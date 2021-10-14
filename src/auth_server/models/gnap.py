@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional, Union, Any
+from typing import Any, Dict, List, Optional, Union
 
-from pydantic import AnyUrl, BaseModel, Field, Extra
+from pydantic import AnyUrl, BaseModel, Extra, Field
 
 from auth_server.models.jose import (
     ECJWK,

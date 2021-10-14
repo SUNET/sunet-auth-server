@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union, cast
+from typing import List, Optional, cast
 
 from fastapi import HTTPException
 from jwcrypto import jwt
@@ -12,29 +12,28 @@ from pydantic import AnyUrl
 
 from auth_server.config import AuthServerConfig, ConfigurationError
 from auth_server.context import ContextRequest
-from auth_server.mdq import MDQData, mdq_data_to_key, xml_mdq_get
+from auth_server.db.transaction_state import ConfigState, MDQState, TLSFEDState, TransactionState
+from auth_server.mdq import mdq_data_to_key, xml_mdq_get
 from auth_server.models.claims import Claims, ConfigClaims, MDQClaims, TLSFEDClaims
 from auth_server.models.gnap import (
-    Access,
     AccessTokenFlags,
     AccessTokenResponse,
     Client,
+    FinishInteractionMethod,
     GrantRequest,
     GrantResponse,
+    InteractionRequest,
+    InteractionResponse,
     Key,
     Proof,
-    InteractionRequest,
     StartInteractionMethod,
-    FinishInteractionMethod,
-    InteractionResponse,
     UserCode,
 )
 from auth_server.proof.common import lookup_client_key_from_config
 from auth_server.proof.jws import check_jws_proof, check_jwsd_proof
 from auth_server.proof.mtls import check_mtls_proof
-from auth_server.routers.interaction import interaction_router
-from auth_server.tls_fed_auth import MetadataEntity, entity_to_key, get_entity
-from auth_server.utils import get_values, get_short_hash
+from auth_server.tls_fed_auth import entity_to_key, get_entity
+from auth_server.utils import get_short_hash, get_values
 
 __author__ = 'lundberg'
 
