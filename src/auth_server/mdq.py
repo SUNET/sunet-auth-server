@@ -2,7 +2,6 @@
 import logging
 from base64 import b64encode
 from collections import OrderedDict as _OrderedDict
-from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional, OrderedDict
 
@@ -10,6 +9,7 @@ import aiohttp
 import xmltodict
 from cryptography.hazmat.primitives.hashes import SHA1, SHA256, Hash
 from cryptography.x509 import Certificate, load_pem_x509_certificate
+from pydantic import BaseModel, Field
 from pyexpat import ExpatError
 
 from auth_server.models.gnap import Key, Proof
@@ -21,21 +21,25 @@ __author__ = 'lundberg'
 logger = logging.getLogger(__name__)
 
 
-class KeyUse(Enum):
+class KeyUse(str, Enum):
     SIGNING = 'signing'
     ENCRYPTION = 'encryption'
 
 
-@dataclass(frozen=True)
-class MDQCert:
+class MDQBase(BaseModel):
+    class Config:
+        allow_mutation = False  # should not change after load
+        arbitrary_types_allowed = True  # needed for x509.Certificate
+
+
+class MDQCert(MDQBase):
     use: KeyUse
     cert: Certificate
 
 
-@dataclass(frozen=True)
-class MDQData:
-    certs: List[MDQCert] = field(default_factory=list)
-    metadata: OrderedDict = field(default_factory=_OrderedDict)
+class MDQData(MDQBase):
+    certs: List[MDQCert] = Field(default_factory=list)
+    metadata: OrderedDict = Field(default_factory=_OrderedDict)
 
 
 async def xml_mdq_get(entity_id: str, mdq_url: str) -> MDQData:
