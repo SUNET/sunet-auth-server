@@ -414,7 +414,8 @@ class MDQFlow(OnlyMTLSProofFlow):
         logger.debug(f'key reference: {key_id}')
 
         if self.config.mdq_server is None:
-            raise ConfigurationError('mdq_server not configured')
+            logger.error('MDQ server not configured but MDQ flow loaded')
+            raise StopTransactionException(status_code=500, detail='bad configuration')
 
         # Look for a key using mdq
         logger.info(f'Trying to load key from mdq')
@@ -464,7 +465,8 @@ class TLSFEDFlow(OnlyMTLSProofFlow):
         logger.debug(f'key reference: {key_id}')
 
         if not self.config.tls_fed_metadata:
-            raise ConfigurationError('TLS fed auth not configured')
+            logger.error('TLS fed auth not configured but TLS fed auth flow loaded')
+            raise StopTransactionException(status_code=500, detail='bad configuration')
 
         # Look for a key in the TLS fed metadata
         logger.info(f'Trying to load key from TLS fed auth')
