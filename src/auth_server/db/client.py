@@ -2,23 +2,21 @@
 import logging
 from typing import Any, AsyncGenerator, Dict, Mapping, Optional, Union
 
-from async_lru import alru_cache
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import WriteConcern
 
-from auth_server.config import ConfigurationError, load_config
+from auth_server.config import load_config
 
 __author__ = 'lundberg'
 
 logger = logging.getLogger(__name__)
 
 
-@alru_cache
-async def get_mongodb_client():
+async def get_mongodb_client() -> Optional[AsyncIOMotorClient]:
     config = load_config()
     if config.mongo_uri is None:
-        raise ConfigurationError('mongo_uri not set')
+        return None
     return AsyncIOMotorClient(config.mongo_uri, tz_aware=True)
 
 

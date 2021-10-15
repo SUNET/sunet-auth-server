@@ -79,7 +79,7 @@ def get_values(key: str, obj: Union[Mapping, Sequence]) -> Generator[Any, None, 
                 yield hit
 
 
-def get_short_hash(length=10) -> str:
+def get_hex_uuid4(length=32) -> str:
     if length > 32:
         raise ValueError('Max length is 32')
     return uuid4().hex[:length]

@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from abc import ABC
 from enum import Enum
-from typing import Any, Dict, List, Optional, Type, cast, Mapping, TypeVar, Generic
+from typing import Any, Dict, List, Mapping, Optional, Type, cast
 
 from fastapi import HTTPException
 from jwcrypto import jwt
@@ -13,12 +13,7 @@ from pydantic import AnyUrl
 
 from auth_server.config import AuthServerConfig
 from auth_server.context import ContextRequest
-from auth_server.db.transaction_state import (
-    ConfigState,
-    MDQState,
-    TLSFEDState,
-    TestState,
-)
+from auth_server.db.transaction_state import ConfigState, MDQState, TestState, TLSFEDState, get_transaction_state_db
 from auth_server.mdq import mdq_data_to_key, xml_mdq_get
 from auth_server.models.claims import Claims, ConfigClaims, MDQClaims, TLSFEDClaims
 from auth_server.models.gnap import (
@@ -38,7 +33,7 @@ from auth_server.proof.common import lookup_client_key_from_config
 from auth_server.proof.jws import check_jws_proof, check_jwsd_proof
 from auth_server.proof.mtls import check_mtls_proof
 from auth_server.tls_fed_auth import entity_to_key, get_entity
-from auth_server.utils import get_short_hash, get_values
+from auth_server.utils import get_hex_uuid4, get_values
 
 __author__ = 'lundberg'
 
@@ -67,11 +62,10 @@ class StopTransactionException(HTTPException):
     pass
 
 
-StateVar = TypeVar('StateVar')
-
-
-class BaseAuthFlow(Generic[StateVar], ABC):
-    def __init__(self, request: ContextRequest, config: AuthServerConfig, signing_key: JWK, state: Mapping[str, Any]):
+class BaseAuthFlow(ABC):
+    def __init__(
+        self, request: ContextRequest, config: AuthServerConfig, signing_key: JWK, state: Mapping[str, Any],
+    ):
         self.config = config
         self.request = request
         self.signing_key = signing_key
@@ -213,6 +207,10 @@ class CommonFlow(BaseAuthFlow):
         if not isinstance(self.state.grant_request.interact, InteractionRequest):
             return None
 
+        transaction_state_db = await get_transaction_state_db()
+        if transaction_state_db is None:
+            raise NextFlowException(status_code=400, detail='interact not supported')
+
         interaction_response = InteractionResponse()
         supported_start_methods = [StartInteractionMethod.REDIRECT, StartInteractionMethod.USER_CODE]
         supported_finish_methods = [FinishInteractionMethod.REDIRECT, FinishInteractionMethod.PUSH]
@@ -242,22 +240,24 @@ class CommonFlow(BaseAuthFlow):
         # return all mutually supported interaction methods according to draft
         if StartInteractionMethod.REDIRECT in start_methods:
             interaction_response.redirect = cast(
-                AnyUrl, self.request.url_for('redirect', transaction_id=get_short_hash())
+                AnyUrl, self.request.url_for('redirect', transaction_id=self.state.transaction_id)
             )
         if StartInteractionMethod.USER_CODE in start_methods:
             interaction_response.user_code = UserCode(
-                code=get_short_hash(length=8), url=cast(AnyUrl, self.request.url_for('user_code_input'))
+                code=get_hex_uuid4(length=8), url=cast(AnyUrl, self.request.url_for('user_code_input'))
             )
 
         # finish method can be one or zero
         if finish_method is not None:
             if finish_method in [FinishInteractionMethod.REDIRECT, FinishInteractionMethod.PUSH]:
-                interaction_response.finish = get_short_hash(length=24)
+                interaction_response.finish = get_hex_uuid4(length=24)
 
         # TODO: implement continue for interactions with no finish method
 
-        # TODO: save current state
         self.state.grant_response.interact = interaction_response
+        res = await transaction_state_db.save(self.state)
+        logger.debug(f'state {self.state} saved: {res}')
+
         return self.state.grant_response
 
     async def create_auth_token(self) -> Optional[GrantResponse]:
