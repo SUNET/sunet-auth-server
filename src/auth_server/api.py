@@ -7,7 +7,7 @@ from starlette.staticfiles import StaticFiles
 
 from auth_server.config import AuthServerConfig, load_config
 from auth_server.context import ContextRequestRoute
-from auth_server.flows import BaseAuthFlow, BuiltInFlow, ConfigFlow, MDQFlow, TestFlow, TLSFEDFlow
+from auth_server.flows import FLOW_MAP, BaseAuthFlow, BuiltInFlow, ConfigFlow, MDQFlow, TestFlow, TLSFEDFlow
 from auth_server.log import init_logging
 from auth_server.middleware import JOSEMiddleware
 from auth_server.routers.interaction import interaction_router
@@ -35,16 +35,10 @@ class AuthServer(FastAPI):
         flows: List[Type[BaseAuthFlow]] = []
         for flow in config.auth_flows:
             try:
-                builtin_flow = BuiltInFlow(flow)
-                if builtin_flow is BuiltInFlow.MDQFLOW:
-                    flows.append(MDQFlow)
-                elif builtin_flow is BuiltInFlow.TLSFEDFLOW:
-                    flows.append(TLSFEDFlow)
-                elif builtin_flow is BuiltInFlow.CONFIGFLOW:
-                    flows.append(ConfigFlow)
-                elif builtin_flow is BuiltInFlow.TESTFLOW:
-                    flows.append(TestFlow)
-                logger.debug(f'Loaded built-in flow {flow}')
+                builtin_flow = FLOW_MAP.get(BuiltInFlow(flow))
+                if builtin_flow:
+                    flows.append(builtin_flow)
+                    logger.debug(f'Loaded built-in flow {flow}')
             except ValueError:  # Not a built in flow
                 try:
                     custom_flow = cast(Type[BaseAuthFlow], import_class(flow))

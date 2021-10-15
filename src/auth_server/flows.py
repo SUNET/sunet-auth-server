@@ -146,6 +146,9 @@ class BaseAuthFlow:
         return None
 
 
+FLOW_MAP: Dict[BuiltInFlow, Type[BaseAuthFlow]] = {}  # Register the flow after it is defined below
+
+
 class CommonFlow(BaseAuthFlow):
     """
     Gather current flow rules and implementation limitations here
@@ -295,6 +298,9 @@ class TestFlow(CommonFlow):
         return await super().validate_proof()
 
 
+FLOW_MAP[BuiltInFlow.TESTFLOW] = TestFlow
+
+
 class ConfigFlow(CommonFlow):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -330,6 +336,9 @@ class ConfigFlow(CommonFlow):
         if self.request.context.key_reference in self.config.client_keys:  # please mypy
             self.state.config_claims = self.config.client_keys[self.request.context.key_reference].claims
         return None
+
+
+FLOW_MAP[BuiltInFlow.CONFIGFLOW] = ConfigFlow
 
 
 class OnlyMTLSProofFlow(CommonFlow):
@@ -413,6 +422,9 @@ class MDQFlow(OnlyMTLSProofFlow):
         return None
 
 
+FLOW_MAP[BuiltInFlow.MDQFLOW] = MDQFlow
+
+
 class TLSFEDFlow(OnlyMTLSProofFlow):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -461,3 +473,6 @@ class TLSFEDFlow(OnlyMTLSProofFlow):
 
     async def handle_interaction(self) -> Optional[GrantResponse]:
         return None
+
+
+FLOW_MAP[BuiltInFlow.TLSFEDFLOW] = TLSFEDFlow
