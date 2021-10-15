@@ -2,17 +2,23 @@
 from __future__ import annotations
 
 import logging
+from abc import ABC
 from enum import Enum
-from typing import List, Optional, cast
+from typing import Any, Dict, List, Optional, Type, cast, Mapping, TypeVar, Generic
 
 from fastapi import HTTPException
 from jwcrypto import jwt
 from jwcrypto.jwk import JWK
 from pydantic import AnyUrl
 
-from auth_server.config import AuthServerConfig, ConfigurationError
+from auth_server.config import AuthServerConfig
 from auth_server.context import ContextRequest
-from auth_server.db.transaction_state import ConfigState, MDQState, TLSFEDState, TransactionState
+from auth_server.db.transaction_state import (
+    ConfigState,
+    MDQState,
+    TLSFEDState,
+    TestState,
+)
 from auth_server.mdq import mdq_data_to_key, xml_mdq_get
 from auth_server.models.claims import Claims, ConfigClaims, MDQClaims, TLSFEDClaims
 from auth_server.models.gnap import (
@@ -20,7 +26,6 @@ from auth_server.models.gnap import (
     AccessTokenResponse,
     Client,
     FinishInteractionMethod,
-    GrantRequest,
     GrantResponse,
     InteractionRequest,
     InteractionResponse,
@@ -62,23 +67,15 @@ class StopTransactionException(HTTPException):
     pass
 
 
-class BaseAuthFlow:
-    def __init__(
-        self,
-        request: ContextRequest,
-        grant_req: GrantRequest,
-        config: AuthServerConfig,
-        signing_key: JWK,
-        tls_client_cert: Optional[str] = None,
-        detached_jws: Optional[str] = None,
-    ):
+StateVar = TypeVar('StateVar')
+
+
+class BaseAuthFlow(Generic[StateVar], ABC):
+    def __init__(self, request: ContextRequest, config: AuthServerConfig, signing_key: JWK, state: Mapping[str, Any]):
         self.config = config
         self.request = request
         self.signing_key = signing_key
-        grant_req_in = grant_req.copy(deep=True)  # let every flow have their own copy of the grant request
-        self.state: TransactionState = TransactionState(
-            grant_request=grant_req_in, tls_client_cert=tls_client_cert, detached_jws=detached_jws
-        )
+        self.state = self.load_state(state=state)
 
     class Meta:
         version: int = 1
@@ -102,6 +99,10 @@ class BaseAuthFlow:
             'handle_interaction',
             'create_auth_token',
         ]
+
+    @classmethod
+    def load_state(cls, state: Mapping[str, Any]):
+        raise NotImplementedError()
 
     async def _create_claims(self) -> Claims:
         return Claims(
@@ -280,6 +281,10 @@ class CommonFlow(BaseAuthFlow):
 
 
 class TestFlow(CommonFlow):
+    @classmethod
+    def load_state(cls, state: Mapping[str, Any]) -> TestState:
+        return TestState.from_dict(state=state)
+
     async def _create_claims(self) -> Claims:
         claims = await super()._create_claims()
         claims.source = 'test mode'
@@ -302,9 +307,9 @@ FLOW_MAP[BuiltInFlow.TESTFLOW] = TestFlow
 
 
 class ConfigFlow(CommonFlow):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.state: ConfigState = ConfigState(**self.state.dict(exclude_unset=True))
+    @classmethod
+    def load_state(cls, state: Mapping[str, Any]) -> ConfigState:
+        return ConfigState.from_dict(state=state)
 
     async def _create_claims(self) -> ConfigClaims:
         base_claims = await super()._create_claims()
@@ -365,9 +370,9 @@ class OnlyMTLSProofFlow(CommonFlow):
 
 
 class MDQFlow(OnlyMTLSProofFlow):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.state: MDQState = MDQState(**self.state.dict(exclude_unset=True))
+    @classmethod
+    def load_state(cls, state: Mapping[str, Any]) -> MDQState:
+        return MDQState.from_dict(state=state)
 
     async def _create_claims(self) -> MDQClaims:
         if not self.state.mdq_data:
@@ -426,9 +431,9 @@ FLOW_MAP[BuiltInFlow.MDQFLOW] = MDQFlow
 
 
 class TLSFEDFlow(OnlyMTLSProofFlow):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.state: TLSFEDState = TLSFEDState(**self.state.dict(exclude_unset=True))
+    @classmethod
+    def load_state(cls, state: Mapping[str, Any]) -> TLSFEDState:
+        return TLSFEDState.from_dict(state=state)
 
     async def _create_claims(self) -> TLSFEDClaims:
         if not self.state.entity:

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-from typing import Any, Dict, List, Optional, Union
+from abc import ABC
+from typing import Any, Dict, List, Optional, Type, TypeVar, Union, Mapping
 
 from pydantic import BaseModel, Field
 
@@ -10,13 +11,27 @@ from auth_server.tls_fed_auth import MetadataEntity
 __author__ = 'lundberg'
 
 
-class TransactionState(BaseModel):
+T = TypeVar('T', bound='TransactionState')
+
+
+class TransactionState(BaseModel, ABC):
     grant_request: GrantRequest
     grant_response: GrantResponse = Field(default_factory=GrantResponse)
     tls_client_cert: Optional[str]
     detached_jws: Optional[str]
     proof_ok: bool = False
     requested_access: List[Union[str, Access]] = Field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls: Type[T], state: Mapping[str, Any]) -> T:
+        return cls(**state)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return self.dict(exclude_unset=True)
+
+
+class TestState(TransactionState):
+    pass
 
 
 class ConfigState(TransactionState):

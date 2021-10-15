@@ -8,6 +8,7 @@ from starlette.responses import Response
 
 from auth_server.config import AuthServerConfig, load_config
 from auth_server.context import ContextRequest, ContextRequestRoute
+from auth_server.db.transaction_state import TransactionState
 from auth_server.flows import NextFlowException, StopTransactionException
 from auth_server.models.gnap import GrantRequest, GrantResponse
 from auth_server.models.jose import JWKS, JWKTypes
@@ -58,18 +59,16 @@ async def transaction(
             continue
         logger.debug(f'calling {auth_flow.get_name()}')
 
+        # init a new flow state
+        state = TransactionState(
+            grant_request=grant_req.copy(deep=True),  # let every flow have their own copy of the grant request,
+            tls_client_cert=tls_client_cert,
+            detached_jws=detached_jws,
+        )
+
         try:
-            flow = auth_flow(
-                request=request,
-                grant_req=grant_req,
-                tls_client_cert=tls_client_cert,
-                detached_jws=detached_jws,
-                config=config,
-                signing_key=signing_key,
-            )
-
+            flow = auth_flow(request=request, config=config, signing_key=signing_key, state=state.to_dict())
             res = await flow.transaction()
-
         except NextFlowException as e:
             logger.info(f'flow {auth_flow.get_name()} stopped: {e.detail}')
             continue
