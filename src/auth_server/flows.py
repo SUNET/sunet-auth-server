@@ -96,7 +96,7 @@ class BaseAuthFlow(ABC):
             iss=self.config.auth_token_issuer,
             exp=self.config.auth_token_expires_in,
             aud=self.config.auth_token_audience,
-            sub=self.request.context.key_reference,
+            sub=self.state.key_reference,
             requested_access=self.state.requested_access,
         )
 
@@ -124,6 +124,7 @@ class BaseAuthFlow(ABC):
     async def transaction(self) -> Optional[GrantResponse]:
         for flow_step in await self.steps():
             m = getattr(self, flow_step)
+            self.state.flow_step = flow_step
             logger.debug(f'step {flow_step} in {self.get_name()} will be called')
             res = await m()
             if isinstance(res, GrantResponse):
@@ -170,14 +171,17 @@ class CommonFlow(BaseAuthFlow):
         # JWS
         elif self.state.grant_request.client.key.proof is Proof.JWS:
             self.state.proof_ok = await check_jws_proof(
-                request=self.request, grant_request=self.state.grant_request, jws_header=self.request.context.jws_header
+                request=self.request, grant_request=self.state.grant_request, jws_header=self.state.jws_header
             )
         # JWSD
         elif self.state.grant_request.client.key.proof is Proof.JWSD:
             if not self.state.detached_jws:
                 raise NextFlowException(status_code=400, detail='no detached jws header found')
             self.state.proof_ok = await check_jwsd_proof(
-                request=self.request, grant_request=self.state.grant_request, detached_jws=self.state.detached_jws
+                request=self.request,
+                grant_request=self.state.grant_request,
+                detached_jws=self.state.detached_jws,
+                key_reference=self.state.key_reference,
             )
         else:
             raise NextFlowException(status_code=400, detail='no supported proof method')
@@ -265,7 +269,7 @@ class CommonFlow(BaseAuthFlow):
                 flags=[AccessTokenFlags.BEARER], access=self.state.requested_access, value=token.serialize()
             )
         )
-        logger.info(f'OK:{self.request.context.key_reference}:{self.config.auth_token_audience}')
+        logger.info(f'OK:{self.state.key_reference}:{self.config.auth_token_audience}')
         logger.debug(f'claims: {claims}')
         return auth_response
 
@@ -316,17 +320,17 @@ class ConfigFlow(CommonFlow):
 
         logger.info('Looking up key in config')
         logger.debug(f'key reference: {self.state.grant_request.client.key}')
-        client_key = await lookup_client_key_from_config(
-            request=self.request, key_id=self.state.grant_request.client.key
-        )
+        key_reference = self.state.grant_request.client.key
+        self.state.key_reference = key_reference  # Remember the key reference for later use
+        client_key = await lookup_client_key_from_config(key_reference=key_reference)
         if client_key is None:
             raise NextFlowException(status_code=400, detail='no client key found')
 
         logger.debug(f'key by reference found: {client_key}')
         self.state.grant_request.client.key = client_key
         # Load any claims associated with the key
-        if self.request.context.key_reference in self.config.client_keys:  # please mypy
-            self.state.config_claims = self.config.client_keys[self.request.context.key_reference].claims
+        if self.state.key_reference in self.config.client_keys:  # please mypy
+            self.state.config_claims = self.config.client_keys[self.state.key_reference].claims
         return None
 
 

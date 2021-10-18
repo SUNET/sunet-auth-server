@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from auth_server.db.client import BaseDB, get_mongodb_client
 from auth_server.mdq import MDQData
-from auth_server.models.gnap import Access, GrantRequest, GrantResponse
+from auth_server.models.gnap import Access, GNAPJOSEHeader, GrantRequest, GrantResponse
 from auth_server.tls_fed_auth import MetadataEntity
 from auth_server.utils import get_hex_uuid4
 
@@ -26,10 +26,14 @@ async def get_transaction_state_db() -> Optional[TransactionStateDB]:
 
 
 class TransactionState(BaseModel, ABC):
+    flow_name: str
+    flow_step: Optional[str]
     transaction_id: str = Field(default_factory=get_hex_uuid4)
     grant_request: GrantRequest
     grant_response: GrantResponse = Field(default_factory=GrantResponse)
+    key_reference: Optional[str]
     tls_client_cert: Optional[str]
+    jws_header: Optional[GNAPJOSEHeader]
     detached_jws: Optional[str]
     proof_ok: bool = False
     requested_access: List[Union[str, Access]] = Field(default_factory=list)

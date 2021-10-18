@@ -12,7 +12,6 @@ __author__ = 'lundberg'
 
 
 class Context(BaseModel):
-    key_reference: Optional[str] = None
     jws_verified: bool = False
     jws_header: Optional[GNAPJOSEHeader] = None
 

@@ -72,9 +72,7 @@ class JOSEMiddleware(BaseHTTPMiddleware, ContextRequestMixin):
             # Key sent by reference
             if isinstance(unverified_grant_req.client.key, str):
                 logger.debug(f'key reference: {unverified_grant_req.client.key}')
-                key_from_config = await lookup_client_key_from_config(
-                    request=request, key_id=unverified_grant_req.client.key
-                )
+                key_from_config = await lookup_client_key_from_config(key_reference=unverified_grant_req.client.key)
                 if key_from_config is not None:
                     unverified_grant_req.client.key = key_from_config
 

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
+from typing import Optional
 
 from cryptography.hazmat.primitives.hashes import SHA256, SHA384, SHA512
 from fastapi import HTTPException
@@ -9,6 +10,7 @@ from pydantic import ValidationError
 
 from auth_server.config import load_config
 from auth_server.context import ContextRequest
+from auth_server.db.transaction_state import TransactionState
 from auth_server.models.gnap import Client, GNAPJOSEHeader, GrantRequest, Key
 from auth_server.models.jose import JWK, SupportedAlgorithms, SupportedJWSType
 from auth_server.time_utils import utc_now
@@ -74,7 +76,9 @@ async def check_jws_proof(request: ContextRequest, grant_request: GrantRequest, 
     return False
 
 
-async def check_jwsd_proof(request: ContextRequest, grant_request: GrantRequest, detached_jws: str) -> bool:
+async def check_jwsd_proof(
+    request: ContextRequest, grant_request: GrantRequest, detached_jws: str, key_reference: Optional[str] = None
+) -> bool:
     # Please mypy
     if not isinstance(grant_request.client, Client):
         raise HTTPException(status_code=400, detail='Client reference not implemented')
@@ -90,13 +94,13 @@ async def check_jwsd_proof(request: ContextRequest, grant_request: GrantRequest,
         logger.error(f'invalid detached jws: {e}')
         return False
 
-    if request.context.key_reference is not None:
+    if key_reference is not None:
         # If key was sent as reference in grant request we need to mirror that when
         # rebuilding the request as that was what was signed
         grant_request_orig = grant_request.copy(deep=True)
         # please mypy
         assert isinstance(grant_request_orig.client, Client)
-        grant_request_orig.client.key = request.context.key_reference
+        grant_request_orig.client.key = key_reference
         payload = base64url_encode(grant_request_orig.json(exclude_unset=True))
     else:
         payload = base64url_encode(grant_request.json(exclude_unset=True))

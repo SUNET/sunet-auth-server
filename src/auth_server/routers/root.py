@@ -61,8 +61,10 @@ async def transaction(
 
         # init a new flow state
         state = TransactionState(
+            flow_name=auth_flow.get_name(),
             grant_request=grant_req.copy(deep=True),  # let every flow have their own copy of the grant request,
             tls_client_cert=tls_client_cert,
+            jws_header=request.context.jws_header,
             detached_jws=detached_jws,
         )
 
