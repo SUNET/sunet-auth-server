@@ -40,13 +40,6 @@ __author__ = 'lundberg'
 logger = logging.getLogger(__name__)
 
 
-class BuiltInFlow(str, Enum):
-    CONFIGFLOW = 'ConfigFlow'
-    MDQFLOW = 'MDQFlow'
-    TESTFLOW = 'TestFlow'
-    TLSFEDFLOW = 'TLSFEDFlow'
-
-
 # Use this to go to next flow
 class NextFlowException(HTTPException):
     pass
@@ -139,9 +132,6 @@ class BaseAuthFlow(ABC):
                 return res
             logger.debug(f'step {flow_step} done, next step will be called')
         return None
-
-
-FLOW_MAP: Dict[BuiltInFlow, Type[BaseAuthFlow]] = {}  # Register the flow after it is defined below
 
 
 class CommonFlow(BaseAuthFlow):
@@ -303,9 +293,6 @@ class TestFlow(CommonFlow):
         return await super().validate_proof()
 
 
-FLOW_MAP[BuiltInFlow.TESTFLOW] = TestFlow
-
-
 class ConfigFlow(CommonFlow):
     @classmethod
     def load_state(cls, state: Mapping[str, Any]) -> ConfigState:
@@ -341,9 +328,6 @@ class ConfigFlow(CommonFlow):
         if self.request.context.key_reference in self.config.client_keys:  # please mypy
             self.state.config_claims = self.config.client_keys[self.request.context.key_reference].claims
         return None
-
-
-FLOW_MAP[BuiltInFlow.CONFIGFLOW] = ConfigFlow
 
 
 class OnlyMTLSProofFlow(CommonFlow):
@@ -428,9 +412,6 @@ class MDQFlow(OnlyMTLSProofFlow):
         return None
 
 
-FLOW_MAP[BuiltInFlow.MDQFLOW] = MDQFlow
-
-
 class TLSFEDFlow(OnlyMTLSProofFlow):
     @classmethod
     def load_state(cls, state: Mapping[str, Any]) -> TLSFEDState:
@@ -480,6 +461,3 @@ class TLSFEDFlow(OnlyMTLSProofFlow):
 
     async def handle_interaction(self) -> Optional[GrantResponse]:
         return None
-
-
-FLOW_MAP[BuiltInFlow.TLSFEDFLOW] = TLSFEDFlow

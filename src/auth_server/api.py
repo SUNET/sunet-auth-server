@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 import logging
-from typing import List, Type, cast
+from typing import Dict, List, Type, cast
 
 from fastapi import FastAPI
 from starlette.staticfiles import StaticFiles
 
-from auth_server.config import AuthServerConfig, load_config
+from auth_server.config import AuthServerConfig, FlowName, load_config
 from auth_server.context import ContextRequestRoute
-from auth_server.flows import FLOW_MAP, BaseAuthFlow, BuiltInFlow
+from auth_server.flows import BaseAuthFlow, ConfigFlow, MDQFlow, TestFlow, TLSFEDFlow
 from auth_server.log import init_logging
 from auth_server.middleware import JOSEMiddleware
 from auth_server.routers.interaction import interaction_router
@@ -28,18 +28,23 @@ class AuthServer(FastAPI):
         init_logging(level=config.log_level)
 
         # Load flows
+        self.registered_flows: Dict[FlowName, Type[BaseAuthFlow]] = {
+            FlowName.TESTFLOW: TestFlow,
+            FlowName.CONFIGFLOW: ConfigFlow,
+            FlowName.MDQFLOW: MDQFlow,
+            FlowName.TLSFEDFLOW: TLSFEDFlow,
+        }
         self.auth_flows = self.load_flows(config=config)
 
-    @staticmethod
-    def load_flows(config: AuthServerConfig) -> List[Type[BaseAuthFlow]]:
+    def load_flows(self, config: AuthServerConfig) -> List[Type[BaseAuthFlow]]:
         flows: List[Type[BaseAuthFlow]] = []
         for flow in config.auth_flows:
             try:
-                builtin_flow = FLOW_MAP.get(BuiltInFlow(flow))
+                builtin_flow = self.registered_flows.get(FlowName(flow))
                 if builtin_flow:
                     flows.append(builtin_flow)
                     logger.debug(f'Loaded built-in flow {flow}')
-            except ValueError:  # Not a built in flow
+            except ValueError:  # Not a registered flow
                 try:
                     custom_flow = cast(Type[BaseAuthFlow], import_class(flow))
                     flows.append(custom_flow)

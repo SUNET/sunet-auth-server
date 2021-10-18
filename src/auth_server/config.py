@@ -29,6 +29,13 @@ class Environment(str, Enum):
     PROD = 'prod'
 
 
+class FlowName(str, Enum):
+    CONFIGFLOW = 'ConfigFlow'
+    MDQFLOW = 'MDQFlow'
+    TESTFLOW = 'TestFlow'
+    TLSFEDFLOW = 'TLSFEDFlow'
+
+
 class ClientKey(BaseModel):
     proof: Proof
     jwk: Optional[Union[ECJWK, RSAJWK, SymmetricJWK]] = None
