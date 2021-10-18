@@ -10,7 +10,7 @@ from auth_server.config import AuthServerConfig, load_config
 from auth_server.context import ContextRequest, ContextRequestRoute
 from auth_server.db.transaction_state import TransactionState
 from auth_server.flows import NextFlowException, StopTransactionException
-from auth_server.models.gnap import GrantRequest, GrantResponse
+from auth_server.models.gnap import ContinueRequest, GrantRequest, GrantResponse
 from auth_server.models.jose import JWKS, JWKTypes
 from auth_server.utils import get_signing_key, load_jwks
 
@@ -48,7 +48,7 @@ async def transaction(
     config: AuthServerConfig = Depends(load_config),
     signing_key: JWK = Depends(get_signing_key),
 ):
-    logger.debug(f'grant_request: {grant_req}')
+    logger.debug(f'grant_req: {grant_req}')
     logger.debug(f'tls_client_cert: {tls_client_cert}')
     logger.debug(f'detached_jws: {detached_jws}')
 
@@ -89,10 +89,13 @@ async def transaction(
 @root_router.post('/continue', response_model=GrantResponse, response_model_exclude_unset=True)
 async def continue_transaction(
     request: ContextRequest,
-    grant_req: GrantRequest,
+    continue_req: ContinueRequest,
     tls_client_cert: Optional[str] = Header(None),
     detached_jws: Optional[str] = Header(None),
     config: AuthServerConfig = Depends(load_config),
     signing_key: JWK = Depends(get_signing_key),
 ):
+    logger.debug(f'continue_req: {continue_req}')
+    logger.debug(f'tls_client_cert: {tls_client_cert}')
+    logger.debug(f'detached_jws: {detached_jws}')
     pass

@@ -179,7 +179,7 @@ class GrantRequest(GnapBaseModel):
 
 
 class ContinueAccessToken(GnapBaseModel):
-    bound: bool
+    bound: bool = True
     value: str
 
 
@@ -219,6 +219,10 @@ class Error(str, Enum):
     USER_DENIED = 'user_denied'
     TOO_FAST = 'too_fast'
     UNKNOWN_REQUEST = 'unknown_request'
+
+
+class ContinueRequest(GnapBaseModel):
+    interact_ref: Optional[str]
 
 
 class GrantResponse(GnapBaseModel):
