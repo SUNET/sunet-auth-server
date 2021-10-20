@@ -245,10 +245,10 @@ class CommonFlow(BaseAuthFlow):
         if finish_method is not None:
             if finish_method in [FinishInteractionMethod.REDIRECT, FinishInteractionMethod.PUSH]:
                 interaction_response.finish = get_hex_uuid4(length=24)
-
-        # TODO: implement continue for interactions with no finish method
+                self.state.finish_interaction = self.state.grant_request.interact.finish
 
         self.state.grant_response.interact = interaction_response
+        self.state.interaction_reference = get_hex_uuid4(length=24)
         res = await transaction_state_db.save(self.state)
         logger.debug(f'state {self.state} saved: {res}')
 
