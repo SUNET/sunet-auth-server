@@ -59,7 +59,7 @@ async def transaction(
             continue
         logger.debug(f'calling {auth_flow.get_name()}')
 
-        # init a new flow state
+        # init a new transaction state
         state = TransactionState(
             flow_name=auth_flow.get_name(),
             grant_request=grant_req.copy(deep=True),  # let every flow have their own copy of the grant request,
@@ -98,4 +98,5 @@ async def continue_transaction(
     logger.debug(f'continue_req: {continue_req}')
     logger.debug(f'tls_client_cert: {tls_client_cert}')
     logger.debug(f'detached_jws: {detached_jws}')
+
     pass
