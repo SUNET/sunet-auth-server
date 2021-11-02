@@ -19,7 +19,7 @@ def main(args: argparse.Namespace):
     key = rsa.generate_private_key(public_exponent=65537, key_size=4096)
     passphrase = serialization.NoEncryption()
     if args.passphrase is not None:
-        passphrase = serialization.BestAvailableEncryption(args.passphrase.decode())
+        passphrase = serialization.BestAvailableEncryption(args.passphrase.encode())
     private_bytes = key.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.TraditionalOpenSSL,
