@@ -26,13 +26,13 @@ async def redirect(request: ContextRequest, transaction_id: str, background_task
     transaction_db = await get_transaction_state_db()
     if transaction_db is None:
         # if there is no database available no requests should get here
-        raise HTTPException(status_code=404, detail="Not found")
+        raise HTTPException(status_code=400, detail="Interaction not supported")
 
     transaction_state = await transaction_db.get_state_by_transaction_id(transaction_id)
     if transaction_state is None:
         raise HTTPException(status_code=404, detail="transaction not found")
-    assert isinstance(transaction_state, TransactionState)  # please mypy
 
+    assert isinstance(transaction_state, TransactionState)  # please mypy
     # we only support saml2 for user authentication for now
     if not transaction_state.saml_assertion:
         # TODO: create saml auth request
@@ -51,13 +51,14 @@ async def redirect(request: ContextRequest, transaction_id: str, background_task
             interact_ref=interact_ref,
             transaction_url=request.url_for('transaction'),
         )
-        if transaction_state.finish_interaction is FinishInteractionMethod.REDIRECT:
+
+        if transaction_state.finish_interaction.method is FinishInteractionMethod.REDIRECT:
             redirect_url = f'{transaction_state.finish_interaction.uri}?hash={interaction_hash}&{interact_ref}'
             return RedirectResponse(redirect_url)
-        elif transaction_state.finish_interaction is FinishInteractionMethod.PUSH:
+        elif transaction_state.finish_interaction.method is FinishInteractionMethod.PUSH:
             background_tasks.add_task(
                 push_interaction_finish,
-                url=transaction_state.grant_request.interact.finish.uri,
+                url=transaction_state.finish_interaction.uri,
                 interaction_hash=interaction_hash,
                 interaction_reference=interact_ref,
             )

@@ -33,6 +33,7 @@ class MockResponse:
     def __init__(self, content: bytes = b'', status_code: int = 200):
         self._content = content
         self._status_code = status_code
+        self.status_checks = 0
 
     @property
     def content(self):
@@ -40,6 +41,7 @@ class MockResponse:
 
     @property
     def status(self):
+        self.status_checks += 1
         return self._status_code
 
     async def text(self):
@@ -465,7 +467,7 @@ class TestAuthServer(TestCase):
         assert response.status_code == 200
         assert '<h4>Input your code</h4>' in response.text
 
-    def test_transaction_interact(self):
+    def test_transaction_start_interact(self):
         self.config['auth_flows'] = json.dumps(['TestFlow'])
         self._update_app_config(config=self.config)
 
@@ -479,6 +481,55 @@ class TestAuthServer(TestCase):
         assert response.status_code == 200
         assert 'interact' in response.json()
         interaction_response = response.json()['interact']
-        assert interaction_response['redirect'] is not None
+        assert interaction_response['redirect'].startswith('http://testserver/interaction/redirect/') is True
         assert interaction_response['user_code']['code'] is not None
-        assert interaction_response['user_code']['url'] is not None
+        assert interaction_response['user_code']['url'] == 'http://testserver/interaction/code'
+
+        response = self.client.get(interaction_response['redirect'])
+        assert response.status_code == 200
+        assert '<h3>Interaction finished</h3>' in response.text
+
+    def test_transaction_interact_redirect_finish(self):
+        self.config['auth_flows'] = json.dumps(['TestFlow'])
+        self._update_app_config(config=self.config)
+
+        grant_request = {
+            'access_token': {'flags': ['bearer']},
+            'client': {'key': {'proof': 'test'}},
+            'interact': {
+                'start': ['redirect', 'user_code'],
+                'finish': {'method': 'redirect', 'uri': 'https://example.com/redirect', 'nonce': 'abc123'},
+            },
+        }
+
+        response = self.client.post("/transaction", json=grant_request)
+        assert response.status_code == 200
+
+        interaction_response = response.json()['interact']
+        response = self.client.get(interaction_response['redirect'], allow_redirects=False)
+        assert response.status_code == 307
+
+    @mock.patch('aiohttp.ClientSession.post', new_callable=AsyncMock)
+    def test_transaction_interact_push_finish(self, mock_response):
+        mock_response.return_value = MockResponse()  # mock response to background push task
+        assert mock_response.return_value.status_checks == 0
+
+        self.config['auth_flows'] = json.dumps(['TestFlow'])
+        self._update_app_config(config=self.config)
+
+        grant_request = {
+            'access_token': {'flags': ['bearer']},
+            'client': {'key': {'proof': 'test'}},
+            'interact': {
+                'start': ['redirect', 'user_code'],
+                'finish': {'method': 'push', 'uri': 'https://example.com/push', 'nonce': 'abc123'},
+            },
+        }
+
+        response = self.client.post("/transaction", json=grant_request)
+        assert response.status_code == 200
+
+        interaction_response = response.json()['interact']
+        response = self.client.get(interaction_response['redirect'])
+        assert response.status_code == 200
+        assert mock_response.return_value.status_checks == 1

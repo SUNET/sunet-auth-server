@@ -222,7 +222,7 @@ class CommonFlow(BaseAuthFlow):
             raise NextFlowException(status_code=400, detail=detail)
 
         if self.state.grant_request.interact.finish is not None:
-            if self.state.grant_request.interact.finish not in supported_finish_methods:
+            if self.state.grant_request.interact.finish.method not in supported_finish_methods:
                 # no finish interaction methods shared by client and AS
                 detail = (
                     f'no supported finish interaction method found. AS supports '
@@ -237,8 +237,9 @@ class CommonFlow(BaseAuthFlow):
                 AnyUrl, self.request.url_for('redirect', transaction_id=self.state.transaction_id)
             )
         if StartInteractionMethod.USER_CODE in start_methods:
+            self.state.user_code = get_hex_uuid4(length=8)
             interaction_response.user_code = UserCode(
-                code=get_hex_uuid4(length=8), url=cast(AnyUrl, self.request.url_for('user_code_input'))
+                code=self.state.user_code, url=cast(AnyUrl, self.request.url_for('user_code_input'))
             )
 
         # finish method can be one or zero

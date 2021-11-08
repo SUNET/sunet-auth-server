@@ -40,6 +40,7 @@ class TransactionState(BaseModel, ABC):
     saml_assertion: Optional[Mapping]
     finish_interaction: Optional[FinishInteraction]
     interaction_reference: Optional[str]
+    user_code: Optional[str]
     # meta
     flow_name: str
     flow_step: Optional[str]
@@ -51,7 +52,7 @@ class TransactionState(BaseModel, ABC):
         return cls(**state)
 
     def to_dict(self) -> Dict[str, Any]:
-        return self.dict(exclude_unset=True)
+        return self.dict(exclude_none=True)
 
 
 class TestState(TransactionState):
@@ -81,6 +82,11 @@ class TransactionStateDB(BaseDB):
                 'unique': True,
                 'partialFilterExpression': {'external_id': {'$type': 'string'}},
             },
+            'unique-user-code': {
+                'key': [('user_code', 1)],
+                'unique': True,
+                'partialFilterExpression': {'external_id': {'$type': 'string'}},
+            },
         }
         self.setup_indexes(indexes=indexes)
 
@@ -95,6 +101,12 @@ class TransactionStateDB(BaseDB):
 
     async def get_document_by_transaction_reference(self, transaction_reference: str) -> Optional[Mapping[str, Any]]:
         return await self._get_document_by_attr('transaction_reference', transaction_reference)
+
+    async def get_state_by_user_code(self, user_code: str) -> Optional[TransactionState]:
+        doc = await self._get_document_by_attr('user_code', user_code)
+        if not doc:
+            return None
+        return TransactionState.from_dict(state=doc)
 
     async def save(self, state: T, expire_in: timedelta = timedelta(seconds=300)):
         state.expires_at = state.expires_at + expire_in

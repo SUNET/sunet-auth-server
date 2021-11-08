@@ -135,9 +135,9 @@ def get_interaction_hash(
 async def push_interaction_finish(url: str, interaction_hash: str, interaction_reference: str) -> None:
     logger.debug(f'Trying interaction PUSH finish to {url}')
     body = {'hash': interaction_hash, 'interact_ref': interaction_reference}
-    session = aiohttp.ClientSession()
     try:
-        response = await session.post(url=url, json=body)
+        async with aiohttp.ClientSession() as session:
+            response = await session.post(url=url, json=body)
     except aiohttp.ClientError as e:
         logger.error(f'PUSH finish to {url} failed: {e}')
         return None
