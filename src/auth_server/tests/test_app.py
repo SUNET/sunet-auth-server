@@ -17,6 +17,7 @@ from starlette.testclient import TestClient
 
 from auth_server.api import init_auth_server_api
 from auth_server.config import ClientKey, load_config
+from auth_server.db.transaction_state import TransactionState, get_transaction_state_db
 from auth_server.models.gnap import AccessTokenFlags, AccessTokenRequest, Client, GrantRequest, Key, Proof
 from auth_server.models.jose import ECJWK, SupportedAlgorithms, SupportedHTTPMethods, SupportedJWSType
 from auth_server.models.status import Status
@@ -65,6 +66,7 @@ class TestAuthServer(TestCase):
         environ.update(self.config)
         self.app = init_auth_server_api()
         self.client = TestClient(self.app)
+        self.transaction_states = self.mongo_db.conn['auth_server']['transaction_states']
 
         with open(f'{self.datadir}/test.cert', 'rb') as f:
             self.client_cert = x509.load_pem_x509_certificate(data=f.read())
@@ -103,6 +105,10 @@ class TestAuthServer(TestCase):
         assert response.status_code == 200
         token = jwt.JWT(key=jwt.JWK(**response.json()), jwt=access_token['value'])
         return json.loads(token.claims)
+
+    def _get_transaction_state_by_id(self, transaction_id) -> TransactionState:
+        doc = self.transaction_states.find_one({'transaction_id': transaction_id})
+        return TransactionState(**doc)
 
     def test_get_status_healty(self):
         response = self.client.get("/status/healthy")
@@ -462,12 +468,7 @@ class TestAuthServer(TestCase):
                 assert 'scope' in item
                 assert item['scope'] == 'a_scope'
 
-    def test_interaction_user_code_get(self):
-        response = self.client.get("/interaction/code")
-        assert response.status_code == 200
-        assert '<h4>Input your code</h4>' in response.text
-
-    def test_transaction_start_interact(self):
+    def test_transaction_interact_start(self):
         self.config['auth_flows'] = json.dumps(['TestFlow'])
         self._update_app_config(config=self.config)
 
@@ -479,12 +480,26 @@ class TestAuthServer(TestCase):
 
         response = self.client.post("/transaction", json=grant_request)
         assert response.status_code == 200
+
+        # interact response
         assert 'interact' in response.json()
         interaction_response = response.json()['interact']
         assert interaction_response['redirect'].startswith('http://testserver/interaction/redirect/') is True
-        assert interaction_response['user_code']['code'] is not None
+        transaction_id = interaction_response['redirect'].split('http://testserver/interaction/redirect/')[1]
+        transaction_state = self._get_transaction_state_by_id(transaction_id)
+        assert interaction_response['user_code']['code'] == transaction_state.user_code
         assert interaction_response['user_code']['url'] == 'http://testserver/interaction/code'
 
+        # continue response
+        assert 'continue' in response.json()
+        continue_response = response.json()['continue']
+        assert continue_response['uri'].startswith('http://testserver/continue/') is True
+        continue_reference = continue_response['uri'].split('http://testserver/continue/')[1]
+        assert continue_reference == transaction_state.continue_reference
+        assert continue_response['access_token']['bound'] is True
+        assert continue_response['access_token']['value'] == transaction_state.continue_access_token
+
+        # complete interaction
         response = self.client.get(interaction_response['redirect'])
         assert response.status_code == 200
         assert '<h3>Interaction finished</h3>' in response.text
@@ -505,7 +520,14 @@ class TestAuthServer(TestCase):
         response = self.client.post("/transaction", json=grant_request)
         assert response.status_code == 200
 
+        # continue response with no continue reference in uri
+        assert 'continue' in response.json()
+        continue_response = response.json()['continue']
+        assert continue_response['uri'] == 'http://testserver/continue'
+
+        assert 'interact' in response.json()
         interaction_response = response.json()['interact']
+
         response = self.client.get(interaction_response['redirect'], allow_redirects=False)
         assert response.status_code == 307
 
@@ -529,7 +551,38 @@ class TestAuthServer(TestCase):
         response = self.client.post("/transaction", json=grant_request)
         assert response.status_code == 200
 
+        # continue response with no continue reference in uri
+        assert 'continue' in response.json()
+        continue_response = response.json()['continue']
+        assert continue_response['uri'] == 'http://testserver/continue'
+
         interaction_response = response.json()['interact']
         response = self.client.get(interaction_response['redirect'])
         assert response.status_code == 200
         assert mock_response.return_value.status_checks == 1
+
+    def test_transaction_interact_user_code_start(self):
+        self.config['auth_flows'] = json.dumps(['TestFlow'])
+        self._update_app_config(config=self.config)
+
+        grant_request = {
+            'access_token': {'flags': ['bearer']},
+            'client': {'key': {'proof': 'test'}},
+            'interact': {'start': ['user_code']},
+        }
+
+        response = self.client.post("/transaction", json=grant_request)
+        interaction_response = response.json()['interact']
+
+        response = self.client.get(interaction_response['user_code']['url'])
+        assert response.status_code == 200
+        assert '<h4>Input your code</h4>' in response.text
+
+        response = self.client.post(
+            '/interaction/code', data={'user_code': interaction_response['user_code']['code']}, allow_redirects=False
+        )
+        assert response.status_code == 307
+
+        response = self.client.get(response.headers.get('location'))
+        assert response.status_code == 200
+        assert '<h3>Interaction finished</h3>' in response.text

@@ -39,7 +39,7 @@ async def get_public_pem(signing_key: JWK = Depends(get_signing_key)):
     return Response(content=data, media_type='application/x-pem-file')
 
 
-@root_router.post('/transaction', response_model=GrantResponse, response_model_exclude_unset=True)
+@root_router.post('/transaction', response_model=GrantResponse, response_model_exclude_none=True)
 async def transaction(
     request: ContextRequest,
     grant_req: GrantRequest,
@@ -86,14 +86,15 @@ async def transaction(
     raise HTTPException(status_code=401, detail='permission denied')
 
 
-@root_router.post('/continue', response_model=GrantResponse, response_model_exclude_unset=True)
+@root_router.post('/continue/{continue_reference}', response_model=GrantResponse, response_model_exclude_none=True)
+@root_router.post('/continue', response_model=GrantResponse, response_model_exclude_none=True)
 async def continue_transaction(
     request: ContextRequest,
-    continue_req: ContinueRequest,
+    continue_req: Optional[ContinueRequest],
+    continue_reference: Optional[str],
     tls_client_cert: Optional[str] = Header(None),
     detached_jws: Optional[str] = Header(None),
     config: AuthServerConfig = Depends(load_config),
-    signing_key: JWK = Depends(get_signing_key),
 ):
     logger.debug(f'continue_req: {continue_req}')
     logger.debug(f'tls_client_cert: {tls_client_cert}')

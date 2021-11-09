@@ -5,10 +5,9 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Form, HTTPException
 from starlette.responses import HTMLResponse, RedirectResponse
 
-from auth_server.config import AuthServerConfig, load_config
 from auth_server.context import ContextRequest, ContextRequestRoute
 from auth_server.db.transaction_state import TransactionState, get_transaction_state_db
 from auth_server.models.gnap import FinishInteractionMethod
@@ -21,12 +20,12 @@ interaction_router = APIRouter(route_class=ContextRequestRoute, prefix='/interac
 templates = TestableJinja2Templates(directory=str(Path(__file__).with_name('templates')))
 
 
-@interaction_router.get('/redirect/{transaction_id}')
+@interaction_router.get('/redirect/{transaction_id}', response_class=HTMLResponse)
 async def redirect(request: ContextRequest, transaction_id: str, background_tasks: BackgroundTasks):
     transaction_db = await get_transaction_state_db()
     if transaction_db is None:
         # if there is no database available no requests should get here
-        raise HTTPException(status_code=400, detail="Interaction not supported")
+        raise HTTPException(status_code=400, detail="interaction not supported")
 
     transaction_state = await transaction_db.get_state_by_transaction_id(transaction_id)
     if transaction_state is None:
@@ -39,26 +38,30 @@ async def redirect(request: ContextRequest, transaction_id: str, background_task
         pass
 
     # notify the client if any finish method was agreed upon
-    if transaction_state.finish_interaction:
+    if transaction_state.grant_request.interact and transaction_state.grant_request.interact.finish:
+        assert transaction_state.interaction_reference  # please mypy
         assert transaction_state.grant_response.interact  # please mypy
         assert transaction_state.grant_response.interact.finish  # please mypy
-        assert transaction_state.interaction_reference  # please mypy
 
         interact_ref = transaction_state.interaction_reference
         interaction_hash = get_interaction_hash(
-            client_nonce=transaction_state.finish_interaction.nonce,
+            client_nonce=transaction_state.grant_request.interact.finish.nonce,
             as_nonce=transaction_state.grant_response.interact.finish,
             interact_ref=interact_ref,
             transaction_url=request.url_for('transaction'),
         )
 
-        if transaction_state.finish_interaction.method is FinishInteractionMethod.REDIRECT:
-            redirect_url = f'{transaction_state.finish_interaction.uri}?hash={interaction_hash}&{interact_ref}'
+        # redirect method
+        if transaction_state.grant_request.interact.finish.method is FinishInteractionMethod.REDIRECT:
+            redirect_url = (
+                f'{transaction_state.grant_request.interact.finish.uri}?hash={interaction_hash}&{interact_ref}'
+            )
             return RedirectResponse(redirect_url)
-        elif transaction_state.finish_interaction.method is FinishInteractionMethod.PUSH:
+        # push method
+        elif transaction_state.grant_request.interact.finish.method is FinishInteractionMethod.PUSH:
             background_tasks.add_task(
                 push_interaction_finish,
-                url=transaction_state.finish_interaction.uri,
+                url=transaction_state.grant_request.interact.finish.uri,
                 interaction_hash=interaction_hash,
                 interaction_reference=interact_ref,
             )
@@ -66,14 +69,24 @@ async def redirect(request: ContextRequest, transaction_id: str, background_task
 
 
 @interaction_router.get('/code', response_class=HTMLResponse)
-async def user_code_input(
-    request: ContextRequest, config: AuthServerConfig = Depends(load_config),
-):
+async def user_code_input(request: ContextRequest):
     return templates.TemplateResponse("user_code.jinja2", context={'request': request})
 
 
 @interaction_router.post('/code', response_class=HTMLResponse)
-async def user_code_finish(
-    request: ContextRequest, user_code: Optional[str] = Form(...), config: AuthServerConfig = Depends(load_config),
-):
-    return {'user_code': user_code}
+async def user_code_finish(request: ContextRequest, user_code: Optional[str] = Form(...)):
+    transaction_db = await get_transaction_state_db()
+    if transaction_db is None:
+        # if there is no database available no requests should get here
+        raise HTTPException(status_code=400, detail="interaction not supported")
+
+    if user_code is None:
+        # TODO: show error in template
+        return templates.TemplateResponse("user_code.jinja2", context={'request': request})
+
+    transaction_state = await transaction_db.get_state_by_user_code(user_code)
+    if transaction_state is None:
+        raise HTTPException(status_code=404, detail="transaction not found")
+
+    redirect_url = request.url_for('redirect', transaction_id=transaction_state.transaction_id)
+    return RedirectResponse(redirect_url)

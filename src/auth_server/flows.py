@@ -20,6 +20,8 @@ from auth_server.models.gnap import (
     AccessTokenFlags,
     AccessTokenResponse,
     Client,
+    Continue,
+    ContinueAccessToken,
     FinishInteractionMethod,
     GrantResponse,
     InteractionRequest,
@@ -244,15 +246,33 @@ class CommonFlow(BaseAuthFlow):
 
         # finish method can be one or zero
         if finish_method is not None:
-            if finish_method in [FinishInteractionMethod.REDIRECT, FinishInteractionMethod.PUSH]:
-                interaction_response.finish = get_hex_uuid4(length=24)
-                self.state.finish_interaction = self.state.grant_request.interact.finish
+            # nonce used to verify finish method redirect and push call
+            interaction_response.finish = get_hex_uuid4(length=24)
+            # use continue url with no continue id id as the client will get the interaction reference
+            # in the interaction finish
+            self.state.interaction_reference = get_hex_uuid4(length=24)
+            continue_url = self.request.url_for('continue_transaction')
+            wait = None  # the client will be notified when the interaction is complete
+        else:
+            # as the client doesn't support interaction finish we have to use the continue reference in the
+            # continue uri
+            self.state.continue_reference = get_hex_uuid4(length=8)
+            continue_url = self.request.url_for(
+                'continue_transaction', continue_reference=self.state.continue_reference
+            )
+            wait = 30  # I guess it takes at least 30 seconds for a user to authenticate
 
+        # TODO: create jwt for continue access token?
+        self.state.continue_access_token = get_hex_uuid4()
+        continue_response = Continue(
+            uri=cast(AnyUrl, continue_url),
+            wait=wait,
+            access_token=ContinueAccessToken(value=self.state.continue_access_token),
+        )
+        self.state.grant_response.continue_ = continue_response
         self.state.grant_response.interact = interaction_response
-        self.state.interaction_reference = get_hex_uuid4(length=24)
         res = await transaction_state_db.save(self.state)
         logger.debug(f'state {self.state} saved: {res}')
-
         return self.state.grant_response
 
     async def create_auth_token(self) -> Optional[GrantResponse]:

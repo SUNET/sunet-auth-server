@@ -38,9 +38,10 @@ class TransactionState(BaseModel, ABC):
     proof_ok: bool = False
     requested_access: List[Union[str, Access]] = Field(default_factory=list)
     saml_assertion: Optional[Mapping]
-    finish_interaction: Optional[FinishInteraction]
     interaction_reference: Optional[str]
     user_code: Optional[str]
+    continue_reference: Optional[str]
+    continue_access_token: Optional[str]
     # meta
     flow_name: str
     flow_step: Optional[str]
