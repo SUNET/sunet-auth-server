@@ -1,4 +1,4 @@
 # sunet-auth-server
 oauth.xyz/GNAP auth server
 
-Based on draft-ietf-gnap-core-protocol-07.
+Based on draft-ietf-gnap-core-protocol-08.

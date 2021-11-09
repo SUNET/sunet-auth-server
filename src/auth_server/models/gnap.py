@@ -211,7 +211,11 @@ class AccessTokenResponse(GnapBaseModel):
     flags: Optional[List[AccessTokenFlags]] = None
 
 
-class SubjectResponse(Subject):
+class SubjectResponse(GnapBaseModel):
+    # TODO: sub_ids should contain objects as {"format": "opaque", "id": "J2G8G8O4AZ"} or
+    #   {"format": "email", "email": "user@example.com"}
+    #   see ietf-secevent-subject-identifiers
+    sub_ids: List[Dict[str, str]]
     updated_at: Optional[str] = Field(default=None, description='ISO8610 date string')
 
 
