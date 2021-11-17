@@ -64,7 +64,7 @@ class JOSEMiddleware(BaseHTTPMiddleware, ContextRequestMixin):
 
             # Use unverified data to get the public key
             unverified_grant_req = GrantRequest.parse_raw(jwstoken.objects.get('payload').decode('utf-8'))
-            logger.debug(f'unverified grant request: {unverified_grant_req.dict(exclude_unset=True)}')
+            logger.debug(f'unverified grant request: {unverified_grant_req.dict(exclude_none=True)}')
 
             if not isinstance(unverified_grant_req.client, Client):
                 return return_error_response(status_code=400, detail='client by reference not implemented')

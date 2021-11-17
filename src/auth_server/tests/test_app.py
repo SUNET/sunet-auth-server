@@ -34,7 +34,7 @@ class MockResponse:
     def __init__(self, content: bytes = b'', status_code: int = 200):
         self._content = content
         self._status_code = status_code
-        self.status_checks = 0
+        self.accessed_status = 0
 
     @property
     def content(self):
@@ -42,7 +42,7 @@ class MockResponse:
 
     @property
     def status(self):
-        self.status_checks += 1
+        self.accessed_status += 1
         return self._status_code
 
     async def text(self):
@@ -534,7 +534,7 @@ class TestAuthServer(TestCase):
     @mock.patch('aiohttp.ClientSession.post', new_callable=AsyncMock)
     def test_transaction_interact_push_finish(self, mock_response):
         mock_response.return_value = MockResponse()  # mock response to background push task
-        assert mock_response.return_value.status_checks == 0
+        assert mock_response.return_value.accessed_status == 0
 
         self.config['auth_flows'] = json.dumps(['TestFlow'])
         self._update_app_config(config=self.config)
@@ -559,7 +559,7 @@ class TestAuthServer(TestCase):
         interaction_response = response.json()['interact']
         response = self.client.get(interaction_response['redirect'])
         assert response.status_code == 200
-        assert mock_response.return_value.status_checks == 1
+        assert mock_response.return_value.accessed_status == 1
 
     def test_transaction_interact_user_code_start(self):
         self.config['auth_flows'] = json.dumps(['TestFlow'])
