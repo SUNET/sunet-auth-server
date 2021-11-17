@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC
+from datetime import timedelta
 from enum import Enum
 from typing import Any, Dict, List, Mapping, Optional, Type, cast
 
@@ -271,7 +272,7 @@ class CommonFlow(BaseAuthFlow):
         )
         self.state.grant_response.continue_ = continue_response
         self.state.grant_response.interact = interaction_response
-        res = await transaction_state_db.save(self.state)
+        res = await transaction_state_db.save(self.state, expires_in=self.config.transaction_state_expires_in)
         logger.debug(f'state {self.state} saved: {res}')
         return self.state.grant_response
 

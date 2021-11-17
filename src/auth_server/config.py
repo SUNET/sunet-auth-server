@@ -71,6 +71,7 @@ class AuthServerConfig(BaseSettings):
     proof_jws_max_age: timedelta = Field(default='PT5M')
     client_keys: Dict[str, ClientKey] = Field(default={})
     mongo_uri: Optional[str] = None
+    transaction_state_expires_in: timedelta = Field(default='PT5M')
 
     class Config:
         frozen = True  # make hashable

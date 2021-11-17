@@ -109,8 +109,8 @@ class TransactionStateDB(BaseDB):
             return None
         return TransactionState.from_dict(state=doc)
 
-    async def save(self, state: T, expire_in: timedelta = timedelta(seconds=300)):
-        state.expires_at = state.expires_at + expire_in
+    async def save(self, state: T, expires_in: timedelta):
+        state.expires_at = state.expires_at + expires_in
         test_doc = {'transaction_id': state.transaction_id}
         res = await self._coll.replace_one(test_doc, state.to_dict(), upsert=True)
         return res.acknowledged
