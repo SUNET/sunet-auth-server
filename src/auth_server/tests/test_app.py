@@ -586,3 +586,36 @@ class TestAuthServer(TestCase):
         response = self.client.get(response.headers.get('location'))
         assert response.status_code == 200
         assert '<h3>Interaction finished</h3>' in response.text
+
+    def test_transaction_continue(self):
+        self.config['auth_flows'] = json.dumps(['TestFlow'])
+        self._update_app_config(config=self.config)
+
+        grant_request = {
+            'access_token': {'flags': ['bearer']},
+            'client': {'key': {'proof': 'test'}},
+            'interact': {'start': ['redirect']},
+        }
+
+        response = self.client.post("/transaction", json=grant_request)
+        assert response.status_code == 200
+
+        # continue response with no continue reference in uri
+        assert 'continue' in response.json()
+        continue_response = response.json()['continue']
+        assert continue_response['uri'].startswith('http://testserver/continue/') is True
+        assert continue_response['access_token']['value'] is not None
+
+        authorization_header = f'GNAP {continue_response["access_token"]["value"]}'
+        response = self.client.post(continue_response['uri'], headers={'Authorization': authorization_header})
+
+        # TODO: temporary end of test (same as test for test flow)
+        #   this tests need to see if we correctly validate proof
+        assert response.status_code == 200
+        assert 'access_token' in response.json()
+        access_token = response.json()['access_token']
+        assert AccessTokenFlags.BEARER.value in access_token['flags']
+
+        # Verify token and check claims
+        claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims['aud'] == 'some_audience'

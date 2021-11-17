@@ -124,18 +124,29 @@ class BaseAuthFlow(ABC):
     async def create_auth_token(self) -> Optional[GrantResponse]:
         raise NotImplementedError()
 
-    async def transaction(self) -> Optional[GrantResponse]:
-        for flow_step in await self.steps():
+    async def _run_steps(self, steps: List[str]) -> Optional[GrantResponse]:
+        for flow_step in steps:
             m = getattr(self, flow_step)
             self.state.flow_step = flow_step
             logger.debug(f'step {flow_step} in {self.get_name()} will be called')
             res = await m()
             if isinstance(res, GrantResponse):
                 logger.info(f'step {flow_step} in {self.get_name()} returned GrantResponse')
-                logger.debug(res.dict(exclude_unset=True))
+                logger.debug(res.dict(exclude_none=True))
                 return res
             logger.debug(f'step {flow_step} done, next step will be called')
         return None
+
+    async def continue_transaction(self):
+        steps = await self.steps()
+        continue_steps_index = steps.index(self.state.flow_step)
+        continue_steps = steps[continue_steps_index + 1 :]  # get the remaining steps
+        continue_steps.insert(0, 'validate_proof')  # always add validate_proof as first continuation step
+        return await self._run_steps(steps=continue_steps)
+
+    async def transaction(self) -> Optional[GrantResponse]:
+        steps = await self.steps()
+        return await self._run_steps(steps=steps)
 
 
 class CommonFlow(BaseAuthFlow):

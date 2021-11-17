@@ -95,13 +95,16 @@ class TransactionStateDB(BaseDB):
         return await self._get_document_by_attr('transaction_id', transactions_id)
 
     async def get_state_by_transaction_id(self, transactions_id: str) -> Optional[TransactionState]:
-        doc = await self._get_document_by_attr('transaction_id', transactions_id)
+        doc = await self.get_document_by_transaction_id(transactions_id=transactions_id)
         if not doc:
             return None
         return TransactionState.from_dict(state=doc)
 
-    async def get_document_by_transaction_reference(self, transaction_reference: str) -> Optional[Mapping[str, Any]]:
-        return await self._get_document_by_attr('transaction_reference', transaction_reference)
+    async def get_document_by_interaction_reference(self, interaction_reference: str) -> Optional[Mapping[str, Any]]:
+        return await self._get_document_by_attr('interaction_reference', interaction_reference)
+
+    async def get_document_by_continue_reference(self, continue_reference: str) -> Optional[Mapping[str, Any]]:
+        return await self._get_document_by_attr('continue_reference', continue_reference)
 
     async def get_state_by_user_code(self, user_code: str) -> Optional[TransactionState]:
         doc = await self._get_document_by_attr('user_code', user_code)
