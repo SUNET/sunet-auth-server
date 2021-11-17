@@ -37,6 +37,39 @@ async def redirect(request: ContextRequest, transaction_id: str, background_task
         # TODO: create saml auth request
         pass
 
+    return await finish_interaction(
+        request=request, transaction_state=transaction_state, background_tasks=background_tasks
+    )
+
+
+@interaction_router.get('/code', response_class=HTMLResponse)
+async def user_code_input(request: ContextRequest):
+    return templates.TemplateResponse("user_code.jinja2", context={'request': request})
+
+
+@interaction_router.post('/code', response_class=HTMLResponse)
+async def user_code_finish(request: ContextRequest, user_code: Optional[str] = Form(...)):
+    transaction_db = await get_transaction_state_db()
+    if transaction_db is None:
+        # if there is no database available no requests should get here
+        raise HTTPException(status_code=400, detail="interaction not supported")
+
+    if user_code is None:
+        # TODO: show error in template
+        return templates.TemplateResponse("user_code.jinja2", context={'request': request})
+
+    transaction_state = await transaction_db.get_state_by_user_code(user_code)
+    if transaction_state is None:
+        raise HTTPException(status_code=404, detail="transaction not found")
+
+    # now that we have found the transaction state use the redirect endpoint to continue the user authentication
+    redirect_url = request.url_for('redirect', transaction_id=transaction_state.transaction_id)
+    return RedirectResponse(redirect_url)
+
+
+async def finish_interaction(
+    request: ContextRequest, transaction_state: TransactionState, background_tasks: BackgroundTasks
+):
     # notify the client if any finish method was agreed upon
     if transaction_state.grant_request.interact and transaction_state.grant_request.interact.finish:
         assert transaction_state.interaction_reference  # please mypy
@@ -66,27 +99,3 @@ async def redirect(request: ContextRequest, transaction_id: str, background_task
                 interaction_reference=interact_ref,
             )
     return templates.TemplateResponse("interaction_finished.jinja2", context={'request': request})
-
-
-@interaction_router.get('/code', response_class=HTMLResponse)
-async def user_code_input(request: ContextRequest):
-    return templates.TemplateResponse("user_code.jinja2", context={'request': request})
-
-
-@interaction_router.post('/code', response_class=HTMLResponse)
-async def user_code_finish(request: ContextRequest, user_code: Optional[str] = Form(...)):
-    transaction_db = await get_transaction_state_db()
-    if transaction_db is None:
-        # if there is no database available no requests should get here
-        raise HTTPException(status_code=400, detail="interaction not supported")
-
-    if user_code is None:
-        # TODO: show error in template
-        return templates.TemplateResponse("user_code.jinja2", context={'request': request})
-
-    transaction_state = await transaction_db.get_state_by_user_code(user_code)
-    if transaction_state is None:
-        raise HTTPException(status_code=404, detail="transaction not found")
-
-    redirect_url = request.url_for('redirect', transaction_id=transaction_state.transaction_id)
-    return RedirectResponse(redirect_url)
