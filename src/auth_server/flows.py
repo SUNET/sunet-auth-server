@@ -94,7 +94,7 @@ class BaseAuthFlow(ABC):
     def load_state(cls, state: Mapping[str, Any]):
         raise NotImplementedError()
 
-    async def _create_claims(self) -> Claims:
+    async def create_claims(self) -> Claims:
         return Claims(
             iss=self.config.auth_token_issuer,
             exp=self.config.auth_token_expires_in,
@@ -281,7 +281,7 @@ class CommonFlow(BaseAuthFlow):
             return None
 
         # Create claims
-        claims = await self._create_claims()
+        claims = await self.create_claims()
 
         # Create access token
         token = jwt.JWT(header={'alg': 'ES256'}, claims=claims.to_rfc7519())
@@ -301,8 +301,8 @@ class TestFlow(CommonFlow):
     def load_state(cls, state: Mapping[str, Any]) -> TestState:
         return TestState.from_dict(state=state)
 
-    async def _create_claims(self) -> Claims:
-        claims = await super()._create_claims()
+    async def create_claims(self) -> Claims:
+        claims = await super().create_claims()
         claims.source = 'test mode'
         return claims
 
@@ -324,8 +324,8 @@ class ConfigFlow(CommonFlow):
     def load_state(cls, state: Mapping[str, Any]) -> ConfigState:
         return ConfigState.from_dict(state=state)
 
-    async def _create_claims(self) -> ConfigClaims:
-        base_claims = await super()._create_claims()
+    async def create_claims(self) -> ConfigClaims:
+        base_claims = await super().create_claims()
         # Update the claims with any claims found in config for this key
         claims_dict = base_claims.dict(exclude_none=True)
         claims_dict.update(self.state.config_claims)
@@ -384,7 +384,7 @@ class MDQFlow(OnlyMTLSProofFlow):
     def load_state(cls, state: Mapping[str, Any]) -> MDQState:
         return MDQState.from_dict(state=state)
 
-    async def _create_claims(self) -> MDQClaims:
+    async def create_claims(self) -> MDQClaims:
         if not self.state.mdq_data:
             raise NextFlowException(status_code=400, detail='missing mdq data')
 
@@ -410,7 +410,7 @@ class MDQFlow(OnlyMTLSProofFlow):
         except (IndexError, KeyError):
             source = self.config.mdq_server  # Default source to mdq server if registrationAuthority is not set
 
-        base_claims = await super()._create_claims()
+        base_claims = await super().create_claims()
         return MDQClaims(**base_claims.dict(exclude_none=True), entity_id=entity_id, scopes=scopes, source=source)
 
     async def lookup_client_key(self) -> Optional[GrantResponse]:
@@ -443,7 +443,7 @@ class TLSFEDFlow(OnlyMTLSProofFlow):
     def load_state(cls, state: Mapping[str, Any]) -> TLSFEDState:
         return TLSFEDState.from_dict(state=state)
 
-    async def _create_claims(self) -> TLSFEDClaims:
+    async def create_claims(self) -> TLSFEDClaims:
         if not self.state.entity:
             raise NextFlowException(status_code=400, detail='missing metadata entity')
 
@@ -452,7 +452,7 @@ class TLSFEDFlow(OnlyMTLSProofFlow):
         if self.state.entity.extensions and self.state.entity.extensions.saml_scope:
             scopes = self.state.entity.extensions.saml_scope.scope
 
-        base_claims = await super()._create_claims()
+        base_claims = await super().create_claims()
         return TLSFEDClaims(
             **base_claims.dict(exclude_none=True),
             entity_id=self.state.entity.entity_id,
