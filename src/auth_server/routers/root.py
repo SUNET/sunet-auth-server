@@ -53,34 +53,34 @@ async def transaction(
     logger.debug(f'detached_jws: {detached_jws}')
 
     # Run configured auth flows
-    for auth_flow in request.app.auth_flows:
+    for auth_flow_name, auth_flow in request.app.auth_flows.items():
         if auth_flow.get_version() != 1:
-            logger.warning(f'not loading {auth_flow.get_name()} because it is version {auth_flow.version}')
+            logger.warning(f'not loading {auth_flow_name} because it is version {auth_flow.version}')
             continue
-        logger.debug(f'calling {auth_flow.get_name()}')
+        logger.debug(f'calling {auth_flow_name}')
 
         # init a new transaction state
         state = TransactionState(
-            flow_name=auth_flow.get_name(),
+            flow_name=auth_flow_name,
             grant_request=grant_req.copy(deep=True),  # let every flow have their own copy of the grant request,
             tls_client_cert=tls_client_cert,
             jws_header=request.context.jws_header,
             detached_jws=detached_jws,
         )
 
+        flow = auth_flow(request=request, config=config, signing_key=signing_key, state=state.to_dict())
         try:
-            flow = auth_flow(request=request, config=config, signing_key=signing_key, state=state.to_dict())
             res = await flow.transaction()
         except NextFlowException as e:
-            logger.info(f'flow {auth_flow.get_name()} stopped: {e.detail}')
+            logger.info(f'flow {auth_flow_name} stopped: {e.detail}')
             continue
         except StopTransactionException as e:
-            logger.error(f'transaction stopped in flow {auth_flow.get_name()} with exception: {e.detail}')
+            logger.error(f'transaction stopped in flow {auth_flow_name} with exception: {e.detail}')
             raise HTTPException(status_code=e.status_code, detail=e.detail)
 
         if isinstance(res, GrantResponse):
-            logger.info(f'flow {auth_flow.get_name()} returned GrantResponse')
-            logger.debug(res.dict(exclude_unset=True))
+            logger.info(f'flow {auth_flow_name} returned GrantResponse')
+            logger.debug(res.dict(exclude_none=True))
             return res
 
     raise HTTPException(status_code=401, detail='permission denied')

@@ -5,7 +5,7 @@ from typing import Dict, List, Type, cast
 from fastapi import FastAPI
 from starlette.staticfiles import StaticFiles
 
-from auth_server.config import AuthServerConfig, FlowName, load_config
+from auth_server.config import AuthServerConfig, ConfigurationError, FlowName, load_config
 from auth_server.context import ContextRequestRoute
 from auth_server.flows import BaseAuthFlow, ConfigFlow, MDQFlow, TestFlow, TLSFEDFlow
 from auth_server.log import init_logging
@@ -28,7 +28,7 @@ class AuthServer(FastAPI):
         init_logging(level=config.log_level)
 
         # Load flows
-        self.registered_flows: Dict[FlowName, Type[BaseAuthFlow]] = {
+        self.builtin_flow: Dict[FlowName, Type[BaseAuthFlow]] = {
             FlowName.TESTFLOW: TestFlow,
             FlowName.CONFIGFLOW: ConfigFlow,
             FlowName.MDQFLOW: MDQFlow,
@@ -36,22 +36,26 @@ class AuthServer(FastAPI):
         }
         self.auth_flows = self.load_flows(config=config)
 
-    def load_flows(self, config: AuthServerConfig) -> List[Type[BaseAuthFlow]]:
-        flows: List[Type[BaseAuthFlow]] = []
+    def load_flows(self, config: AuthServerConfig) -> Dict[str, Type[BaseAuthFlow]]:
+        flows: Dict[str, Type[BaseAuthFlow]] = {}
         for flow in config.auth_flows:
             try:
-                builtin_flow = self.registered_flows.get(FlowName(flow))
+                builtin_flow = self.builtin_flow.get(FlowName(flow))
                 if builtin_flow:
-                    flows.append(builtin_flow)
+                    flows[builtin_flow.get_name()] = builtin_flow
                     logger.debug(f'Loaded built-in flow {flow}')
             except ValueError:  # Not a registered flow
                 try:
                     custom_flow = cast(Type[BaseAuthFlow], import_class(flow))
-                    flows.append(custom_flow)
+                    custom_flow_name = custom_flow.get_name()
+                    if custom_flow_name in flows:
+                        # reject a custom flow that tries to overwrite another flow
+                        raise ConfigurationError(f'there is already a flow named {custom_flow_name} loaded')
+                    flows[custom_flow_name] = custom_flow
                     logger.debug(f'Loaded custom flow {flow}')
                 except (ValueError, ModuleNotFoundError) as e:
                     logger.error(f'Could not load custom flow {flow}: {e}')
-        logger.info(f'Loaded flows: {[flow.get_name() for flow in flows]}')
+        logger.info(f'Loaded flows: {[flow.get_name() for flow in flows.values()]}')
         return flows
 
 
