@@ -4,8 +4,6 @@ import logging
 from typing import Optional
 
 from auth_server.config import ClientKey, ConfigurationError, load_config
-from auth_server.context import ContextRequest
-from auth_server.db.transaction_state import TransactionState
 from auth_server.models.gnap import Key
 from auth_server.models.jose import ECJWK, RSAJWK, KeyType, SymmetricJWK
 

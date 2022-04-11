@@ -5,7 +5,7 @@ import logging
 from abc import ABC
 from datetime import timedelta
 from enum import Enum
-from typing import Any, Dict, List, Mapping, Optional, Type, cast
+from typing import Any, Dict, List, Mapping, Optional, Type, Union, cast
 
 from fastapi import HTTPException
 from jwcrypto import jwt
@@ -23,7 +23,9 @@ from auth_server.models.gnap import (
     Client,
     Continue,
     ContinueAccessToken,
+    ContinueRequest,
     FinishInteractionMethod,
+    GrantRequest,
     GrantResponse,
     InteractionRequest,
     InteractionResponse,
@@ -60,7 +62,11 @@ class StopTransactionException(HTTPException):
 
 class BaseAuthFlow(ABC):
     def __init__(
-        self, request: ContextRequest, config: AuthServerConfig, signing_key: JWK, state: Mapping[str, Any],
+        self,
+        request: ContextRequest,
+        config: AuthServerConfig,
+        signing_key: JWK,
+        state: Mapping[str, Any],
     ):
         self.config = config
         self.request = request
@@ -94,6 +100,34 @@ class BaseAuthFlow(ABC):
     def load_state(cls, state: Mapping[str, Any]):
         raise NotImplementedError()
 
+    async def check_proof(self, gnap_key: Key, gnap_request: Optional[Union[GrantRequest, ContinueRequest]]) -> bool:
+        # MTLS
+        if gnap_key.proof is Proof.MTLS:
+            if not self.state.tls_client_cert:
+                raise NextFlowException(status_code=400, detail='no client certificate found')
+            return await check_mtls_proof(gnap_key=gnap_key, cert=self.state.tls_client_cert)
+        # HTTPSIGN
+        elif gnap_key.proof is Proof.HTTPSIGN:
+            raise NextFlowException(status_code=400, detail='httpsign is not implemented')
+        # JWS
+        elif gnap_request and gnap_key.proof is Proof.JWS:
+            return await check_jws_proof(
+                request=self.request, gnap_key=gnap_key, gnap_request=gnap_request, jws_header=self.state.jws_header
+            )
+        # JWSD
+        elif gnap_request and gnap_key.proof is Proof.JWSD:
+            if not self.state.detached_jws:
+                raise NextFlowException(status_code=400, detail='no detached jws header found')
+            return await check_jwsd_proof(
+                request=self.request,
+                gnap_key=gnap_key,
+                gnap_request=gnap_request,
+                detached_jws=self.state.detached_jws,
+                key_reference=self.state.key_reference,
+            )
+        else:
+            raise NextFlowException(status_code=400, detail='no supported proof method')
+
     async def create_claims(self) -> Claims:
         return Claims(
             iss=self.config.auth_token_issuer,
@@ -110,7 +144,15 @@ class BaseAuthFlow(ABC):
         raise NotImplementedError()
 
     async def validate_proof(self) -> Optional[GrantResponse]:
-        raise NotImplementedError()
+        # please mypy, should be enforced in previous steps
+        assert isinstance(self.state.grant_request.client, Client)
+        assert isinstance(self.state.grant_request.client.key, Key)
+
+        self.state.proof_ok = await self.check_proof(
+            gnap_key=self.state.grant_request.client.key,
+            gnap_request=self.state.grant_request,
+        )
+        return None
 
     async def handle_subject(self) -> Optional[GrantResponse]:
         raise NotImplementedError()
@@ -137,11 +179,16 @@ class BaseAuthFlow(ABC):
             logger.debug(f'step {flow_step} done, next step will be called')
         return None
 
-    async def continue_transaction(self):
+    async def continue_transaction(self, continue_request: ContinueRequest):
+        # check the client authentication for the continuation request against the same key used for the grant request
+        self.state.proof_ok = self.check_proof(
+            gnap_key=self.state.grant_request.client.key, gnap_request=continue_request
+        )
+
+        # run the remaining steps in the flow
         steps = await self.steps()
         continue_steps_index = steps.index(self.state.flow_step)
-        continue_steps = steps[continue_steps_index + 1 :]  # get the remaining steps
-        continue_steps.insert(0, 'validate_proof')  # always add validate_proof as first continuation step
+        continue_steps = steps[continue_steps_index + 1 :]  # remaining steps starts at latest completed step + 1
         return await self._run_steps(steps=continue_steps)
 
     async def transaction(self) -> Optional[GrantResponse]:
@@ -165,40 +212,6 @@ class CommonFlow(BaseAuthFlow):
 
         if not isinstance(self.state.grant_request.client.key, Key):
             raise NextFlowException(status_code=400, detail='key by reference not supported')
-        return None
-
-    async def validate_proof(self) -> Optional[GrantResponse]:
-        # please mypy, enforced in CommonFlow or previous steps
-        assert isinstance(self.state.grant_request.client, Client)
-        assert isinstance(self.state.grant_request.client.key, Key)
-
-        # MTLS
-        if self.state.grant_request.client.key.proof is Proof.MTLS:
-            if not self.state.tls_client_cert:
-                raise NextFlowException(status_code=400, detail='no client certificate found')
-            self.state.proof_ok = await check_mtls_proof(
-                grant_request=self.state.grant_request, cert=self.state.tls_client_cert
-            )
-        # HTTPSIGN
-        elif self.state.grant_request.client.key.proof is Proof.HTTPSIGN:
-            raise NextFlowException(status_code=400, detail='httpsign is not implemented')
-        # JWS
-        elif self.state.grant_request.client.key.proof is Proof.JWS:
-            self.state.proof_ok = await check_jws_proof(
-                request=self.request, grant_request=self.state.grant_request, jws_header=self.state.jws_header
-            )
-        # JWSD
-        elif self.state.grant_request.client.key.proof is Proof.JWSD:
-            if not self.state.detached_jws:
-                raise NextFlowException(status_code=400, detail='no detached jws header found')
-            self.state.proof_ok = await check_jwsd_proof(
-                request=self.request,
-                grant_request=self.state.grant_request,
-                detached_jws=self.state.detached_jws,
-                key_reference=self.state.key_reference,
-            )
-        else:
-            raise NextFlowException(status_code=400, detail='no supported proof method')
         return None
 
     async def handle_access_token(self) -> Optional[GrantResponse]:
@@ -312,22 +325,29 @@ class TestFlow(CommonFlow):
     def load_state(cls, state: Mapping[str, Any]) -> TestState:
         return TestState.from_dict(state=state)
 
-    async def create_claims(self) -> Claims:
-        claims = await super().create_claims()
-        claims.source = 'test mode'
-        return claims
+    async def check_proof(self, gnap_key: Key, gnap_request: Optional[Union[GrantRequest, ContinueRequest]]) -> bool:
+        if gnap_key.proof is Proof.TEST:
+            logger.warning(f'TEST_MODE - access token will be returned with no proof')
+            return True
+        return False
 
     async def validate_proof(self) -> Optional[GrantResponse]:
         # please mypy, enforced in CommonFlow or previous steps
         assert isinstance(self.state.grant_request.client, Client)
         assert isinstance(self.state.grant_request.client.key, Key)
 
-        if self.state.grant_request.client.key.proof is Proof.TEST:
-            logger.warning(f'TEST_MODE - access token will be returned with no proof')
-            self.state.proof_ok = True
-            return None
+        self.state.proof_ok = await self.check_proof(self.state.grant_request.client.key, self.state.grant_request)
+        if not self.state.proof_ok:
+            # try any other supported proof method, used in tests
+            self.state.proof_ok = await super().check_proof(
+                self.state.grant_request.client.key, self.state.grant_request
+            )
+        return None
 
-        return await super().validate_proof()
+    async def create_claims(self) -> Claims:
+        claims = await super().create_claims()
+        claims.source = 'test mode'
+        return claims
 
 
 class ConfigFlow(CommonFlow):
@@ -368,19 +388,13 @@ class ConfigFlow(CommonFlow):
 
 
 class OnlyMTLSProofFlow(CommonFlow):
-    async def validate_proof(self) -> Optional[GrantResponse]:
-        # please mypy, enforced in CommonFlow or previous steps
-        assert isinstance(self.state.grant_request.client, Client)
-        assert isinstance(self.state.grant_request.client.key, Key)
-
-        if self.state.grant_request.client.key.proof is not Proof.MTLS:
+    async def check_proof(self, gnap_key: Key, gnap_request: Optional[Union[GrantRequest, ContinueRequest]]) -> bool:
+        if gnap_key.proof is not Proof.MTLS:
             raise NextFlowException(status_code=400, detail='MTLS is the only supported proof method')
-        if not self.state.tls_client_cert:
-            raise NextFlowException(status_code=400, detail='no client certificate found')
+        return await check_mtls_proof(gnap_key=self.state.grant_request.client.key, cert=self.state.tls_client_cert)
 
-        self.state.proof_ok = await check_mtls_proof(
-            grant_request=self.state.grant_request, cert=self.state.tls_client_cert
-        )
+    async def validate_proof(self) -> Optional[GrantResponse]:
+        await super().validate_proof()
         if not self.state.proof_ok:
             raise NextFlowException(status_code=401, detail='no client certificate found')
         return None
@@ -494,7 +508,4 @@ class TLSFEDFlow(OnlyMTLSProofFlow):
         if not client_key:
             raise NextFlowException(status_code=400, detail=f'no client key found for {key_id}')
         self.state.grant_request.client.key = client_key
-        return None
-
-    async def handle_interaction(self) -> Optional[GrantResponse]:
         return None

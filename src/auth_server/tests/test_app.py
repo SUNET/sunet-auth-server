@@ -190,7 +190,8 @@ class TestAuthServer(TestCase):
         mock_mdq.return_value = MockResponse(content=self.mdq_response)
 
         req = GrantRequest(
-            client=Client(key='test.localhost'), access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
+            client=Client(key='test.localhost'),
+            access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
         )
         client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
         response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
@@ -217,7 +218,8 @@ class TestAuthServer(TestCase):
         }
         _jws = jws.JWS(payload=req.json(exclude_unset=True))
         _jws.add_signature(
-            key=self.client_jwk, protected=json.dumps(jws_header),
+            key=self.client_jwk,
+            protected=json.dumps(jws_header),
         )
         data = _jws.serialize(compact=True)
 
@@ -247,7 +249,8 @@ class TestAuthServer(TestCase):
         }
         _jws = jws.JWS(payload=req.json(exclude_unset=True))
         _jws.add_signature(
-            key=self.client_jwk, protected=json.dumps(jws_header),
+            key=self.client_jwk,
+            protected=json.dumps(jws_header),
         )
         data = _jws.serialize(compact=True)
 
@@ -271,7 +274,8 @@ class TestAuthServer(TestCase):
         mock_mdq.return_value = MockResponse(content=self.mdq_response)
 
         req = GrantRequest(
-            client=Client(key='test.localhost'), access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
+            client=Client(key='test.localhost'),
+            access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
         )
         client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
         response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
@@ -315,7 +319,8 @@ class TestAuthServer(TestCase):
 
         # Start transaction
         req = GrantRequest(
-            client=Client(key=entity_id), access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
+            client=Client(key=entity_id),
+            access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
         )
         client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
         response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
@@ -362,7 +367,8 @@ class TestAuthServer(TestCase):
 
             # Start transaction
             req = GrantRequest(
-                client=Client(key=entity_id), access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
+                client=Client(key=entity_id),
+                access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
             )
             client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
             response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
@@ -407,7 +413,8 @@ class TestAuthServer(TestCase):
         get_tls_fed_metadata.cache_clear()
         # Start transaction
         req = GrantRequest(
-            client=Client(key=entity_id), access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
+            client=Client(key=entity_id),
+            access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
         )
         client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
         response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
@@ -422,7 +429,8 @@ class TestAuthServer(TestCase):
         self._update_app_config(config=self.config)
 
         req = GrantRequest(
-            client=Client(key=key_reference), access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
+            client=Client(key=key_reference),
+            access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
         )
         client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
         response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
@@ -607,7 +615,7 @@ class TestAuthServer(TestCase):
         assert continue_response['access_token']['value'] is not None
 
         authorization_header = f'GNAP {continue_response["access_token"]["value"]}'
-        response = self.client.post(continue_response['uri'], headers={'Authorization': authorization_header})
+        response = self.client.post(continue_response['uri'], json={}, headers={'Authorization': authorization_header})
 
         # TODO: temporary end of test (same as test for test flow)
         #   this tests need to see if we correctly validate proof

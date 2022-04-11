@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
-from typing import Optional
+from typing import Optional, Union
 
 from cryptography.hazmat.primitives.hashes import SHA256, SHA384, SHA512
 from fastapi import HTTPException
@@ -10,8 +10,7 @@ from pydantic import ValidationError
 
 from auth_server.config import load_config
 from auth_server.context import ContextRequest
-from auth_server.db.transaction_state import TransactionState
-from auth_server.models.gnap import Client, GNAPJOSEHeader, GrantRequest, Key
+from auth_server.models.gnap import Client, ContinueRequest, GNAPJOSEHeader, GrantRequest, Key
 from auth_server.models.jose import JWK, SupportedAlgorithms, SupportedJWSType
 from auth_server.time_utils import utc_now
 
@@ -32,20 +31,21 @@ async def choose_hash_alg(alg: SupportedAlgorithms):
         raise NotImplementedError(f'No hash alg mapped to {alg}')
 
 
-async def verify_gnap_jws(request: ContextRequest, grant_request: GrantRequest, jws_header: GNAPJOSEHeader) -> bool:
+async def verify_gnap_jws(
+    request: ContextRequest,
+    gnap_key: Key,
+    gnap_request: Union[GrantRequest, ContinueRequest],
+    jws_header: GNAPJOSEHeader,
+) -> bool:
     config = load_config()
 
     # Please mypy
-    if not isinstance(grant_request.client, Client):
-        raise RuntimeError('client needs to be of type gnap.Client')
-    if not isinstance(grant_request.client.key, Key):
-        raise RuntimeError('key needs to be of type gnap.Key')
-    if not isinstance(grant_request.client.key.jwk, JWK):
+    if not isinstance(gnap_key.jwk, JWK):
         raise RuntimeError('key needs to be of type jose.JWK')
 
     # The header of the JWS MUST contain the "kid" field of the key bound to this client instance for this request.
-    if grant_request.client.key.jwk.kid != jws_header.kid:
-        logger.error(f'kid mismatch. grant: {grant_request.client.key.jwk.kid} != header: {jws_header.kid}')
+    if gnap_key.jwk.kid != jws_header.kid:
+        logger.error(f'kid mismatch. grant: {gnap_key.jwk.kid} != header: {jws_header.kid}')
         raise HTTPException(status_code=400, detail='key id is not the same in request as in header')
 
     # Verify that the request is reasonably fresh
@@ -63,28 +63,33 @@ async def verify_gnap_jws(request: ContextRequest, grant_request: GrantRequest, 
         logger.error(f'http uri mismatch. request: {request.url} != header: {jws_header.uri}')
         raise HTTPException(status_code=400, detail='http uri does not match')
 
-    # TODO: figure out when if verify ath
+    # TODO: figure out when/how to verify ath
 
     return True
 
 
-async def check_jws_proof(request: ContextRequest, grant_request: GrantRequest, jws_header: GNAPJOSEHeader) -> bool:
+async def check_jws_proof(
+    request: ContextRequest,
+    gnap_key: Key,
+    gnap_request: Union[GrantRequest, ContinueRequest],
+    jws_header: GNAPJOSEHeader,
+) -> bool:
     if request.context.jws_verified:
         if jws_header.typ is not SupportedJWSType.JWS:
             raise HTTPException(status_code=400, detail=f'typ should be {SupportedJWSType.JWS}')
-        return await verify_gnap_jws(request=request, grant_request=grant_request, jws_header=jws_header)
+        return await verify_gnap_jws(
+            request=request, gnap_key=gnap_key, gnap_request=gnap_request, jws_header=jws_header
+        )
     return False
 
 
 async def check_jwsd_proof(
-    request: ContextRequest, grant_request: GrantRequest, detached_jws: str, key_reference: Optional[str] = None
+    request: ContextRequest,
+    gnap_key: Key,
+    gnap_request: Union[GrantRequest, ContinueRequest],
+    detached_jws: str,
+    key_reference: Optional[str] = None,
 ) -> bool:
-    # Please mypy
-    if not isinstance(grant_request.client, Client):
-        raise HTTPException(status_code=400, detail='Client reference not implemented')
-    if not isinstance(grant_request.client.key, Key):
-        raise HTTPException(status_code=500, detail='Client key unexpected a reference')
-
     logger.debug(f'detached_jws: {detached_jws}')
 
     # recreate jws
@@ -94,16 +99,15 @@ async def check_jwsd_proof(
         logger.error(f'invalid detached jws: {e}')
         return False
 
-    if key_reference is not None:
+    gnap_request_orig = gnap_request.copy(deep=True)
+    if isinstance(gnap_request_orig, GrantRequest) and key_reference is not None:
         # If key was sent as reference in grant request we need to mirror that when
         # rebuilding the request as that was what was signed
-        grant_request_orig = grant_request.copy(deep=True)
-        # please mypy
-        assert isinstance(grant_request_orig.client, Client)
-        grant_request_orig.client.key = key_reference
-        payload = base64url_encode(grant_request_orig.json(exclude_unset=True))
+        assert isinstance(gnap_request_orig.client, Client)  # please mypy
+        gnap_request_orig.client.key = key_reference
+        payload = base64url_encode(gnap_request_orig.json(exclude_unset=True))
     else:
-        payload = base64url_encode(grant_request.json(exclude_unset=True))
+        payload = base64url_encode(gnap_request_orig.json(exclude_unset=True))
 
     raw_jws = f'{header}.{payload}.{signature}'
     _jws = jws.JWS()
@@ -119,8 +123,8 @@ async def check_jwsd_proof(
 
     # verify jws
     client_key = None
-    if grant_request.client.key.jwk is not None:
-        client_key = jws.JWK(**grant_request.client.key.jwk.dict(exclude_unset=True))
+    if gnap_key.jwk is not None:
+        client_key = jws.JWK(**gnap_key.jwk.dict(exclude_unset=True))
     if client_key is not None:
         try:
             _jws.verify(client_key)
@@ -140,4 +144,4 @@ async def check_jwsd_proof(
     if jws_header.typ is not SupportedJWSType.JWSD:
         raise HTTPException(status_code=400, detail=f'typ should be {SupportedJWSType.JWSD}')
 
-    return await verify_gnap_jws(request=request, grant_request=grant_request, jws_header=jws_header)
+    return await verify_gnap_jws(request=request, gnap_key=gnap_key, gnap_request=gnap_request, jws_header=jws_header)

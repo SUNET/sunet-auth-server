@@ -25,7 +25,12 @@ class TestableJinja2Templates(_Jinja2Templates):
             raise ValueError('context must include a "request" key')
         template = self.get_template(name)
         return CustomTemplateResponse(
-            template, context, status_code=status_code, headers=headers, media_type=media_type, background=background,
+            template,
+            context,
+            status_code=status_code,
+            headers=headers,
+            media_type=media_type,
+            background=background,
         )
 
 

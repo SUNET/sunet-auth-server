@@ -90,8 +90,8 @@ async def transaction(
 @root_router.post('/continue', response_model=GrantResponse, response_model_exclude_none=True)
 async def continue_transaction(
     request: ContextRequest,
+    continue_req: ContinueRequest,
     continue_reference: Optional[str] = None,
-    continue_req: Optional[ContinueRequest] = None,
     tls_client_cert: Optional[str] = Header(None),
     detached_jws: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),  # TODO: should not really be optional?
@@ -135,11 +135,16 @@ async def continue_transaction(
     auth_flow = request.app.auth_flows.get(auth_flow_name)
     if not auth_flow:
         raise HTTPException(status_code=400, detail='requested flow not loaded')
+    # update transaction_state with the clients current authentication
+    updated_transaction_doc = dict(**transaction_doc)
+    updated_transaction_doc['tls_client_cert'] = tls_client_cert
+    updated_transaction_doc['jws_header'] = request.context.jws_header
+    updated_transaction_doc['detached_jws'] = detached_jws
+    flow = auth_flow(request=request, config=config, signing_key=signing_key, state=updated_transaction_doc)
 
     # continue the transaction
-    flow = auth_flow(request=request, config=config, signing_key=signing_key, state=transaction_doc)
     try:
-        res = await flow.continue_transaction()
+        res = await flow.continue_transaction(continue_request=continue_req)
     except (NextFlowException, StopTransactionException) as e:  # there is no next flow when continuing
         logger.error(f'transaction stopped in flow {auth_flow_name} with exception: {e.detail}')
         raise HTTPException(status_code=e.status_code, detail=e.detail)

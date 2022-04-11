@@ -199,7 +199,9 @@ async def load_metadata(metadata_sources: List[MetadataSource], max_age: timedel
         # Collect entities from all sources
         for entity in metadata_source.metadata.entities:
             entities[str(entity.entity_id)] = MetadataEntity(
-                issuer=metadata_source.issuer, expires_at=metadata_source.expires_at, **entity.dict(exclude_unset=True),
+                issuer=metadata_source.issuer,
+                expires_at=metadata_source.expires_at,
+                **entity.dict(exclude_unset=True),
             )
     return Metadata(renew_at=renew_at, entities=entities)
 
@@ -268,6 +270,7 @@ async def entity_to_key(entity: Optional[MetadataEntity]) -> Optional[Key]:
         # TODO: how do we handle multiple certs?
         logger.info(f'Found cert in metadata')
         return Key(
-            proof=Proof.MTLS, cert_S256=base64.b64encode(certs[0].fingerprint(algorithm=SHA256())).decode('utf-8'),
+            proof=Proof.MTLS,
+            cert_S256=base64.b64encode(certs[0].fingerprint(algorithm=SHA256())).decode('utf-8'),
         )
     return None

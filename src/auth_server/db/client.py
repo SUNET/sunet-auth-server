@@ -29,7 +29,7 @@ class MultipleDocumentsReturned(DBError):
 
 
 class BaseDB(object):
-    """ Base class for common db operations """
+    """Base class for common db operations"""
 
     def __init__(self, db_client: AsyncIOMotorClient, db_name: str, collection: str, safe_writes: bool = False):
 
@@ -98,7 +98,11 @@ class BaseDB(object):
             yield doc
 
     async def _get_documents_by_filter(
-        self, spec: dict, fields: Optional[dict] = None, skip: Optional[int] = None, limit: Optional[int] = None,
+        self,
+        spec: dict,
+        fields: Optional[dict] = None,
+        skip: Optional[int] = None,
+        limit: Optional[int] = None,
     ) -> AsyncGenerator[Mapping, None]:
         """
         Locate documents in the db using a custom search filter.
