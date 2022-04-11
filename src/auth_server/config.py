@@ -59,7 +59,7 @@ class AuthServerConfig(BaseSettings):
     host: str = Field(default='0.0.0.0')
     port: int = Field(default=8080)
     base_url: str = Field(default='')
-    auth_flows: List[str] = Field(default=['FullFlow'])
+    auth_flows: List[str] = Field(default=[])
     mdq_server: Optional[str] = Field(default=None)
     tls_fed_metadata: List[TLSFEDMetadata] = Field(default=[])
     tls_fed_metadata_max_age: timedelta = Field(default='PT1H')
@@ -77,11 +77,11 @@ class AuthServerConfig(BaseSettings):
         frozen = True  # make hashable
 
 
-def read_config_file(config_file: str, config_path: str = '') -> Dict:
+def read_config_file(config_file: str, config_ns: str = '') -> Dict:
     with open(config_file, 'r') as f:
         data = yaml.safe_load(f)
     # traverse the loaded data to the right namespace, discarding everything else
-    for this in config_path.split('/'):
+    for this in config_ns.split('/'):
         if not this:
             continue
         data = data[this]
@@ -93,8 +93,8 @@ def load_config() -> AuthServerConfig:
     try:
         config_file = environ.get('config_file')
         if config_file is not None:
-            config_path = environ.get('config_path', '')
-            data = read_config_file(config_file=config_file, config_path=config_path)
+            config_ns = environ.get('config_ns', '')
+            data = read_config_file(config_file=config_file, config_ns=config_ns)
             config = AuthServerConfig.parse_obj(data)
         else:
             config = AuthServerConfig()

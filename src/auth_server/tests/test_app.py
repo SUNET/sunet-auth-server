@@ -164,7 +164,7 @@ class TestAuthServer(TestCase):
             yaml.dump(config, tf)
 
             environ['config_file'] = f'{tf.name}'
-            environ['config_path'] = 'auth_server'
+            environ['config_ns'] = 'auth_server'
             self._update_app_config()
 
         req = GrantRequest(
