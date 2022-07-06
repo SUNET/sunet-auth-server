@@ -45,13 +45,13 @@ async def get_public_pem(signing_key: JWK = Depends(get_signing_key)):
 async def transaction(
     request: ContextRequest,
     grant_req: GrantRequest,
-    tls_client_cert: Optional[str] = Header(None),
+    client_cert: Optional[str] = Header(None),
     detached_jws: Optional[str] = Header(None),
     config: AuthServerConfig = Depends(load_config),
     signing_key: JWK = Depends(get_signing_key),
 ):
     logger.debug(f'grant_req: {grant_req}')
-    logger.debug(f'tls_client_cert: {tls_client_cert}')
+    logger.debug(f'client_cert: {client_cert}')
     logger.debug(f'detached_jws: {detached_jws}')
 
     # Run configured auth flows
@@ -65,7 +65,7 @@ async def transaction(
         state = TransactionState(
             flow_name=auth_flow_name,
             grant_request=grant_req.copy(deep=True),  # let every flow have their own copy of the grant request,
-            tls_client_cert=tls_client_cert,
+            tls_client_cert=client_cert,
             jws_header=request.context.jws_header,
             detached_jws=detached_jws,
         )
@@ -101,7 +101,7 @@ async def continue_transaction(
     signing_key: JWK = Depends(get_signing_key),
 ):
     logger.debug(f'continue_req: {continue_req}')
-    logger.debug(f'tls_client_cert: {tls_client_cert}')
+    logger.debug(f'client_cert: {tls_client_cert}')
     logger.debug(f'detached_jws: {detached_jws}')
     logger.debug(f'authorization: {authorization}')
 
@@ -139,7 +139,7 @@ async def continue_transaction(
         raise HTTPException(status_code=400, detail='requested flow not loaded')
     # update transaction_state with the clients current authentication
     updated_transaction_doc = dict(**transaction_doc)
-    updated_transaction_doc['tls_client_cert'] = tls_client_cert
+    updated_transaction_doc['client_cert'] = tls_client_cert
     updated_transaction_doc['jws_header'] = request.context.jws_header
     updated_transaction_doc['detached_jws'] = detached_jws
     flow = auth_flow(request=request, config=config, signing_key=signing_key, state=updated_transaction_doc)

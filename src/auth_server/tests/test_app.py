@@ -193,7 +193,7 @@ class TestAuthServer(TestCase):
             client=Client(key='test.localhost'),
             access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
         )
-        client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
+        client_header = {'Client-Cert': self.client_cert_str}
         response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
         assert response.status_code == 200
         assert 'access_token' in response.json()
@@ -277,7 +277,7 @@ class TestAuthServer(TestCase):
             client=Client(key='test.localhost'),
             access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
         )
-        client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
+        client_header = {'Client-Cert': self.client_cert_str}
         response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
         assert response.status_code == 200
         assert 'access_token' in response.json()
@@ -322,7 +322,7 @@ class TestAuthServer(TestCase):
             client=Client(key=entity_id),
             access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
         )
-        client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
+        client_header = {'Client-Cert': self.client_cert_str}
         response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
         assert response.status_code == 200
         assert 'access_token' in response.json()
@@ -370,7 +370,7 @@ class TestAuthServer(TestCase):
                 client=Client(key=entity_id),
                 access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
             )
-            client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
+            client_header = {'Client-Cert': self.client_cert_str}
             response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
             assert response.status_code == 200
             assert 'access_token' in response.json()
@@ -416,7 +416,7 @@ class TestAuthServer(TestCase):
             client=Client(key=entity_id),
             access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
         )
-        client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
+        client_header = {'Client-Cert': self.client_cert_str}
         response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
         assert response.status_code == 401
 
@@ -432,7 +432,7 @@ class TestAuthServer(TestCase):
             client=Client(key=key_reference),
             access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
         )
-        client_header = {'TLS-CLIENT-CERT': self.client_cert_str}
+        client_header = {'Client-Cert': self.client_cert_str}
         response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
         assert response.status_code == 200
         assert 'access_token' in response.json()
