@@ -17,7 +17,7 @@ from starlette.testclient import TestClient
 
 from auth_server.api import init_auth_server_api
 from auth_server.config import ClientKey, load_config
-from auth_server.db.transaction_state import TransactionState, get_transaction_state_db
+from auth_server.db.transaction_state import TransactionState
 from auth_server.models.gnap import AccessTokenFlags, AccessTokenRequest, Client, GrantRequest, Key, Proof
 from auth_server.models.jose import ECJWK, SupportedAlgorithms, SupportedHTTPMethods, SupportedJWSType
 from auth_server.models.status import Status
@@ -496,7 +496,6 @@ class TestAuthServer(TestCase):
         transaction_id = interaction_response['redirect'].split('http://testserver/interaction/redirect/')[1]
         transaction_state = self._get_transaction_state_by_id(transaction_id)
         assert interaction_response['user_code']['code'] == transaction_state.user_code
-        assert interaction_response['user_code']['url'] == 'http://testserver/interaction/code'
 
         # continue response
         assert 'continue' in response.json()
@@ -582,12 +581,40 @@ class TestAuthServer(TestCase):
         response = self.client.post("/transaction", json=grant_request)
         interaction_response = response.json()['interact']
 
-        response = self.client.get(interaction_response['user_code']['url'])
+        response = self.client.get('/interaction/code')
         assert response.status_code == 200
         assert '<h4>Input your code</h4>' in response.text
 
         response = self.client.post(
             '/interaction/code', data={'user_code': interaction_response['user_code']['code']}, allow_redirects=False
+        )
+        assert response.status_code == 307
+
+        response = self.client.get(response.headers.get('location'))
+        assert response.status_code == 200
+        assert '<h3>Interaction finished</h3>' in response.text
+
+    def test_transaction_interact_user_code_uri_start(self):
+        self.config['auth_flows'] = json.dumps(['TestFlow'])
+        self._update_app_config(config=self.config)
+
+        grant_request = {
+            'access_token': {'flags': ['bearer']},
+            'client': {'key': {'proof': 'test'}},
+            'interact': {'start': ['user_code_uri']},
+        }
+
+        response = self.client.post("/transaction", json=grant_request)
+        interaction_response = response.json()['interact']
+
+        response = self.client.get(interaction_response['user_code_uri']['uri'])
+        assert response.status_code == 200
+        assert '<h4>Input your code</h4>' in response.text
+
+        response = self.client.post(
+            '/interaction/code',
+            data={'user_code': interaction_response['user_code_uri']['code']},
+            allow_redirects=False,
         )
         assert response.status_code == 307
 

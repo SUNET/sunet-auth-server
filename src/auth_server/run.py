@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 
-from auth_server.config import load_config
 from auth_server.api import init_auth_server_api
-from auth_server.config import Environment
+from auth_server.config import Environment, load_config
 
 __author__ = 'lundberg'
 
