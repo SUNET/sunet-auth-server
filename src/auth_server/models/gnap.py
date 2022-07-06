@@ -100,14 +100,14 @@ class SubjectIdentifierFormat(str, Enum):
     PHONE_NUMBER = 'phone_number'
 
 
-class SubjectAssertion(str, Enum):
+class SubjectAssertionFormat(str, Enum):
     ID_TOKEN = 'id_token'
     SAML2 = 'saml2'
 
 
-class Subject(GnapBaseModel):
-    formats: Optional[List[SubjectIdentifierFormat]] = None
-    assertions: Optional[List[SubjectAssertion]] = None
+class SubjectRequest(GnapBaseModel):
+    sub_id_formats: Optional[List[SubjectIdentifierFormat]] = None
+    assertion_formats: Optional[List[SubjectAssertionFormat]] = None
 
 
 class Display(GnapBaseModel):
@@ -122,25 +122,33 @@ class Client(GnapBaseModel):
     display: Optional[Display] = None
 
 
-# TODO: implement sub_ids from ietf-secevent-subject-identifiers
 class SubjectIdentifier(GnapBaseModel):
+    # sub_ids should contain objects as {"format": "opaque", "id": "J2G8G8O4AZ"} or
+    # {"format": "email", "email": "user@example.com"}
+    # see ietf-secevent-subject-identifiers
     format: SubjectIdentifierFormat
 
     class Config:
         extra = Extra.allow
 
 
+class SubjectAssertion(GnapBaseModel):
+    format: SubjectAssertionFormat
+    value: str
+
+
 class User(GnapBaseModel):
     sub_ids: Optional[List[SubjectIdentifier]] = None
     # An object containing assertions as values keyed on the assertion type.
     # Possible keys include "id_token" for an [OIDC] ID Token and "saml2" for a SAML 2 assertion.
-    assertions: Optional[Dict[SubjectAssertion, Dict[str, Any]]] = None
+    assertions: Optional[List[SubjectAssertion]] = None
 
 
 class StartInteractionMethod(str, Enum):
     REDIRECT = 'redirect'
     APP = 'app'
-    USER_CODE = 'user_code'
+    USER_CODE = 'user_code'  # for use with a stable URI
+    USER_CODE_URI = 'user_code_uri'  # for use with a dynamic URI
 
 
 class FinishInteractionMethod(str, Enum):
@@ -172,7 +180,7 @@ class InteractionRequest(GnapBaseModel):
 
 class GrantRequest(GnapBaseModel):
     access_token: Union[AccessTokenRequest, List[AccessTokenRequest]]
-    subject: Optional[Subject] = None
+    subject: Optional[SubjectRequest] = None
     client: Union[str, Client]
     user: Optional[Union[str, User]] = None
     interact: Optional[InteractionRequest] = None
@@ -191,13 +199,18 @@ class Continue(GnapBaseModel):
 
 class UserCode(GnapBaseModel):
     code: str
-    url: Optional[AnyUrl] = None
+
+
+class UserCodeURI(GnapBaseModel):
+    code: str
+    uri: AnyUrl
 
 
 class InteractionResponse(GnapBaseModel):
     redirect: Optional[AnyUrl] = None
     app: Optional[AnyUrl] = None
     user_code: Optional[UserCode] = None
+    user_code_uri: Optional[UserCodeURI] = None
     finish: Optional[str] = None
 
 
@@ -212,21 +225,28 @@ class AccessTokenResponse(GnapBaseModel):
 
 
 class SubjectResponse(GnapBaseModel):
-    # TODO: sub_ids should contain objects as {"format": "opaque", "id": "J2G8G8O4AZ"} or
-    #   {"format": "email", "email": "user@example.com"}
-    #   see ietf-secevent-subject-identifiers
-    sub_ids: List[Dict[str, str]]
-    updated_at: Optional[str] = Field(default=None, description='ISO8610 date string')
+    sub_ids: Optional[List[SubjectIdentifier]] = None
+    assertions: Optional[List[SubjectAssertion]] = None
+    updated_at: Optional[datetime] = Field(default=None, description='ISO8610 date string')
 
 
-class Error(str, Enum):
+class ErrorCode(str, Enum):
+    INVALID_REQUEST = 'invalid_request'
+    INVALID_CLIENT = 'invalid_client'
     USER_DENIED = 'user_denied'
     TOO_FAST = 'too_fast'
     UNKNOWN_REQUEST = 'unknown_request'
+    REQUEST_DENIED = 'request_denied'
+
+
+# TODO: Change FastApi HTTPException responses to ErrorResponse
+class ErrorResponse(BaseModel):
+    error: ErrorCode
+    error_description: Optional[str] = None
 
 
 class ContinueRequest(GnapBaseModel):
-    interact_ref: Optional[str]
+    interact_ref: Optional[str] = None
 
 
 class GrantResponse(GnapBaseModel):
@@ -236,7 +256,6 @@ class GrantResponse(GnapBaseModel):
     subject: Optional[SubjectResponse] = None
     instance_id: Optional[str] = None
     user_handle: Optional[str] = None
-    error: Optional[Error] = None
 
 
 class GNAPJOSEHeader(JOSEHeader):
@@ -251,4 +270,4 @@ class GNAPJOSEHeader(JOSEHeader):
     # When a request is bound to an access token, the access token hash value. The value MUST be the result of
     # Base64url encoding (with no padding) the SHA-256 digest of the ASCII encoding of the associated access
     # token's value.  REQUIRED if the request protects an access token.
-    ath: Optional[str]
+    ath: Optional[str] = None

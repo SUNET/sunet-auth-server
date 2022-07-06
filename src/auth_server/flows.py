@@ -31,6 +31,7 @@ from auth_server.models.gnap import (
     Proof,
     StartInteractionMethod,
     UserCode,
+    UserCodeURI,
 )
 from auth_server.proof.common import lookup_client_key_from_config
 from auth_server.proof.jws import check_jws_proof, check_jwsd_proof
@@ -235,7 +236,11 @@ class CommonFlow(BaseAuthFlow):
             raise NextFlowException(status_code=400, detail='interact not supported')
 
         interaction_response = InteractionResponse()
-        supported_start_methods = [StartInteractionMethod.REDIRECT, StartInteractionMethod.USER_CODE]
+        supported_start_methods = [
+            StartInteractionMethod.REDIRECT,
+            StartInteractionMethod.USER_CODE,
+            StartInteractionMethod.USER_CODE_URI,
+        ]
         supported_finish_methods = [FinishInteractionMethod.REDIRECT, FinishInteractionMethod.PUSH]
         start_methods = [
             method for method in self.state.grant_request.interact.start if method in supported_start_methods
@@ -265,11 +270,14 @@ class CommonFlow(BaseAuthFlow):
             interaction_response.redirect = cast(
                 AnyUrl, self.request.url_for('redirect', transaction_id=self.state.transaction_id)
             )
-        if StartInteractionMethod.USER_CODE in start_methods:
+        if StartInteractionMethod.USER_CODE in start_methods or StartInteractionMethod.USER_CODE_URI in start_methods:
             self.state.user_code = get_hex_uuid4(length=8)
-            interaction_response.user_code = UserCode(
-                code=self.state.user_code, url=cast(AnyUrl, self.request.url_for('user_code_input'))
-            )
+            if StartInteractionMethod.USER_CODE in start_methods:
+                interaction_response.user_code = UserCode(code=self.state.user_code)
+            if StartInteractionMethod.USER_CODE_URI in start_methods:
+                interaction_response.user_code_uri = UserCodeURI(
+                    code=self.state.user_code, uri=cast(AnyUrl, self.request.url_for('user_code_input'))
+                )
 
         # finish method can be one or zero
         if finish_method is not None:
