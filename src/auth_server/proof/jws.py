@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
+from base64 import urlsafe_b64encode
 from typing import Optional, Union
 
 from cryptography.hazmat.primitives.hashes import SHA256, SHA384, SHA512
@@ -13,8 +14,10 @@ from auth_server.context import ContextRequest
 from auth_server.models.gnap import Client, ContinueRequest, GNAPJOSEHeader, GrantRequest, Key
 from auth_server.models.jose import JWK, SupportedAlgorithms, SupportedJWSType
 from auth_server.time_utils import utc_now
+from auth_server.utils import hash_with
 
 __author__ = 'lundberg'
+
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +35,7 @@ async def choose_hash_alg(alg: SupportedAlgorithms):
 
 
 async def verify_gnap_jws(
-    request: ContextRequest,
-    gnap_key: Key,
-    gnap_request: Union[GrantRequest, ContinueRequest],
-    jws_header: GNAPJOSEHeader,
+    request: ContextRequest, gnap_key: Key, jws_header: GNAPJOSEHeader, access_token: Optional[str] = None
 ) -> bool:
     config = load_config()
 
@@ -63,22 +63,29 @@ async def verify_gnap_jws(
         logger.error(f'http uri mismatch. request: {request.url} != header: {jws_header.uri}')
         raise HTTPException(status_code=400, detail='http uri does not match')
 
-    # TODO: figure out when/how to verify ath
-
+    # The hashed access token used for this request
+    # The the result of Base64url encoding (with no padding) of the SHA-256 digest of the ASCII encoding of the
+    # associated access token's value.
+    if access_token is not None:
+        access_token_hash = hash_with(SHA256(), access_token.encode())
+        b64_access_token_hash = urlsafe_b64encode(access_token_hash)
+        if b64_access_token_hash != jws_header.ath:
+            logger.error(f'ath mismatch. calculated ath: {b64_access_token_hash!r} != header: {jws_header.ath!r}')
+            raise HTTPException(status_code=400, detail='ath does not match')
     return True
 
 
 async def check_jws_proof(
     request: ContextRequest,
     gnap_key: Key,
-    gnap_request: Union[GrantRequest, ContinueRequest],
     jws_header: GNAPJOSEHeader,
+    access_token: Optional[str] = None,
 ) -> bool:
     if request.context.jws_verified:
         if jws_header.typ is not SupportedJWSType.JWS:
             raise HTTPException(status_code=400, detail=f'typ should be {SupportedJWSType.JWS}')
         return await verify_gnap_jws(
-            request=request, gnap_key=gnap_key, gnap_request=gnap_request, jws_header=jws_header
+            request=request, gnap_key=gnap_key, jws_header=jws_header, access_token=access_token
         )
     return False
 
@@ -89,6 +96,7 @@ async def check_jwsd_proof(
     gnap_request: Union[GrantRequest, ContinueRequest],
     detached_jws: str,
     key_reference: Optional[str] = None,
+    access_token: Optional[str] = None,
 ) -> bool:
     logger.debug(f'detached_jws: {detached_jws}')
 
@@ -144,4 +152,4 @@ async def check_jwsd_proof(
     if jws_header.typ is not SupportedJWSType.JWSD:
         raise HTTPException(status_code=400, detail=f'typ should be {SupportedJWSType.JWSD}')
 
-    return await verify_gnap_jws(request=request, gnap_key=gnap_key, gnap_request=gnap_request, jws_header=jws_header)
+    return await verify_gnap_jws(request=request, gnap_key=gnap_key, jws_header=jws_header, access_token=access_token)

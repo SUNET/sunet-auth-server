@@ -110,7 +110,10 @@ class BaseAuthFlow(ABC):
         # JWS
         elif gnap_request and gnap_key.proof is Proof.JWS:
             return await check_jws_proof(
-                request=self.request, gnap_key=gnap_key, gnap_request=gnap_request, jws_header=self.state.jws_header
+                request=self.request,
+                gnap_key=gnap_key,
+                jws_header=self.state.jws_header,
+                access_token=self.state.continue_access_token,
             )
         # JWSD
         elif gnap_request and gnap_key.proof is Proof.JWSD:
@@ -122,6 +125,7 @@ class BaseAuthFlow(ABC):
                 gnap_request=gnap_request,
                 detached_jws=self.state.detached_jws,
                 key_reference=self.state.key_reference,
+                access_token=self.state.continue_access_token,
             )
         else:
             raise NextFlowException(status_code=400, detail='no supported proof method')
