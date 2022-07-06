@@ -7,13 +7,13 @@ from typing import List, Optional, OrderedDict
 
 import aiohttp
 import xmltodict
-from cryptography.hazmat.primitives.hashes import SHA1, SHA256, Hash
-from cryptography.x509 import Certificate, load_pem_x509_certificate
+from cryptography.hazmat.primitives.hashes import SHA1, SHA256
+from cryptography.x509 import Certificate
 from pydantic import BaseModel, Field
 from pyexpat import ExpatError
 
 from auth_server.models.gnap import Key, Proof
-from auth_server.utils import get_values
+from auth_server.utils import get_values, hash_with, load_cert_from_str
 
 __author__ = 'lundberg'
 
@@ -44,9 +44,8 @@ class MDQData(MDQBase):
 
 async def xml_mdq_get(entity_id: str, mdq_url: str) -> MDQData:
     # SHA1 hash and create hex representation of entity id
-    digest = Hash(SHA1())
-    digest.update(entity_id.encode())
-    identifier = f'{{sha1}}{digest.finalize().hex()}'
+    entity_id_hash = hash_with(SHA1(), entity_id.encode())
+    identifier = f'{{sha1}}{entity_id_hash.hex()}'
     logger.debug(f'mdq identifier: {identifier}')
 
     # Get xml from the MDQ service
@@ -75,8 +74,7 @@ async def xml_mdq_get(entity_id: str, mdq_url: str) -> MDQData:
         for key_descriptor in get_values(key='urn:oasis:names:tc:SAML:2.0:metadata:KeyDescriptor', obj=entity):
             use = list(get_values(key='@use', obj=key_descriptor))[0]
             raw_cert = list(get_values(key='http://www.w3.org/2000/09/xmldsig#:X509Certificate', obj=key_descriptor))[0]
-            raw_cert = f'-----BEGIN CERTIFICATE-----\n{raw_cert}\n-----END CERTIFICATE-----'
-            cert = load_pem_x509_certificate(raw_cert.encode())
+            cert = load_cert_from_str(raw_cert)
             certs.append(MDQCert(use=KeyUse(use), cert=cert))
         return MDQData(certs=certs, metadata=entity)
     except (ExpatError, ValueError):  # TODO: handle exceptions properly

@@ -1,14 +1,15 @@
 # -*- coding: utf-8 -*-
-import base64
 import importlib
 import json
 import logging
+from base64 import urlsafe_b64encode
 from functools import lru_cache
 from typing import Any, Callable, Generator, Mapping, Sequence, Union
 from uuid import uuid4
 
 import aiohttp
-from cryptography.hazmat.primitives.hashes import SHA3_512, SHA512, Hash
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.hashes import SHA3_512, SHA512, HashAlgorithm
 from cryptography.x509 import Certificate, load_pem_x509_certificate
 from jwcrypto import jwk
 
@@ -89,6 +90,12 @@ def get_hex_uuid4(length=32) -> str:
     return uuid4().hex[:length]
 
 
+def hash_with(hash_alg: HashAlgorithm, data: bytes) -> bytes:
+    h = hashes.Hash(hash_alg)
+    h.update(data)
+    return h.finalize()
+
+
 def get_interaction_hash(
     client_nonce: str, as_nonce: str, interact_ref: str, transaction_url: str, hash_method: HashMethod = HashMethod.SHA3
 ) -> str:
@@ -125,11 +132,12 @@ def get_interaction_hash(
 
     https://datatracker.ietf.org/doc/html/draft-ietf-gnap-core-protocol-07#section-4.2.3
     """
-    hash_methods = {HashMethod.SHA2: SHA512, HashMethod.SHA3: SHA3_512}
-    digest = Hash(algorithm=hash_methods[hash_method]())
+    hash_methods = {HashMethod.SHA2: SHA512(), HashMethod.SHA3: SHA3_512()}
+    if (hash_alg := hash_methods.get(hash_method)) is None:
+        raise NotImplementedError(f'hash method {hash_method} not implemented')
     plaintext = f"{client_nonce}\n{as_nonce}\n{interact_ref}\n{transaction_url}".encode()
-    digest.update(plaintext)
-    return base64.urlsafe_b64encode(digest.finalize()).decode(encoding='utf-8')
+    hash_res = hash_with(hash_alg, plaintext)
+    return urlsafe_b64encode(hash_res).decode(encoding='utf-8')
 
 
 async def push_interaction_finish(url: str, interaction_hash: str, interaction_reference: str) -> None:

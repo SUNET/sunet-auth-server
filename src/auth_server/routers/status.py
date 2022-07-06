@@ -6,7 +6,7 @@ from fastapi import APIRouter
 from pymongo.errors import ConnectionFailure
 
 from auth_server.config import load_config
-from auth_server.db.client import get_mongodb_client
+from auth_server.db.client import get_motor_client
 from auth_server.models.status import Status, StatusResponse
 
 __author__ = 'lundberg'
@@ -23,7 +23,7 @@ async def _mongodb_health_check():
         # no mongodb configured
         return True
 
-    client = await get_mongodb_client()
+    client = await get_motor_client()
     try:
         await client.admin.command('ismaster')
         return True

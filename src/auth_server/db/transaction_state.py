@@ -8,9 +8,9 @@ from typing import Any, Dict, List, Mapping, Optional, Type, TypeVar, Union
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 
-from auth_server.db.client import BaseDB, get_mongodb_client
+from auth_server.db.client import BaseDB, get_motor_client
 from auth_server.mdq import MDQData
-from auth_server.models.gnap import Access, FinishInteraction, GNAPJOSEHeader, GrantRequest, GrantResponse
+from auth_server.models.gnap import Access, GNAPJOSEHeader, GrantRequest, GrantResponse
 from auth_server.time_utils import utc_now
 from auth_server.tls_fed_auth import MetadataEntity
 from auth_server.utils import get_hex_uuid4
@@ -21,9 +21,9 @@ T = TypeVar('T', bound='TransactionState')
 
 
 async def get_transaction_state_db() -> Optional[TransactionStateDB]:
-    mongo_client = await get_mongodb_client()
+    mongo_client = await get_motor_client()
     if mongo_client is not None:
-        return TransactionStateDB(db_client=mongo_client)
+        return await TransactionStateDB.init(db_client=mongo_client)
     return None
 
 
@@ -75,6 +75,10 @@ class TLSFEDState(TransactionState):
 class TransactionStateDB(BaseDB):
     def __init__(self, db_client: AsyncIOMotorClient):
         super().__init__(db_client=db_client, db_name='auth_server', collection='transaction_states')
+
+    @classmethod
+    async def init(cls, db_client: AsyncIOMotorClient) -> TransactionStateDB:
+        db = cls(db_client=db_client)
         indexes = {
             'auto-discard': {'key': [('expires_at', 1)], 'expireAfterSeconds': 0},
             'unique-transaction-id': {'key': [('transaction_id', 1)], 'unique': True},
@@ -89,7 +93,8 @@ class TransactionStateDB(BaseDB):
                 'partialFilterExpression': {'external_id': {'$type': 'string'}},
             },
         }
-        self.setup_indexes(indexes=indexes)
+        await db.setup_indexes(indexes=indexes)
+        return db
 
     async def get_document_by_transaction_id(self, transactions_id: str) -> Optional[Mapping[str, Any]]:
         return await self._get_document_by_attr('transaction_id', transactions_id)
