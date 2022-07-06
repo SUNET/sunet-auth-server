@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 import logging
-from typing import Any, AsyncGenerator, Dict, Mapping, Optional, Union
+from typing import Any, AsyncGenerator, Dict, List, Mapping, Optional, Union
 
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo import WriteConcern
+from pymongo import MongoClient, WriteConcern
 
 from auth_server.config import load_config
 
@@ -13,11 +13,18 @@ __author__ = 'lundberg'
 logger = logging.getLogger(__name__)
 
 
-async def get_mongodb_client() -> Optional[AsyncIOMotorClient]:
+async def get_motor_client() -> Optional[AsyncIOMotorClient]:
     config = load_config()
     if config.mongo_uri is None:
         return None
     return AsyncIOMotorClient(config.mongo_uri, tz_aware=True)
+
+
+async def get_mongo_client() -> Optional[MongoClient]:
+    config = load_config()
+    if config.mongo_uri is None:
+        return None
+    return MongoClient(config.mongo_uri, tz_aware=True)
 
 
 class DBError(Exception):
@@ -56,12 +63,7 @@ class BaseDB(object):
 
     async def _get_all_docs(self) -> AsyncGenerator[Mapping, None]:
         """
-        Return all the user documents in the database.
-
-        Used in eduid-dashboard test cases.
-
-        :return: User documents
-        :rtype:
+        Return all the documents in the database.
         """
         async for doc in self._get_documents_by_filter(spec={}):
             yield doc
@@ -99,8 +101,8 @@ class BaseDB(object):
 
     async def _get_documents_by_filter(
         self,
-        spec: dict,
-        fields: Optional[dict] = None,
+        spec: Dict[str, Any],
+        fields: Optional[Union[Dict[str, bool], List[str]]] = None,
         skip: Optional[int] = None,
         limit: Optional[int] = None,
     ) -> AsyncGenerator[Mapping, None]:
@@ -108,15 +110,14 @@ class BaseDB(object):
         Locate documents in the db using a custom search filter.
 
         :param spec: the search filter
-        :param fields: the fields to return in the search result
+        :param fields: the fields to include/exclude in the search result
         :param skip: Number of documents to skip before returning result
         :param limit: Limit documents returned to this number
-        :return: A list of documents
         """
         if fields is not None:
-            cursor = self._coll.find(spec, fields)
+            cursor = self._coll.find(filter=spec, projection=fields)
         else:
-            cursor = self._coll.find(spec)
+            cursor = self._coll.find(filter=spec)
 
         if skip is not None:
             cursor = cursor.skip(skip=skip)
