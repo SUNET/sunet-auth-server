@@ -10,6 +10,7 @@ jwcrypto
 xmltodict
 loguru
 motor
+pysaml2
 uvicorn[standard]
 gunicorn
 # jwcrypto needs six
