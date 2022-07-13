@@ -1,6 +1,5 @@
 # setup step
-# todo: go back to debian:stable when it gets python3.8
-FROM debian:bullseye AS build
+FROM debian:stable AS build
 env DEBIAN_FRONTEND noninteractive
 RUN /bin/sed -i s/deb.debian.org/ftp.se.debian.org/g /etc/apt/sources.list
 RUN apt-get update && \
@@ -21,12 +20,12 @@ RUN rm /opt/sunet/sunet-auth-server/.git -r
 RUN /opt/sunet/sunet-auth-server/docker/setup_venv.sh
 
 # actual image
-FROM debian:bullseye
+FROM debian:stable
 env DEBIAN_FRONTEND noninteractive
 RUN /bin/sed -i s/deb.debian.org/ftp.se.debian.org/g /etc/apt/sources.list
 
 #
-# Install tools that are helpful when troubleshooting.
+# Install dependencies and tools that are helpful when troubleshooting
 #
 RUN apt-get update && \
     apt-get -y dist-upgrade && \
@@ -39,6 +38,7 @@ RUN apt-get update && \
       procps \
       python3-minimal \
       python3-distutils \
+      xmlsec1 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN addgroup --system sunet && adduser --system --shell /bin/false sunet
