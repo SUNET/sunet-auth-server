@@ -15,3 +15,5 @@ uvicorn[standard]
 gunicorn
 # jwcrypto needs six
 six
+# needed for hashes
+importlib-resources
