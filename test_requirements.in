@@ -9,3 +9,4 @@ types-PyYAML
 types-pkg_resources
 types-cryptography
 types-aiofiles
+types-python-dateutil
