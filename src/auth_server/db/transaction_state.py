@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from auth_server.db.client import BaseDB, get_motor_client
 from auth_server.mdq import MDQData
 from auth_server.models.gnap import Access, GNAPJOSEHeader, GrantRequest, GrantResponse
+from auth_server.saml2 import SessionInfo
 from auth_server.time_utils import utc_now
 from auth_server.tls_fed_auth import MetadataEntity
 from auth_server.utils import get_hex_uuid4
@@ -37,7 +38,7 @@ class TransactionState(BaseModel, ABC):
     detached_jws: Optional[str]
     proof_ok: bool = False
     requested_access: List[Union[str, Access]] = Field(default_factory=list)
-    saml_assertion: Optional[Mapping]
+    saml_assertion: Optional[SessionInfo]
     interaction_reference: Optional[str]
     user_code: Optional[str]
     continue_reference: Optional[str]

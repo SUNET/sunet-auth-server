@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
-from typing import Dict, List, Type, cast
+from typing import Dict, Type, cast
 
 from fastapi import FastAPI
 from starlette.staticfiles import StaticFiles
@@ -12,6 +12,7 @@ from auth_server.log import init_logging
 from auth_server.middleware import JOSEMiddleware
 from auth_server.routers.interaction import interaction_router
 from auth_server.routers.root import root_router
+from auth_server.routers.saml2_sp import saml2_router
 from auth_server.routers.status import status_router
 from auth_server.utils import import_class
 
@@ -65,6 +66,7 @@ def init_auth_server_api() -> AuthServer:
     app.add_middleware(JOSEMiddleware)
     app.include_router(root_router)
     app.include_router(interaction_router)
+    app.include_router(saml2_router)
     app.include_router(status_router)
     app.mount("/static", StaticFiles(packages=['auth_server']), name="static")  # defaults to the "statics" directory
     return app
