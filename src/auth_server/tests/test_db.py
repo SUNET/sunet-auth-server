@@ -111,7 +111,7 @@ class TestBaseDB(IsolatedAsyncioTestCase):
 class TestMongoCache(IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.mongo_db = MongoTemporaryInstance.get_instance()
-        self.db_client = MongoClient(self.mongo_db.uri, tz_aware=True)
+        self.db_client: MongoClient = MongoClient(self.mongo_db.uri, tz_aware=True)
         self.mongo_cache = MongoCache(
             db_client=self.db_client, db_name='test', collection='test_collection', expire_after=timedelta(minutes=5)
         )

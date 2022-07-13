@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from typing import Mapping, Optional
 
 from starlette.responses import Response
 from starlette.templating import Jinja2Templates as _Jinja2Templates
@@ -17,7 +18,7 @@ class TestableJinja2Templates(_Jinja2Templates):
         name: str,
         context: dict,
         status_code: int = 200,
-        headers: dict = None,
+        headers: Optional[Mapping[str, str]] = None,
         media_type: str = None,
         background=None,
     ) -> _TemplateResponse:

@@ -5,7 +5,7 @@ from datetime import timedelta
 from os import environ
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Mapping, Optional
 from unittest import TestCase, mock
 from unittest.mock import AsyncMock
 
@@ -103,11 +103,13 @@ class TestAuthServer(TestCase):
             client = self.client
         response = client.get("/.well-known/jwk.json")
         assert response.status_code == 200
-        token = jwt.JWT(key=jwt.JWK(**response.json()), jwt=access_token['value'])
+        token = jwt.JWT(key=jwk.JWK(**response.json()), jwt=access_token['value'])
         return json.loads(token.claims)
 
     def _get_transaction_state_by_id(self, transaction_id) -> TransactionState:
         doc = self.transaction_states.find_one({'transaction_id': transaction_id})
+        assert doc is not None  # please mypy
+        assert isinstance(doc, Mapping) is True  # please mypy
         return TransactionState(**doc)
 
     def test_get_status_healty(self):
