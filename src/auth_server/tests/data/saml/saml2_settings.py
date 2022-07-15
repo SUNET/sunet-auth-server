@@ -58,6 +58,7 @@ SAML_CONFIG = {
             },
         },
     },
+    "discovery_response": ['%sdiscovery-response' % BASE_URL],
     # where the remote metadata is stored
     'metadata': {
         'local': [path.join(SAML2DIR, 'remote_metadata.xml')],

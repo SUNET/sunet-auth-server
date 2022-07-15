@@ -6,10 +6,11 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Form, HTTPException
-from starlette.responses import HTMLResponse, RedirectResponse
+from starlette.responses import HTMLResponse, RedirectResponse, Response
 
+from auth_server.config import load_config
 from auth_server.context import ContextRequest, ContextRequestRoute
-from auth_server.db.transaction_state import TransactionState, get_transaction_state_db
+from auth_server.db.transaction_state import FlowState, TransactionState, get_transaction_state_db
 from auth_server.models.gnap import FinishInteractionMethod
 from auth_server.templating import TestableJinja2Templates
 from auth_server.utils import get_interaction_hash, push_interaction_finish
@@ -21,7 +22,7 @@ templates = TestableJinja2Templates(directory=str(Path(__file__).with_name('temp
 
 
 @interaction_router.get('/redirect/{transaction_id}', response_class=HTMLResponse)
-async def redirect(request: ContextRequest, transaction_id: str, background_tasks: BackgroundTasks):
+async def redirect(request: ContextRequest, transaction_id: str, background_tasks: BackgroundTasks) -> Response:
     transaction_db = await get_transaction_state_db()
     if transaction_db is None:
         # if there is no database available no requests should get here
@@ -32,10 +33,15 @@ async def redirect(request: ContextRequest, transaction_id: str, background_task
         raise HTTPException(status_code=404, detail="transaction not found")
 
     assert isinstance(transaction_state, TransactionState)  # please mypy
+
+    if transaction_state.flow_state is not FlowState.PENDING:
+        logger.error(f'transaction flow_state {transaction_state.flow_state} != {FlowState.PENDING}')
+        raise HTTPException(status_code=400, detail="transaction is in the wrong state")
+
     # we only support saml2 for user authentication for now
     if not transaction_state.saml_assertion:
-        # TODO: create saml auth request
-        pass
+        redirect_url = request.url_for('authenticate', transaction_id=transaction_state.transaction_id)
+        return RedirectResponse(redirect_url)
 
     return await finish_interaction(
         request=request, transaction_state=transaction_state, background_tasks=background_tasks
@@ -48,7 +54,7 @@ async def user_code_input(request: ContextRequest):
 
 
 @interaction_router.post('/code', response_class=HTMLResponse)
-async def user_code_finish(request: ContextRequest, user_code: Optional[str] = Form(...)):
+async def user_code_finish(request: ContextRequest, user_code: Optional[str] = Form(...)) -> Response:
     transaction_db = await get_transaction_state_db()
     if transaction_db is None:
         # if there is no database available no requests should get here
@@ -69,7 +75,17 @@ async def user_code_finish(request: ContextRequest, user_code: Optional[str] = F
 
 async def finish_interaction(
     request: ContextRequest, transaction_state: TransactionState, background_tasks: BackgroundTasks
-):
+) -> Response:
+    config = load_config()
+    transaction_db = await get_transaction_state_db()
+    if transaction_db is None:
+        # if there is no database available no requests should get here
+        raise HTTPException(status_code=400, detail="interaction not supported")
+
+    # set transaction flow state to approved as interaction finished successfully
+    transaction_state.flow_state = FlowState.APPROVED
+    await transaction_db.save(state=transaction_state, expires_in=config.transaction_state_expires_in)
+
     # notify the client if any finish method was agreed upon
     if transaction_state.grant_request.interact and transaction_state.grant_request.interact.finish:
         assert transaction_state.interaction_reference  # please mypy

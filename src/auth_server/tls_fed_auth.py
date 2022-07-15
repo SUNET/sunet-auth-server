@@ -15,7 +15,7 @@ from jwcrypto import jwk, jws
 from pydantic import BaseModel, ValidationError
 
 from auth_server.config import load_config
-from auth_server.models.gnap import Key, Proof
+from auth_server.models.gnap import Key, ProofMethod
 from auth_server.models.tls_fed_metadata import Entity
 from auth_server.models.tls_fed_metadata import Model as TLSFEDMetadataModel
 from auth_server.models.tls_fed_metadata import TLSFEDJOSEHeader
@@ -270,7 +270,7 @@ async def entity_to_key(entity: Optional[MetadataEntity]) -> Optional[Key]:
         # TODO: how do we handle multiple certs?
         logger.info(f'Found cert in metadata')
         return Key(
-            proof=Proof.MTLS,
+            proof=ProofMethod.MTLS,
             cert_S256=base64.b64encode(certs[0].fingerprint(algorithm=SHA256())).decode('utf-8'),
         )
     return None

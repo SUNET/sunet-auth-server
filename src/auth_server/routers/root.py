@@ -8,7 +8,7 @@ from starlette.responses import Response
 
 from auth_server.config import AuthServerConfig, load_config
 from auth_server.context import ContextRequest, ContextRequestRoute
-from auth_server.db.transaction_state import TransactionState, get_transaction_state_db
+from auth_server.db.transaction_state import FlowState, TransactionState, get_transaction_state_db
 from auth_server.flows import NextFlowException, StopTransactionException
 from auth_server.models.gnap import ContinueRequest, GrantRequest, GrantResponse
 from auth_server.models.jose import JWKS, JWKTypes
@@ -65,7 +65,7 @@ async def transaction(
         state = TransactionState(
             flow_name=auth_flow_name,
             grant_request=grant_req.copy(deep=True),  # let every flow have their own copy of the grant request,
-            tls_client_cert=client_cert,
+            client_cert=client_cert,
             jws_header=request.context.jws_header,
             detached_jws=detached_jws,
         )
@@ -94,14 +94,14 @@ async def continue_transaction(
     request: ContextRequest,
     continue_req: ContinueRequest,
     continue_reference: Optional[str] = None,
-    tls_client_cert: Optional[str] = Header(None),
+    client_cert: Optional[str] = Header(None),
     detached_jws: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),  # TODO: should not really be optional?
     config: AuthServerConfig = Depends(load_config),
     signing_key: JWK = Depends(get_signing_key),
 ):
     logger.debug(f'continue_req: {continue_req}')
-    logger.debug(f'client_cert: {tls_client_cert}')
+    logger.debug(f'client_cert: {client_cert}')
     logger.debug(f'detached_jws: {detached_jws}')
     logger.debug(f'authorization: {authorization}')
 
@@ -132,14 +132,20 @@ async def continue_transaction(
     if authorization != f'GNAP {transaction_state.continue_access_token}':
         raise HTTPException(status_code=401, detail='permission denied')
 
+    # return continue response again if interaction is not completed
+    if transaction_state.flow_state != FlowState.APPROVED:
+        # TODO: update expires_in and return error message to clients not waiting long enough
+        return transaction_state.grant_response
+
     # initialize flow to continue
-    auth_flow_name = transaction_doc.get('flow_name')
+    auth_flow_name = transaction_state.flow_name
     auth_flow = request.app.auth_flows.get(auth_flow_name)
     if not auth_flow:
         raise HTTPException(status_code=400, detail='requested flow not loaded')
-    # update transaction_state with the clients current authentication
+    # update transaction_state with the clients current authentication as the authentication have to match
+    # the transaction requests key that should be continued
     updated_transaction_doc = dict(**transaction_doc)
-    updated_transaction_doc['client_cert'] = tls_client_cert
+    updated_transaction_doc['client_cert'] = client_cert
     updated_transaction_doc['jws_header'] = request.context.jws_header
     updated_transaction_doc['detached_jws'] = detached_jws
     flow = auth_flow(request=request, config=config, signing_key=signing_key, state=updated_transaction_doc)

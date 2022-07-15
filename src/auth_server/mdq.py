@@ -3,17 +3,20 @@ import logging
 from base64 import b64encode
 from collections import OrderedDict as _OrderedDict
 from enum import Enum
-from typing import List, Optional, OrderedDict
+from typing import TYPE_CHECKING, List, Optional, OrderedDict, Union
 
 import aiohttp
 import xmltodict
 from cryptography.hazmat.primitives.hashes import SHA1, SHA256
 from cryptography.x509 import Certificate
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from pyexpat import ExpatError
 
-from auth_server.models.gnap import Key, Proof
-from auth_server.utils import get_values, hash_with, load_cert_from_str
+if TYPE_CHECKING:
+    from pydantic.typing import AbstractSetIntStr, MappingIntStrAny, DictStrAny
+
+from auth_server.models.gnap import Key, ProofMethod
+from auth_server.utils import get_values, hash_with, load_cert_from_str, serialize_certificate
 
 __author__ = 'lundberg'
 
@@ -30,11 +33,42 @@ class MDQBase(BaseModel):
     class Config:
         allow_mutation = False  # should not change after load
         arbitrary_types_allowed = True  # needed for x509.Certificate
+        json_encoders = {Certificate: serialize_certificate}
 
 
 class MDQCert(MDQBase):
     use: KeyUse
     cert: Certificate
+
+    @validator('cert', pre=True)
+    def deserialize_cert(cls, v: str) -> Certificate:
+        if isinstance(v, Certificate):
+            return v
+        return load_cert_from_str(v)
+
+    def dict(
+        self,
+        *,
+        include: Union['AbstractSetIntStr', 'MappingIntStrAny'] = None,
+        exclude: Union['AbstractSetIntStr', 'MappingIntStrAny'] = None,
+        by_alias: bool = False,
+        skip_defaults: bool = None,
+        exclude_unset: bool = False,
+        exclude_defaults: bool = False,
+        exclude_none: bool = False,
+    ) -> 'DictStrAny':
+        # serialize Certificate on dict use
+        d = super().dict(
+            include=include,
+            exclude=exclude,
+            by_alias=by_alias,
+            skip_defaults=skip_defaults,
+            exclude_unset=exclude_unset,
+            exclude_defaults=exclude_defaults,
+            exclude_none=exclude_none,
+        )
+        d['cert'] = serialize_certificate(d['cert'])
+        return d
 
 
 class MDQData(MDQBase):
@@ -88,7 +122,7 @@ async def mdq_data_to_key(mdq_data: MDQData) -> Optional[Key]:
     if signing_cert:
         logger.info(f'Found cert in metadata')
         return Key(
-            proof=Proof.MTLS,
+            proof=ProofMethod.MTLS,
             cert_S256=b64encode(signing_cert[0].fingerprint(algorithm=SHA256())).decode('utf-8'),
         )
     return None

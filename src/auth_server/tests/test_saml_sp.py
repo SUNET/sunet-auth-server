@@ -3,8 +3,9 @@ import base64
 from datetime import datetime, timedelta
 from os import environ
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Mapping
 from unittest import TestCase
+from urllib.parse import parse_qs, urlparse
 
 from pymongo import MongoClient
 from starlette.testclient import TestClient
@@ -14,10 +15,20 @@ from auth_server.config import load_config
 from auth_server.db.transaction_state import TransactionState
 from auth_server.models.gnap import AccessTokenRequest, Client, GrantRequest
 from auth_server.routers.saml2_sp import saml2_router
-from auth_server.saml2 import OutstandingQueriesCache, get_pysaml2_sp_config
+from auth_server.saml2 import (
+    AuthenticationRequestCache,
+    AuthnInfo,
+    NameID,
+    OutstandingQueriesCache,
+    SAMLAttributes,
+    SessionInfo,
+    get_pysaml2_sp_config,
+)
 from auth_server.testing import MongoTemporaryInstance
 
 __author__ = 'lundberg'
+
+from auth_server.time_utils import utc_now
 
 
 class TestSAMLSP(TestCase):
@@ -27,8 +38,10 @@ class TestSAMLSP(TestCase):
         self.config: Dict[str, Any] = {
             'testing': 'true',
             'log_level': 'DEBUG',
+            'auth_token_issuer': 'http://testserver',
             'mongo_uri': self.mongo_db.uri,
             'pysaml2_config_path': f'{self.datadir}/saml2_settings.py',
+            'saml2_discovery_service_url': 'http://disco.localhost.test/ds/',
         }
         environ.update(self.config)
         self.app = init_auth_server_api()
@@ -42,6 +55,51 @@ class TestSAMLSP(TestCase):
         self.test_idp = 'https://idp.example.com/simplesaml/saml2/idp/metadata.php'
         self.outstanding_queries_cache = OutstandingQueriesCache(
             db_client=MongoClient(self.mongo_db.uri, tz_aware=True)
+        )
+        self.authentication_request_cache = AuthenticationRequestCache(
+            db_client=MongoClient(self.mongo_db.uri, tz_aware=True)
+        )
+        self.test_session_info = SessionInfo(
+            issuer='https://idp.example.com/simplesaml/saml2/idp/metadata.php',
+            authn_info=[
+                AuthnInfo(authn_class='https://refeds.org/profile/mfa', authn_authority=[], authn_instant=utc_now())
+            ],
+            name_id=NameID(
+                format='urn:oasis:names:tc:SAML:2.0:nameid-format:transient',
+                name_qualifier='',
+                sp_name_qualifier='http://test.localhost/saml2-metadata',
+                sp_provided_id=None,
+                id='1f87035b4c1325b296a53d92097e6b3fa36d7e30ee82e3fcb0680d60243c1f03',
+            ),
+            attributes=SAMLAttributes(
+                assurance=[
+                    'http://www.swamid.se/policy/assurance/al1',
+                    'http://www.swamid.se/policy/assurance/al2',
+                    'https://refeds.org/assurance',
+                    'https://refeds.org/assurance/ID/unique',
+                    'https://refeds.org/assurance/ID/eppn-unique-no-reassign',
+                    'https://refeds.org/assurance/IAP/low',
+                    'https://refeds.org/assurance/IAP/medium',
+                ],
+                common_name='Test Testaren Testsson',
+                country_code='se',
+                country_name='Sweden',
+                date_of_birth='19010203',
+                display_name='Testsson',
+                eppn='eppn@idp.example.com',
+                given_name='Test Testaren',
+                home_organization=None,
+                home_organization_type=None,
+                mail='testsson@example.com',
+                nin='190102031234',
+                organization_acronym=None,
+                organization_name=None,
+                personal_identity_number='190102031234',
+                scoped_affiliation=None,
+                surname='Testsson',
+                targeted_id='https://idp.example.com/simplesaml/saml2/idp/metadata.php!http://test.localhost/saml2-metadata!398f4967ef4ec07985d93a9200d3891184b9c0f6c79db53280894ae75673eab8',
+                unique_id='eppn@idp.example.com',
+            ),
         )
 
         self.saml_response_tpl_success = """<?xml version='1.0' encoding='UTF-8'?>
@@ -113,10 +171,7 @@ class TestSAMLSP(TestCase):
               </saml:Attribute>
               <saml:Attribute Name="urn:oid:0.9.2342.19200300.100.1.3" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="mail">
                 <saml:AttributeValue xsi:type="xs:string">testsson@example.com</saml:AttributeValue>
-              </saml:Attribute>
-              <saml:Attribute Name="urn:oid:1.3.6.1.4.1.5923.1.1.1.16" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="eduPersonOrcid">
-                <saml:AttributeValue xsi:type="xs:string">https://sandbox.orcid.org/0000-0002-8544-3534</saml:AttributeValue>
-              </saml:Attribute>
+              </saml:Attribute>              
               <saml:Attribute Name="urn:oid:1.3.6.1.4.1.5923.1.1.1.10" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="eduPersonTargetedID">
                 <saml:AttributeValue>
                   <saml:NameID Format="urn:oasis:names:tc:SAML:2.0:nameid-format:persistent" NameQualifier="https://idp.example.com/simplesaml/saml2/idp/metadata.php" SPNameQualifier="http://test.localhost/saml2-metadata">398f4967ef4ec07985d93a9200d3891184b9c0f6c79db53280894ae75673eab8</saml:NameID>
@@ -135,17 +190,6 @@ class TestSAMLSP(TestCase):
             <saml2p:StatusMessage>User login was not successful or could not meet the requirements of the requesting application.</saml2p:StatusMessage>
           </saml2p:Status>
         </saml2p:Response>"""
-        self.saml_response_tpl_cancel = """
-                <?xml version="1.0" encoding="UTF-8"?>
-        <saml2p:Response xmlns:saml2p="urn:oasis:names:tc:SAML:2.0:protocol" Destination="{sp_url}saml2-acs" ID="_ebad01e547857fa54927b020dba1edb1" InResponseTo="{session_id}" IssueInstant="{timestamp}" Version="2.0">
-          <saml2:Issuer xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion">https://idp.example.com/simplesaml/saml2/idp/metadata.php</saml2:Issuer>
-          <saml2p:Status>
-            <saml2p:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester">
-              <saml2p:StatusCode Value="http://id.elegnamnden.se/status/1.0/cancel" />
-            </saml2p:StatusCode>
-            <saml2p:StatusMessage>The login attempt was cancelled</saml2p:StatusMessage>
-          </saml2p:Status>
-        </saml2p:Response>"""
 
     @staticmethod
     def _clear_lru_cache():
@@ -157,10 +201,17 @@ class TestSAMLSP(TestCase):
         self.app = None  # type: ignore
         self.client = None  # type: ignore
         self._clear_lru_cache()
-        # Clear outstanding queries cache
+        # Clear saml caches
         self.outstanding_queries_cache._db._drop_whole_collection()
+        self.authentication_request_cache._db._drop_whole_collection()
         # Clear environment variables
         environ.clear()
+
+    def _get_transaction_state_by_id(self, transaction_id) -> TransactionState:
+        doc = self.transaction_states.find_one({'transaction_id': transaction_id})
+        assert doc is not None  # please mypy
+        assert isinstance(doc, Mapping) is True  # please mypy
+        return TransactionState(**doc)
 
     @staticmethod
     def generate_auth_response(
@@ -220,3 +271,43 @@ class TestSAMLSP(TestCase):
         response = self.client.post(saml2_router.url_path_for('assertion_consumer_service'), data=data)
         assert response.status_code == 303
         assert response.headers['location'].startswith('/interaction/redirect/') is True
+
+        # check authentication result
+        transaction_state = self._get_transaction_state_by_id(self.test_transaction_state.transaction_id)
+        assert transaction_state.saml_assertion is not None
+        assert transaction_state.saml_assertion.issuer == self.test_session_info.issuer
+        assert transaction_state.saml_assertion.attributes == self.test_session_info.attributes
+
+    def test_idp_discovery(self):
+        # test initial redirect
+        authn_url = saml2_router.url_path_for('authenticate', transaction_id=self.test_transaction_state.transaction_id)
+        response = self.client.get(f'{authn_url}', allow_redirects=False)
+        assert response.status_code == 303
+        assert response.headers['location'].startswith(self.config['saml2_discovery_service_url']) is True
+        parsed_redirect_url = urlparse(response.headers['location'])
+        parsed_redirect_qs = parse_qs(parsed_redirect_url.query)
+        assert parsed_redirect_qs['entityID'][0] == 'http://test.localhost/saml2-metadata'
+        assert (
+            parsed_redirect_qs['return'][0].startswith('http://testserver/saml2/sp/discovery-response/?target=') is True
+        )
+
+        # test discovery response
+        parsed_return_url = urlparse(parsed_redirect_qs['return'][0])
+        parsed_return_qs = parse_qs(parsed_return_url.query)
+        discovery_response_url = (
+            f'{saml2_router.url_path_for("discovery_service_response")}'
+            f'?target={parsed_return_qs["target"][0]}&entityID={self.test_idp}'
+        )
+        response2 = self.client.get(discovery_response_url, allow_redirects=False)
+        assert response2.status_code == 303
+        assert (
+            response2.headers['location'].startswith(
+                'https://idp.example.com/simplesaml/saml2/idp/SSOService.php?SAMLRequest='
+            )
+            is True
+        )
+
+    def test_get_metadata(self):
+        response = self.client.get(saml2_router.url_path_for('metadata'))
+        assert response.headers['content-type'] == 'text/xml; charset=utf-8'
+        assert response.text is not None

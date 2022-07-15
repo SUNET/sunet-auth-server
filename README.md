@@ -1,4 +1,4 @@
 # sunet-auth-server
 oauth.xyz/GNAP auth server
 
-Based on draft-ietf-gnap-core-protocol-09.
+This implementation targets draft-ietf-gnap-core-protocol-10.

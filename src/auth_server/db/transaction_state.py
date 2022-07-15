@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from abc import ABC
 from datetime import datetime, timedelta
+from enum import Enum
 from typing import Any, Dict, List, Mapping, Optional, Type, TypeVar, Union
 
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -28,12 +29,20 @@ async def get_transaction_state_db() -> Optional[TransactionStateDB]:
     return None
 
 
+class FlowState(str, Enum):
+    PROCESSING = 'processing'
+    PENDING = 'pending'
+    APPROVED = 'approved'
+    FINALIZED = 'finalized'
+
+
 class TransactionState(BaseModel, ABC):
     transaction_id: str = Field(default_factory=get_hex_uuid4)
+    flow_state: FlowState = Field(default=FlowState.PROCESSING)
     grant_request: GrantRequest
     grant_response: GrantResponse = Field(default_factory=GrantResponse)
     key_reference: Optional[str]
-    tls_client_cert: Optional[str]
+    client_cert: Optional[str]
     jws_header: Optional[GNAPJOSEHeader]
     detached_jws: Optional[str]
     proof_ok: bool = False
@@ -117,6 +126,9 @@ class TransactionStateDB(BaseDB):
         if not doc:
             return None
         return TransactionState.from_dict(state=doc)
+
+    async def remove_state(self, transactions_id: str) -> None:
+        await self.remove_document({'transaction_id': transactions_id})
 
     async def save(self, state: T, expires_in: timedelta):
         state.expires_at = state.expires_at + expires_in

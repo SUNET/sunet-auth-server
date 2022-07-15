@@ -9,6 +9,7 @@ from pymongo.errors import DuplicateKeyError
 
 from auth_server.db.client import BaseDB, MultipleDocumentsReturned
 from auth_server.db.mongo_cache import MongoCache
+from auth_server.db.transaction_state import TransactionStateDB
 from auth_server.testing import MongoTemporaryInstance
 
 __author__ = 'lundberg'
@@ -189,3 +190,10 @@ class TestMongoCache(IsolatedAsyncioTestCase):
             )
         )['modified_ts']
         assert modified_ts_after > modified_ts_before
+
+
+class TestTransactionStateDB(IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        self.mongo_db = MongoTemporaryInstance.get_instance()
+        self.db_client = AsyncIOMotorClient(self.mongo_db.uri, tz_aware=True)
+        self.transaction_state_db = TransactionStateDB(db_client=self.db_client)

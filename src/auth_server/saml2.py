@@ -10,14 +10,13 @@ from logging import getLogger
 from typing import Any, Dict, List, NewType, Optional, Tuple, Union
 from xml.etree.ElementTree import ParseError
 
-from pydantic import AnyUrl, BaseModel, Extra, Field, root_validator, validator
+from pydantic import AnyUrl, BaseModel, Extra, Field
 from pymongo import MongoClient
 from saml2 import BINDING_HTTP_POST, BINDING_HTTP_REDIRECT
 from saml2.cache import Cache
 from saml2.client import Saml2Client
 from saml2.config import SPConfig
 from saml2.response import AuthnResponse, StatusError, UnsolicitedResponse
-from saml2.saml import NameID as PysamlNameID
 from saml2.saml import Subject
 
 from auth_server.config import load_config
@@ -61,56 +60,64 @@ class NameID(BaseModel):
 
 class SAMLAttributes(BaseModel):
     assurance: List[str] = Field(default_factory=list, alias='eduPersonAssurance')
-    country_code: Optional[str] = Field(alias='c')
-    country_name: Optional[str] = Field(alias='co')
-    date_of_birth: Optional[str] = Field(alias='schacDateOfBirth')
-    display_name: Optional[str] = Field(alias='displayName')
-    eppn: Optional[str] = Field(alias='eduPersonPrincipalName')
-    full_name: Optional[str] = Field(alias='cn')
-    given_name: Optional[str] = Field(alias='givenName')
+    common_name: Optional[str] = Field(default=None, alias='cn')
+    country_code: Optional[str] = Field(default=None, alias='c')
+    country_name: Optional[str] = Field(default=None, alias='co')
+    date_of_birth: Optional[str] = Field(default=None, alias='schacDateOfBirth')
+    display_name: Optional[str] = Field(default=None, alias='displayName')
+    eppn: Optional[str] = Field(default=None, alias='eduPersonPrincipalName')
+    given_name: Optional[str] = Field(default=None, alias='givenName')
+    home_organization: Optional[str] = Field(default=None, alias='schacHomeOrganization')
+    home_organization_type: Optional[str] = Field(default=None, alias='schacHomeOrganizationType')
     mail: Optional[str]
-    nin: Optional[str] = Field(alias='norEduPersonNIN')
-    personal_identity_number: Optional[str] = Field(alias='personalIdentityNumber')
-    surname: Optional[str] = Field(alias='sn')
-    targeted_id: Optional[str] = Field(alias='eduPersonTargetedID')
-    unique_id: Optional[str] = Field(alias='eduPersonUniqueId')
+    nin: Optional[str] = Field(default=None, alias='norEduPersonNIN')
+    organization_acronym: Optional[str] = Field(default=None, alias='norEduOrgAcronym')
+    organization_name: Optional[str] = Field(default=None, alias='o')
+    personal_identity_number: Optional[str] = Field(default=None, alias='personalIdentityNumber')
+    scoped_affiliation: Optional[str] = Field(default=None, alias='eduPersonScopedAffiliation')
+    surname: Optional[str] = Field(default=None, alias='sn')
+    targeted_id: Optional[str] = Field(default=None, alias='eduPersonTargetedID')
+    unique_id: Optional[str] = Field(default=None, alias='eduPersonUniqueId')
 
     class Config:
         extra = Extra.allow  # allow unspecified attributes
+        allow_population_by_field_name = True
 
-    # pysaml returns attributes in lists, lets unwind all attributes with only a single value
-    @root_validator(pre=True)
-    def unwind_value(cls, values: Dict[str, List[str]]) -> Dict[str, Union[str, List[str]]]:
-        for key, value in values.items():
+    @classmethod
+    def from_pysaml2(cls, ava: Dict[str, List[str]]) -> SAMLAttributes:
+        # pysaml returns attributes in lists, lets unwind all attributes with only a single value
+        for key, value in ava.items():
             if not isinstance(value, list):
                 raise ValueError('attribute value is not a list')
-        single_values = dict([(key, value[0]) for key, value in values.items() if len(value) == 1])
+        single_values = dict([(key, value[0]) for key, value in ava.items() if len(value) == 1])
         # please mypy
-        ret: Dict[str, Union[str, List[str]]] = {}
-        ret.update(values)
-        ret.update(single_values)
-        return ret
+        result: Dict[str, Union[str, List[str]]] = {}
+        result.update(ava)
+        result.update(single_values)
+        return cls(**result)
 
 
 class SessionInfo(BaseModel):
     issuer: str
     authn_info: List[AuthnInfo] = Field(default_factory=list)
     name_id: NameID
-    attributes: SAMLAttributes = Field(alias='ava')
+    attributes: SAMLAttributes
 
-    @validator('authn_info', pre=True)
-    def unwind_authn_info(cls, v: List[Tuple[str, List[str], str]]) -> List[Dict[str, Union[str, List[str]]]]:
-        return [{'authn_class': item[0], 'authn_authority': item[1], 'authn_instant': item[2]} for item in v]
-
-    @validator('name_id', pre=True)
-    def parse_name_id(cls, v: PysamlNameID) -> Dict[str, Optional[str]]:
-        return {
-            'format': v.format,
-            'name_qualifier': v.name_qualifier,
-            'sp_name_qualifier': v.sp_name_qualifier,
-            'sp_provided_id': v.sp_provided_id,
-            'id': v.text,
-        }
+    @classmethod
+    def from_pysaml2(cls, session_info: Dict[str, Any]) -> SessionInfo:
+        session_info['authn_info'] = [
+            AuthnInfo(authn_class=item[0], authn_authority=item[1], authn_instant=item[2])
+            for item in session_info['authn_info']
+        ]
+        session_info['name_id'] = NameID(
+            format=session_info['name_id'].format,
+            name_qualifier=session_info['name_id'].name_qualifier,
+            sp_name_qualifier=session_info['name_id'].sp_name_qualifier,
+            sp_provided_id=session_info['name_id'].sp_provided_id,
+            id=session_info['name_id'].text,
+        )
+        session_info['attributes'] = SAMLAttributes.from_pysaml2(ava=session_info['ava'])
+        return cls(**session_info)
 
 
 class AssertionData(BaseModel):
@@ -289,8 +296,14 @@ async def process_assertion(saml_response: str) -> Optional[AssertionData]:
         logger.info(f'Unknown response')
         raise BadSAMLResponse('Unknown response')
 
-    session_info = response.session_info()
-    return AssertionData(session_info=session_info, authn_req_ref=authn_ref)
+    session_info = SessionInfo.from_pysaml2(response.session_info())
+    assertion_data = AssertionData(session_info=session_info, authn_req_ref=authn_ref)
+    # Fix eduPersonTargetedID
+    issuer_entityid = assertion_data.session_info.issuer
+    sp_entityid = saml2_sp.client.config.entityid
+    targeted_id_value = assertion_data.session_info.attributes.targeted_id
+    assertion_data.session_info.attributes.targeted_id = f'{issuer_entityid}!{sp_entityid}!{targeted_id_value}'
+    return assertion_data
 
 
 async def get_authn_response(raw_response: str) -> Tuple[AuthnResponse, AuthnRequestRef]:

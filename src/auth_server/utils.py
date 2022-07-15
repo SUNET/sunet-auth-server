@@ -10,6 +10,7 @@ from uuid import uuid4
 import aiohttp
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.hashes import SHA3_512, SHA512, HashAlgorithm
+from cryptography.hazmat.primitives.serialization import Encoding
 from cryptography.x509 import Certificate, load_pem_x509_certificate
 from jwcrypto import jwk
 
@@ -51,8 +52,13 @@ def get_signing_key() -> jwk.JWK:
 
 
 def load_cert_from_str(cert: str) -> Certificate:
-    raw_cert = f'-----BEGIN CERTIFICATE-----\n{cert}\n-----END CERTIFICATE-----'
-    return load_pem_x509_certificate(raw_cert.encode())
+    if not cert.startswith('-----BEGIN CERTIFICATE-----'):
+        cert = f'-----BEGIN CERTIFICATE-----\n{cert}\n-----END CERTIFICATE-----'
+    return load_pem_x509_certificate(cert.encode())
+
+
+def serialize_certificate(cert: Certificate) -> str:
+    return cert.public_bytes(encoding=Encoding.PEM).decode('utf-8')
 
 
 def import_class(class_path: str) -> Callable:
@@ -90,6 +96,14 @@ def get_hex_uuid4(length=32) -> str:
     return uuid4().hex[:length]
 
 
+def get_hash_by_name(hash_name: str) -> HashAlgorithm:
+    supported_hash_algs = [SHA512(), SHA3_512()]
+    for alg in supported_hash_algs:
+        if alg.name == hash_name:
+            return alg
+    raise NotImplementedError(f'Hash algorithm {hash_name} not implemented')
+
+
 def hash_with(hash_alg: HashAlgorithm, data: bytes) -> bytes:
     h = hashes.Hash(hash_alg)
     h.update(data)
@@ -97,7 +111,11 @@ def hash_with(hash_alg: HashAlgorithm, data: bytes) -> bytes:
 
 
 def get_interaction_hash(
-    client_nonce: str, as_nonce: str, interact_ref: str, transaction_url: str, hash_method: HashMethod = HashMethod.SHA3
+    client_nonce: str,
+    as_nonce: str,
+    interact_ref: str,
+    transaction_url: str,
+    hash_method: HashMethod = HashMethod.SHA3_512,
 ) -> str:
     """
     To calculate the "hash" value, the party doing the calculation
@@ -132,9 +150,7 @@ def get_interaction_hash(
 
     https://datatracker.ietf.org/doc/html/draft-ietf-gnap-core-protocol-07#section-4.2.3
     """
-    hash_methods = {HashMethod.SHA2: SHA512(), HashMethod.SHA3: SHA3_512()}
-    if (hash_alg := hash_methods.get(hash_method)) is None:
-        raise NotImplementedError(f'hash method {hash_method} not implemented')
+    hash_alg = get_hash_by_name(hash_name=hash_method.value)
     plaintext = f"{client_nonce}\n{as_nonce}\n{interact_ref}\n{transaction_url}".encode()
     hash_res = hash_with(hash_alg, plaintext)
     return urlsafe_b64encode(hash_res).decode(encoding='utf-8')
