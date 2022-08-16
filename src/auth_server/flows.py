@@ -15,6 +15,7 @@ from auth_server.context import ContextRequest
 from auth_server.db.transaction_state import (
     ConfigState,
     FlowState,
+    InteractionState,
     MDQState,
     TestState,
     TLSFEDState,
@@ -381,6 +382,12 @@ class TestFlow(CommonFlow):
         claims = await super().create_claims()
         claims.source = 'test mode'
         return claims
+
+
+class InteractionFlow(CommonFlow):
+    @classmethod
+    def load_state(cls, state: Mapping[str, Any]) -> InteractionState:
+        return InteractionState.from_dict(state=state)
 
 
 class ConfigFlow(CommonFlow):

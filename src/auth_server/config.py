@@ -31,6 +31,7 @@ class Environment(str, Enum):
 class FlowName(str, Enum):
     CONFIGFLOW = 'ConfigFlow'
     MDQFLOW = 'MDQFlow'
+    INTERACTIONFLOW = 'InteractionFlow'
     TESTFLOW = 'TestFlow'
     TLSFEDFLOW = 'TLSFEDFlow'
 

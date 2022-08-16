@@ -852,7 +852,7 @@ class TestAuthServer(TestCase):
         assert claims['saml_eppn'] == 'test@example.com'
 
     def test_transaction_mtls_continue(self):
-        self.config['auth_flows'] = json.dumps(['TestFlow'])
+        self.config['auth_flows'] = json.dumps(['InteractionFlow'])
         self._update_app_config(config=self.config)
 
         req = GrantRequest(
@@ -911,7 +911,7 @@ class TestAuthServer(TestCase):
         assert claims['saml_eppn'] == 'test@example.com'
 
     def test_transaction_jws_continue(self):
-        self.config['auth_flows'] = json.dumps(['TestFlow'])
+        self.config['auth_flows'] = json.dumps(['InteractionFlow'])
         self._update_app_config(config=self.config)
 
         client_key_dict = self.client_jwk.export(as_dict=True)
@@ -992,7 +992,7 @@ class TestAuthServer(TestCase):
         assert claims['saml_eppn'] == 'test@example.com'
 
     def test_transaction_jwsd_continue(self):
-        self.config['auth_flows'] = json.dumps(['TestFlow'])
+        self.config['auth_flows'] = json.dumps(['InteractionFlow'])
         self._update_app_config(config=self.config)
 
         client_key_dict = self.client_jwk.export(as_dict=True)

@@ -67,6 +67,10 @@ class TestState(TransactionState):
     pass
 
 
+class InteractionState(TransactionState):
+    pass
+
+
 class ConfigState(TransactionState):
     config_claims: Dict[str, Any] = Field(default_factory=dict)
 
