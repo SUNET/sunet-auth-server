@@ -17,3 +17,4 @@ gunicorn
 six
 # needed for hashes
 importlib-resources
+zipp
