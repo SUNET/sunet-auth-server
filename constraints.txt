@@ -1,3 +1,2 @@
 pydantic>=1.8.2
-idna<3  # needed by requests
 aiohttp>=3.7.4
