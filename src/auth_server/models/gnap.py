@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
-from pydantic import AnyUrl, BaseModel, Field
+from pydantic import AnyUrl, BaseModel, Extra, Field, validator
 
 from auth_server.models.jose import (
     ECJWK,
@@ -22,7 +22,12 @@ __author__ = 'lundberg'
 # https://datatracker.ietf.org/doc/html/draft-ietf-gnap-core-protocol
 
 
-class Proof(str, Enum):
+class GnapBaseModel(BaseModel):
+    class Config:
+        allow_population_by_field_name = True
+
+
+class ProofMethod(str, Enum):
     DPOP = 'dpop'
     HTTPSIGN = 'httpsign'
     JWSD = 'jwsd'
@@ -32,17 +37,26 @@ class Proof(str, Enum):
     TEST = 'test'
 
 
-class Key(BaseModel):
+class Proof(GnapBaseModel):
+    method: ProofMethod
+
+
+class Key(GnapBaseModel):
     proof: Proof
-    jwk: Optional[Union[ECJWK, RSAJWK, SymmetricJWK]] = None
-    cert: Optional[str] = None
+    jwk: Optional[Union[ECJWK, RSAJWK, SymmetricJWK]]
+    cert: Optional[str]
     cert_S256: Optional[str] = Field(default=None, alias='cert#S256')
 
-    class Config:
-        allow_population_by_field_name = True
+    @validator('proof', pre=True)
+    def expand_proof(cls, v: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
+        # If additional parameters are not required or used for a specific method,
+        # the method MAY be passed as a string instead of an object.
+        if isinstance(v, str):
+            return {'method': v}
+        return v
 
 
-class Access(BaseModel):
+class Access(GnapBaseModel):
     # The value of the "type" field is under the control of the AS.  This
     # field MUST be compared using an exact byte match of the string value
     # against known types by the AS.  The AS MUST ensure that there is no
@@ -55,68 +69,97 @@ class Access(BaseModel):
     # The types of actions the client instance will take at the RS as an
     # array of strings.  For example, a client instance asking for a
     # combination of "read" and "write" access.
-    actions: Optional[List[str]] = None
+    actions: Optional[List[str]]
     # The location of the RS as an array of strings. These strings are
     # typically URIs identifying the location of the RS.
-    locations: Optional[List[str]] = None
+    locations: Optional[List[str]]
     # The kinds of data available to the client instance at the RS's API
     # as an array of strings.  For example, a client instance asking for
     # access to raw "image" data and "metadata" at a photograph API.
-    datatypes: Optional[List[str]] = None
+    datatypes: Optional[List[str]]
     # A string identifier indicating a specific resource at the RS. For
     # example, a patient identifier for a medical API or a bank account
     # number for a financial API.
-    identifier: Optional[str] = None
+    identifier: Optional[str]
     # The types or levels of privilege being requested at the resource.
     # For example, a client instance asking for administrative level
     # access, or access when the resource owner is no longer online.
-    privileges: Optional[List[str]] = None
+    privileges: Optional[List[str]]
     # Sunet addition for requesting access to a specified scope
-    scope: Optional[str] = None
+    scope: Optional[str]
 
 
 class AccessTokenFlags(str, Enum):
     BEARER = 'bearer'
     DURABLE = 'durable'
-    SPLIT = 'split'
 
 
-class AccessTokenRequest(BaseModel):
-    access: Optional[List[Union[str, Access]]] = None
+class AccessTokenRequest(GnapBaseModel):
+    access: Optional[List[Union[str, Access]]]
     # TODO: label is REQUIRED if used as part of a multiple access token request
-    label: Optional[str] = None
-    flags: Optional[List[AccessTokenFlags]] = None
+    label: Optional[str]
+    flags: Optional[List[AccessTokenFlags]]
 
 
-# TODO: sub_ids should correspond to User sub_ids and assertion values
-class Subject(BaseModel):
-    sub_ids: Optional[List[str]] = None
-    assertions: Optional[List[str]] = None
+class SubjectIdentifierFormat(str, Enum):
+    ACCOUNT = 'account'
+    ALIASES = 'aliases'
+    DID = 'did'
+    EMAIL = 'email'
+    ISS_SUB = 'iss_sub'
+    OPAQUE = 'opaque'
+    PHONE_NUMBER = 'phone_number'
 
 
-class Display(BaseModel):
-    name: Optional[str] = None
-    uri: Optional[str] = None
-    logo_uri: Optional[str] = None
+class SubjectAssertionFormat(str, Enum):
+    ID_TOKEN = 'id_token'
+    SAML2 = 'saml2'
 
 
-class Client(BaseModel):
+class SubjectRequest(GnapBaseModel):
+    sub_id_formats: Optional[List[SubjectIdentifierFormat]]
+    assertion_formats: Optional[List[SubjectAssertionFormat]]
+
+
+class Display(GnapBaseModel):
+    name: Optional[str]
+    uri: Optional[str]
+    logo_uri: Optional[str]
+
+
+class Client(GnapBaseModel):
     key: Union[str, Key]
-    class_id: Optional[str] = None
-    display: Optional[Display] = None
+    class_id: Optional[str]
+    display: Optional[Display]
 
 
-# TODO: Check https://datatracker.ietf.org/doc/html/draft-ietf-secevent-subject-identifiers-06 for
-#   implementation details when needed
-class User(BaseModel):
-    sub_ids: Optional[List[Dict[str, str]]] = None
-    assertions: Optional[Dict[str, str]] = None
+class SubjectIdentifier(GnapBaseModel):
+    # sub_ids should contain objects as {"format": "opaque", "id": "J2G8G8O4AZ"} or
+    # {"format": "email", "email": "user@example.com"}
+    # see ietf-secevent-subject-identifiers
+    format: SubjectIdentifierFormat
+
+    class Config:
+        extra = Extra.allow
 
 
-class StartInteraction(str, Enum):
+class SubjectAssertion(GnapBaseModel):
+    format: SubjectAssertionFormat
+    value: str
+
+
+class User(GnapBaseModel):
+    sub_ids: Optional[List[SubjectIdentifier]]
+    # An object containing assertions as values keyed on the assertion type.
+    # Possible keys include "id_token" for an [OIDC] ID Token and "saml2" for a SAML 2 assertion.
+    assertions: Optional[List[SubjectAssertion]]
+
+
+class StartInteractionMethod(str, Enum):
     REDIRECT = 'redirect'
     APP = 'app'
-    USER_CODE = 'user_code'
+    USER_CODE = 'user_code'  # for use with a stable URI
+    USER_CODE_URI = 'user_code_uri'  # for use with a dynamic URI
 
 
 class FinishInteractionMethod(str, Enum):
@@ -125,86 +168,104 @@ class FinishInteractionMethod(str, Enum):
 
 
 class HashMethod(str, Enum):
-    SHA2 = 'sha2'
-    SHA3 = 'sha3'
+    # Hash names has to match https://www.iana.org/assignments/named-information/named-information.xhtml#hash-alg
+    SHA_512 = 'sha-512'
+    SHA3_512 = 'sha3-512'
 
 
-class FinishInteraction(BaseModel):
+class FinishInteraction(GnapBaseModel):
     method: FinishInteractionMethod
     uri: AnyUrl
     nonce: str
-    hash_method: Optional[HashMethod] = None
+    hash_method: HashMethod = Field(default=HashMethod.SHA3_512)
 
 
-class Hints(BaseModel):
-    ui_locales: Optional[List[str]] = None
+class Hints(GnapBaseModel):
+    ui_locales: Optional[List[str]]
 
 
-class InteractionRequest(BaseModel):
-    start: List[StartInteraction]
-    finish: Optional[FinishInteraction] = None
-    hints: Optional[Hints] = None
+class InteractionRequest(GnapBaseModel):
+    start: List[StartInteractionMethod]
+    finish: Optional[FinishInteraction]
+    hints: Optional[Hints]
 
 
-class GrantRequest(BaseModel):
+class GrantRequest(GnapBaseModel):
     access_token: Union[AccessTokenRequest, List[AccessTokenRequest]]
-    subject: Optional[Subject] = None
+    subject: Optional[SubjectRequest]
     client: Union[str, Client]
-    user: Optional[Union[str, User]] = None
-    interact: Optional[InteractionRequest] = None
+    user: Optional[Union[str, User]]
+    interact: Optional[InteractionRequest]
 
 
-class ContinueAccessToken(BaseModel):
-    bound: bool
+class ContinueAccessToken(GnapBaseModel):
+    bound: bool = True
     value: str
 
 
-class Continue(BaseModel):
+class Continue(GnapBaseModel):
     uri: AnyUrl
     wait: Optional[int]
     access_token: ContinueAccessToken
 
 
-class UserCode(BaseModel):
+class UserCodeURI(GnapBaseModel):
     code: str
-    url: Optional[AnyUrl] = None
+    uri: AnyUrl
 
 
-class InteractionResponse(BaseModel):
-    redirect: Optional[AnyUrl] = None
-    app: Optional[AnyUrl] = None
-    user_code: Optional[UserCode] = None
-    finish: Optional[str] = None
+class InteractionResponse(GnapBaseModel):
+    redirect: Optional[AnyUrl]
+    app: Optional[AnyUrl]
+    user_code: Optional[str]
+    user_code_uri: Optional[UserCodeURI]
+    finish: Optional[str]
+    expires_in: Optional[int]
 
 
-class AccessTokenResponse(BaseModel):
+class AccessTokenResponse(GnapBaseModel):
     value: str
-    label: Optional[str] = None
-    manage: Optional[AnyUrl] = None
-    access: Optional[List[Union[str, Access]]] = None
+    label: Optional[str]
+    manage: Optional[AnyUrl]
+    access: Optional[List[Union[str, Access]]]
     expires_in: Optional[int] = Field(default=None, description='seconds until expiry')
-    key: Optional[Union[str, Key]] = None
-    flags: Optional[List[AccessTokenFlags]] = None
+    key: Optional[Union[str, Key]]
+    flags: Optional[List[AccessTokenFlags]]
 
 
-class SubjectResponse(Subject):
-    updated_at: Optional[str] = Field(default=None, description='ISO8610 date string')
+class SubjectResponse(GnapBaseModel):
+    sub_ids: Optional[List[SubjectIdentifier]]
+    assertions: Optional[List[SubjectAssertion]]
+    updated_at: Optional[datetime] = Field(default=None, description='ISO8610 date string')
 
 
-class Error(str, Enum):
-    USER_DENIED = 'user_denied'
+class ErrorCode(str, Enum):
+    INVALID_CLIENT = 'invalid_client'
+    INVALID_INTERACTION = 'invalid_interaction'
+    INVALID_REQUEST = 'invalid_request'
+    REQUEST_DENIED = 'request_denied'
     TOO_FAST = 'too_fast'
     UNKNOWN_REQUEST = 'unknown_request'
+    USER_DENIED = 'user_denied'
 
 
-class GrantResponse(BaseModel):
+# TODO: Change FastApi HTTPException responses to ErrorResponse
+class ErrorResponse(BaseModel):
+    error: ErrorCode
+    error_description: Optional[str]
+
+
+class ContinueRequest(GnapBaseModel):
+    interact_ref: Optional[str]
+
+
+class GrantResponse(GnapBaseModel):
     continue_: Optional[Continue] = Field(default=None, alias='continue')
-    access_token: Optional[AccessTokenResponse] = None
-    interact: Optional[InteractionResponse] = None
-    subject: Optional[SubjectResponse] = None
-    instance_id: Optional[str] = None
-    user_handle: Optional[str] = None
-    error: Optional[Error] = None
+    access_token: Optional[AccessTokenResponse]
+    interact: Optional[InteractionResponse]
+    subject: Optional[SubjectResponse]
+    instance_id: Optional[str]
+    user_handle: Optional[str]
 
 
 class GNAPJOSEHeader(JOSEHeader):

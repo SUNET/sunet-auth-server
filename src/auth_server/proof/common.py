@@ -4,7 +4,6 @@ import logging
 from typing import Optional
 
 from auth_server.config import ClientKey, ConfigurationError, load_config
-from auth_server.context import ContextRequest
 from auth_server.models.gnap import Key
 from auth_server.models.jose import ECJWK, RSAJWK, KeyType, SymmetricJWK
 
@@ -45,13 +44,12 @@ async def load_config_key(client_key: ClientKey) -> Key:
     raise ConfigurationError(f'malformed client key in config')
 
 
-async def lookup_client_key_from_config(request: ContextRequest, key_id: str) -> Optional[Key]:
+async def lookup_client_key_from_config(key_reference: str) -> Optional[Key]:
     config = load_config()
-    request.context.key_reference = key_id  # Remember the key reference for later use
     client_key = None
 
     # Look for a key in config
-    if key_id in config.client_keys:
-        client_key = await load_config_key(config.client_keys[key_id])
+    if key_reference in config.client_keys:
+        client_key = await load_config_key(config.client_keys[key_reference])
 
     return client_key

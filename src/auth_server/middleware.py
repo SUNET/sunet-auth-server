@@ -2,16 +2,13 @@
 import logging
 
 from jwcrypto import jws
-from pydantic import ValidationError
+from jwcrypto.common import JWException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 from starlette.types import Message
 
-from auth_server.config import load_config
 from auth_server.context import ContextRequestMixin
-from auth_server.models.gnap import Client, GNAPJOSEHeader, GrantRequest, Key
-from auth_server.proof.common import lookup_client_key_from_config
 
 __author__ = 'lundberg'
 
@@ -50,56 +47,24 @@ class JOSEMiddleware(BaseHTTPMiddleware, ContextRequestMixin):
             return return_error_response(status_code=422, detail='content-type needs to be application/jose+json')
 
         if request.headers.get('content-type') == 'application/jose+json':
-            config = load_config()
             request = self.make_context_request(request)
             logger.info('got application/jose request')
-            client_key = None
             body = await get_body(request)
+            # deserialize jws
             body_str = body.decode("utf-8")
             logger.debug(f'body: {body_str}')
             jwstoken = jws.JWS()
-            jwstoken.deserialize(body_str)
+            try:
+                jwstoken.deserialize(body_str)
+            except JWException:
+                logger.exception('JWS deserialization failure')
+                return return_error_response(status_code=400, detail='JWS could not be deserialized')
             logger.info('JWS token deserialized')
             logger.debug(f'JWS: {jwstoken.objects}')
 
-            # Use unverified data to get the public key
-            unverified_grant_req = GrantRequest.parse_raw(jwstoken.objects.get('payload').decode('utf-8'))
-            logger.debug(f'unverified grant request: {unverified_grant_req.dict(exclude_unset=True)}')
-
-            if not isinstance(unverified_grant_req.client, Client):
-                return return_error_response(status_code=400, detail='client by reference not implemented')
-
-            # Key sent by reference
-            if isinstance(unverified_grant_req.client.key, str):
-                logger.debug(f'key reference: {unverified_grant_req.client.key}')
-                key_from_config = await lookup_client_key_from_config(
-                    request=request, key_id=unverified_grant_req.client.key
-                )
-                if key_from_config is not None:
-                    unverified_grant_req.client.key = key_from_config
-
-            # Client generated key
-            if isinstance(unverified_grant_req.client.key, Key) and unverified_grant_req.client.key.jwk is not None:
-                client_key = jws.JWK(**unverified_grant_req.client.key.jwk.dict(exclude_unset=True))
-
-            # Verify jws
-            if client_key is not None:
-                try:
-                    jwstoken.verify(client_key)
-                    logger.info('JWS token verified')
-                except jws.InvalidJWSSignature as e:
-                    logger.error(f'JWS signature failure: {e}')
-                    return return_error_response(status_code=400, detail='JWS signature could not be verified')
-            else:
-                return return_error_response(status_code=400, detail='no client key found')
-
-            # JWS verified, replace body with deserialized token
-            request.context.jws_verified = True
-            try:
-                request.context.jws_header = GNAPJOSEHeader(**jwstoken.jose_header)
-            except ValidationError as e:
-                logger.error('Missing JWS header')
-                return return_error_response(status_code=400, detail=str(e))
-            await set_body(request, jwstoken.payload)
+            # add jws to context request to be verified later
+            request.context.jws_obj = jwstoken
+            # replace body with unverified deserialized token - verification is done when verifying proof
+            await set_body(request, jwstoken.objects['payload'])
 
         return await call_next(request)

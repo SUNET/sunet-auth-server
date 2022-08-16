@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import List, Mapping, Optional
 
 import aiohttp
-from aiofile import async_open
+from aiofiles import open as async_open
 from async_lru import alru_cache
 from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.x509 import load_pem_x509_certificate
@@ -15,7 +15,7 @@ from jwcrypto import jwk, jws
 from pydantic import BaseModel, ValidationError
 
 from auth_server.config import load_config
-from auth_server.models.gnap import Key, Proof
+from auth_server.models.gnap import Key, ProofMethod
 from auth_server.models.tls_fed_metadata import Entity
 from auth_server.models.tls_fed_metadata import Model as TLSFEDMetadataModel
 from auth_server.models.tls_fed_metadata import TLSFEDJOSEHeader
@@ -199,7 +199,9 @@ async def load_metadata(metadata_sources: List[MetadataSource], max_age: timedel
         # Collect entities from all sources
         for entity in metadata_source.metadata.entities:
             entities[str(entity.entity_id)] = MetadataEntity(
-                issuer=metadata_source.issuer, expires_at=metadata_source.expires_at, **entity.dict(exclude_unset=True),
+                issuer=metadata_source.issuer,
+                expires_at=metadata_source.expires_at,
+                **entity.dict(exclude_unset=True),
             )
     return Metadata(renew_at=renew_at, entities=entities)
 
@@ -268,6 +270,7 @@ async def entity_to_key(entity: Optional[MetadataEntity]) -> Optional[Key]:
         # TODO: how do we handle multiple certs?
         logger.info(f'Found cert in metadata')
         return Key(
-            proof=Proof.MTLS, cert_S256=base64.b64encode(certs[0].fingerprint(algorithm=SHA256())).decode('utf-8'),
+            proof=ProofMethod.MTLS,
+            cert_S256=base64.b64encode(certs[0].fingerprint(algorithm=SHA256())).decode('utf-8'),
         )
     return None

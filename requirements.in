@@ -1,14 +1,20 @@
 -c constraints.txt
 fastapi
+python-multipart
 aiohttp[speedups]
 pyyaml
-aiofile
+aiofiles
+jinja2
 async_lru
 jwcrypto
 xmltodict
 loguru
 motor
+pysaml2
 uvicorn[standard]
 gunicorn
 # jwcrypto needs six
 six
+# needed for hashes
+importlib-resources
+zipp

@@ -1,24 +1,26 @@
 # -*- coding: utf-8 -*-
 
-from dataclasses import asdict, dataclass
 from typing import Callable, Optional, Union
 
 from fastapi import Request, Response
 from fastapi.routing import APIRoute
+from jwcrypto import jws
+from pydantic import BaseModel
 
 __author__ = 'lundberg'
 
-from auth_server.models.gnap import GNAPJOSEHeader
 
-
-@dataclass
-class Context:
-    key_reference: Optional[str] = None
+class Context(BaseModel):
     jws_verified: bool = False
-    jws_header: Optional[GNAPJOSEHeader] = None
+    client_cert: Optional[str]
+    jws_obj: Optional[jws.JWS]
+    detached_jws: Optional[str]
+
+    class Config:
+        arbitrary_types_allowed = True
 
     def to_dict(self):
-        return asdict(self)
+        return self.dict()
 
 
 class ContextRequest(Request):
