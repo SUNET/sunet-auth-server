@@ -146,12 +146,13 @@ class BaseAuthFlow(ABC):
         )
         if self.state.saml_assertion is not None:
             claims.saml_issuer = self.state.saml_assertion.issuer
+            # return either eppn, unique_id or targeted_id, in that order
             if self.state.saml_assertion.attributes.eppn:
                 claims.saml_eppn = self.state.saml_assertion.attributes.eppn
             elif self.state.saml_assertion.attributes.unique_id:
                 claims.saml_unique_id = self.state.saml_assertion.attributes.unique_id
-            elif self.state.saml_assertion.attributes.unique_id:
-                claims.saml_targeted_id = self.state.saml_assertion.attributes.unique_id
+            elif self.state.saml_assertion.attributes.targeted_id:
+                claims.saml_targeted_id = self.state.saml_assertion.attributes.targeted_id
         return claims
 
     async def lookup_client(self) -> Optional[GrantResponse]:
@@ -172,6 +173,7 @@ class BaseAuthFlow(ABC):
         return None
 
     async def handle_subject(self) -> Optional[GrantResponse]:
+        # TODO: we should allow requests for saml attributes
         raise NotImplementedError()
 
     async def handle_access_token(self) -> Optional[GrantResponse]:
