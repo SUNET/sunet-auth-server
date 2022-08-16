@@ -109,9 +109,9 @@ class BaseAuthFlow(ABC):
     async def check_proof(self, gnap_key: Key, gnap_request: Optional[Union[GrantRequest, ContinueRequest]]) -> bool:
         # MTLS
         if gnap_key.proof.method is ProofMethod.MTLS:
-            if not self.state.client_cert:
+            if not self.request.context.client_cert:
                 raise NextFlowException(status_code=400, detail='no client certificate found')
-            return await check_mtls_proof(gnap_key=gnap_key, cert=self.state.client_cert)
+            return await check_mtls_proof(gnap_key=gnap_key, cert=self.request.context.client_cert)
         # HTTPSIGN
         elif gnap_key.proof.method is ProofMethod.HTTPSIGN:
             raise NextFlowException(status_code=400, detail='httpsign is not implemented')
@@ -120,18 +120,16 @@ class BaseAuthFlow(ABC):
             return await check_jws_proof(
                 request=self.request,
                 gnap_key=gnap_key,
-                jws_header=self.state.jws_header,
                 access_token=self.state.continue_access_token,
             )
         # JWSD
         elif gnap_request and gnap_key.proof.method is ProofMethod.JWSD:
-            if not self.state.detached_jws:
+            if not self.request.context.detached_jws:
                 raise NextFlowException(status_code=400, detail='no detached jws header found')
             return await check_jwsd_proof(
                 request=self.request,
                 gnap_key=gnap_key,
                 gnap_request=gnap_request,
-                detached_jws=self.state.detached_jws,
                 key_reference=self.state.key_reference,
                 access_token=self.state.continue_access_token,
             )
@@ -375,7 +373,7 @@ class TestFlow(CommonFlow):
             return True
         else:
             # try any other supported proof method, used in tests
-            return await super().check_proof(self.state.grant_request.client.key, self.state.grant_request)
+            return await super().check_proof(gnap_key=self.state.grant_request.client.key, gnap_request=gnap_request)
 
     async def create_claims(self) -> Claims:
         claims = await super().create_claims()
@@ -424,7 +422,9 @@ class OnlyMTLSProofFlow(CommonFlow):
     async def check_proof(self, gnap_key: Key, gnap_request: Optional[Union[GrantRequest, ContinueRequest]]) -> bool:
         if gnap_key.proof.method is not ProofMethod.MTLS:
             raise NextFlowException(status_code=400, detail='MTLS is the only supported proof method')
-        return await check_mtls_proof(gnap_key=self.state.grant_request.client.key, cert=self.state.client_cert)
+        return await check_mtls_proof(
+            gnap_key=self.state.grant_request.client.key, cert=self.request.context.client_cert
+        )
 
     async def validate_proof(self) -> Optional[GrantResponse]:
         await super().validate_proof()

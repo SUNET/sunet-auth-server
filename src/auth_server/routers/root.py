@@ -54,6 +54,9 @@ async def transaction(
     logger.debug(f'client_cert: {client_cert}')
     logger.debug(f'detached_jws: {detached_jws}')
 
+    request.context.client_cert = client_cert
+    request.context.detached_jws = detached_jws
+
     # Run configured auth flows
     for auth_flow_name, auth_flow in request.app.auth_flows.items():
         if auth_flow.get_version() != 1:
@@ -65,9 +68,6 @@ async def transaction(
         state = TransactionState(
             flow_name=auth_flow_name,
             grant_request=grant_req.copy(deep=True),  # let every flow have their own copy of the grant request,
-            client_cert=client_cert,
-            jws_header=request.context.jws_header,
-            detached_jws=detached_jws,
         )
 
         flow = auth_flow(request=request, config=config, signing_key=signing_key, state=state.to_dict())
@@ -104,6 +104,9 @@ async def continue_transaction(
     logger.debug(f'client_cert: {client_cert}')
     logger.debug(f'detached_jws: {detached_jws}')
     logger.debug(f'authorization: {authorization}')
+
+    request.context.client_cert = client_cert
+    request.context.detached_jws = detached_jws
 
     if authorization is None:
         raise HTTPException(status_code=401, detail='permission denied')
@@ -145,9 +148,6 @@ async def continue_transaction(
     # update transaction_state with the clients current authentication as the authentication have to match
     # the transaction requests key that should be continued
     updated_transaction_doc = dict(**transaction_doc)
-    updated_transaction_doc['client_cert'] = client_cert
-    updated_transaction_doc['jws_header'] = request.context.jws_header
-    updated_transaction_doc['detached_jws'] = detached_jws
     flow = auth_flow(request=request, config=config, signing_key=signing_key, state=updated_transaction_doc)
 
     # continue the transaction

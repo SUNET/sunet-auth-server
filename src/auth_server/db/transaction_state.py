@@ -42,9 +42,6 @@ class TransactionState(BaseModel, ABC):
     grant_request: GrantRequest
     grant_response: GrantResponse = Field(default_factory=GrantResponse)
     key_reference: Optional[str]
-    client_cert: Optional[str]
-    jws_header: Optional[GNAPJOSEHeader]
-    detached_jws: Optional[str]
     proof_ok: bool = False
     requested_access: List[Union[str, Access]] = Field(default_factory=list)
     saml_assertion: Optional[SessionInfo]
