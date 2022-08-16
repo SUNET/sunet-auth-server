@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock
 
 import yaml
 from cryptography import x509
+from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.hazmat.primitives.serialization import Encoding
 from jwcrypto import jwk, jws, jwt
 from starlette.testclient import TestClient
@@ -36,7 +37,7 @@ from auth_server.testing import MongoTemporaryInstance
 from auth_server.tests.utils import create_tls_fed_metadata, tls_fed_metadata_to_jws
 from auth_server.time_utils import utc_now
 from auth_server.tls_fed_auth import get_tls_fed_metadata
-from auth_server.utils import get_signing_key, load_jwks
+from auth_server.utils import get_signing_key, hash_with, load_jwks
 
 __author__ = 'lundberg'
 
@@ -776,8 +777,6 @@ class TestAuthServer(TestCase):
         authorization_header = f'GNAP {continue_response["access_token"]["value"]}'
         response = self.client.post(continue_response['uri'], json={}, headers={'Authorization': authorization_header})
 
-        # TODO: temporary end of test (same as test for test flow)
-        #   this tests need to see if we correctly validate proof
         assert response.status_code == 200
         assert 'access_token' in response.json()
         access_token = response.json()['access_token']
@@ -899,6 +898,176 @@ class TestAuthServer(TestCase):
 
         # continue request after interaction is completed
         response = self.client.post(continue_response['uri'], json={}, headers=client_header)
+
+        assert response.status_code == 200
+        assert 'access_token' in response.json()
+        access_token = response.json()['access_token']
+        assert AccessTokenFlags.BEARER.value in access_token['flags']
+
+        # Verify token and check claims
+        claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims['aud'] == 'some_audience'
+        assert claims['saml_issuer'] == 'https://idp.example.com'
+        assert claims['saml_eppn'] == 'test@example.com'
+
+    def test_transaction_jws_continue(self):
+        self.config['auth_flows'] = json.dumps(['TestFlow'])
+        self._update_app_config(config=self.config)
+
+        client_key_dict = self.client_jwk.export(as_dict=True)
+        client_jwk = ECJWK(**client_key_dict)
+
+        req = GrantRequest(
+            client=Client(key=Key(proof=Proof(method=ProofMethod.JWS), jwk=client_jwk)),
+            access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
+            interact=InteractionRequest(start=[StartInteractionMethod.REDIRECT]),
+        )
+        jws_header = {
+            'typ': SupportedJWSType.JWS,
+            'alg': SupportedAlgorithms.ES256.value,
+            'kid': self.client_jwk.key_id,
+            'htm': SupportedHTTPMethods.POST.value,
+            'uri': 'http://testserver/transaction',
+            'created': int(utc_now().timestamp()),
+        }
+        _jws = jws.JWS(payload=req.json(exclude_unset=True))
+        _jws.add_signature(
+            key=self.client_jwk,
+            protected=json.dumps(jws_header),
+        )
+        data = _jws.serialize(compact=True)
+
+        client_header = {'Content-Type': 'application/jose+json'}
+        response = self.client.post("/transaction", data=data, headers=client_header)
+        assert response.status_code == 200
+
+        # continue response with no continue reference in uri
+        assert 'continue' in response.json()
+        continue_response = response.json()['continue']
+        assert continue_response['uri'].startswith('http://testserver/continue/') is True
+        assert continue_response['access_token']['value'] is not None
+
+        # do interaction
+        interaction_response = response.json()['interact']
+        transaction_id = interaction_response['redirect'].split('http://testserver/interaction/redirect/')[1]
+
+        # check redirect to SAML SP
+        response = self.client.get(interaction_response['redirect'], allow_redirects=False)
+        assert response.status_code == 307
+        assert response.headers['location'].startswith('http://testserver/saml2/sp/authn/')
+
+        # fake a completed SAML authentication
+        self._fake_saml_authentication(transaction_id=transaction_id)
+
+        # complete interaction
+        response = self.client.get(interaction_response['redirect'], allow_redirects=False)
+        assert response.status_code == 200
+        assert '<h3>Interaction finished</h3>' in response.text
+
+        # continue request after interaction is completed
+        jws_header['uri'] = continue_response['uri']
+        jws_header['created'] = int(utc_now().timestamp())
+        # calculate ath header value
+        access_token_hash = hash_with(SHA256(), continue_response["access_token"]["value"].encode())
+        jws_header['ath'] = base64.urlsafe_b64encode(access_token_hash).decode('utf-8')
+        _jws = jws.JWS(payload="{}")
+        _jws.add_signature(
+            key=self.client_jwk,
+            protected=json.dumps(jws_header),
+        )
+        continue_data = _jws.serialize(compact=True)
+        authorization_header = f'GNAP {continue_response["access_token"]["value"]}'
+        client_header['Authorization'] = authorization_header
+        response = self.client.post(continue_response['uri'], data=continue_data, headers=client_header)
+
+        assert response.status_code == 200
+        assert 'access_token' in response.json()
+        access_token = response.json()['access_token']
+        assert AccessTokenFlags.BEARER.value in access_token['flags']
+
+        # Verify token and check claims
+        claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims['aud'] == 'some_audience'
+        assert claims['saml_issuer'] == 'https://idp.example.com'
+        assert claims['saml_eppn'] == 'test@example.com'
+
+    def test_transaction_jwsd_continue(self):
+        self.config['auth_flows'] = json.dumps(['TestFlow'])
+        self._update_app_config(config=self.config)
+
+        client_key_dict = self.client_jwk.export(as_dict=True)
+        client_jwk = ECJWK(**client_key_dict)
+
+        req = GrantRequest(
+            client=Client(key=Key(proof=Proof(method=ProofMethod.JWSD), jwk=client_jwk)),
+            access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
+            interact=InteractionRequest(start=[StartInteractionMethod.REDIRECT]),
+        )
+        jws_header = {
+            'typ': SupportedJWSType.JWSD,
+            'alg': SupportedAlgorithms.ES256.value,
+            'kid': self.client_jwk.key_id,
+            'htm': SupportedHTTPMethods.POST.value,
+            'uri': 'http://testserver/transaction',
+            'created': int(utc_now().timestamp()),
+        }
+        _jws = jws.JWS(payload=req.json(exclude_unset=True))
+        _jws.add_signature(
+            key=self.client_jwk,
+            protected=json.dumps(jws_header),
+        )
+        data = _jws.serialize(compact=True)
+
+        # Remove payload from serialized jws
+        header, payload, signature = data.split('.')
+        client_header = {'Detached-JWS': f'{header}..{signature}'}
+
+        response = self.client.post("/transaction", json=req.dict(exclude_unset=True), headers=client_header)
+        assert response.status_code == 200
+
+        # continue response with no continue reference in uri
+        assert 'continue' in response.json()
+        continue_response = response.json()['continue']
+        assert continue_response['uri'].startswith('http://testserver/continue/') is True
+        assert continue_response['access_token']['value'] is not None
+
+        # do interaction
+        interaction_response = response.json()['interact']
+        transaction_id = interaction_response['redirect'].split('http://testserver/interaction/redirect/')[1]
+
+        # check redirect to SAML SP
+        response = self.client.get(interaction_response['redirect'], allow_redirects=False)
+        assert response.status_code == 307
+        assert response.headers['location'].startswith('http://testserver/saml2/sp/authn/')
+
+        # fake a completed SAML authentication
+        self._fake_saml_authentication(transaction_id=transaction_id)
+
+        # complete interaction
+        response = self.client.get(interaction_response['redirect'], allow_redirects=False)
+        assert response.status_code == 200
+        assert '<h3>Interaction finished</h3>' in response.text
+
+        # continue request after interaction is completed
+        jws_header['uri'] = continue_response['uri']
+        jws_header['created'] = int(utc_now().timestamp())
+        # calculate ath header value
+        access_token_hash = hash_with(SHA256(), continue_response["access_token"]["value"].encode())
+        jws_header['ath'] = base64.urlsafe_b64encode(access_token_hash).decode('utf-8')
+        _jws = jws.JWS(payload="{}")
+        _jws.add_signature(
+            key=self.client_jwk,
+            protected=json.dumps(jws_header),
+        )
+        continue_data = _jws.serialize(compact=True)
+
+        # Remove payload from serialized jws
+        continue_header, continue_payload, continue_signature = continue_data.split('.')
+        client_header = {'Detached-JWS': f'{continue_header}..{continue_signature}'}
+
+        authorization_header = f'GNAP {continue_response["access_token"]["value"]}'
+        client_header['Authorization'] = authorization_header
+        response = self.client.post(continue_response['uri'], json=dict(), headers=client_header)
 
         assert response.status_code == 200
         assert 'access_token' in response.json()
