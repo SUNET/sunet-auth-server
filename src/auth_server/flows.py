@@ -355,10 +355,8 @@ class CommonFlow(BaseAuthFlow):
         # Create access token
         token = jwt.JWT(header={'alg': 'ES256'}, claims=claims.to_rfc7519())
         token.make_signed_token(key=self.signing_key)
-        self.state.grant_response = GrantResponse(
-            access_token=AccessTokenResponse(
-                flags=[AccessTokenFlags.BEARER], access=self.state.requested_access, value=token.serialize()
-            )
+        self.state.grant_response.access_token = AccessTokenResponse(
+            flags=[AccessTokenFlags.BEARER], access=self.state.requested_access, value=token.serialize()
         )
         logger.info(f'OK:{self.state.key_reference}:{self.config.auth_token_audience}')
         logger.debug(f'claims: {claims}')
