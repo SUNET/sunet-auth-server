@@ -38,11 +38,15 @@ from auth_server.models.gnap import (
     Key,
     ProofMethod,
     StartInteractionMethod,
+    SubjectAssertion,
+    SubjectAssertionFormat,
+    SubjectResponse,
     UserCodeURI,
 )
 from auth_server.proof.common import lookup_client_key_from_config
 from auth_server.proof.jws import check_jws_proof, check_jwsd_proof
 from auth_server.proof.mtls import check_mtls_proof
+from auth_server.time_utils import utc_now
 from auth_server.tls_fed_auth import entity_to_key, get_entity
 from auth_server.utils import get_hex_uuid4, get_values
 
@@ -99,6 +103,7 @@ class BaseAuthFlow(ABC):
             'validate_proof',
             'handle_access_token',
             'handle_interaction',
+            'handle_subject',
             'create_auth_token',
             'finalize_transaction',
         ]
@@ -334,6 +339,24 @@ class CommonFlow(BaseAuthFlow):
         res = await transaction_state_db.save(self.state, expires_in=self.config.transaction_state_expires_in)
         logger.debug(f'state {self.state} saved: {res}')
         return self.state.grant_response
+
+    async def handle_subject(self) -> Optional[GrantResponse]:
+        if self.state.grant_request.subject is None:
+            return None
+        if self.state.grant_request.subject.assertion_formats is not None:
+            if (
+                SubjectAssertionFormat.SAML2 in self.state.grant_request.subject.assertion_formats
+                and self.state.saml_assertion is not None
+            ):
+                # saml assertion requested
+                subject_assertion = SubjectAssertion(
+                    format=SubjectAssertionFormat.SAML2,
+                    value=self.state.saml_assertion.json(by_alias=True, exclude_none=True),
+                )
+                self.state.grant_response.subject = SubjectResponse(
+                    assertions=[subject_assertion], updated_at=utc_now()
+                )
+        return None
 
     async def create_auth_token(self) -> Optional[GrantResponse]:
         if not self.state.proof_ok:
