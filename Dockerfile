@@ -1,7 +1,6 @@
 # setup step
 FROM debian:stable AS build
 env DEBIAN_FRONTEND noninteractive
-RUN /bin/sed -i s/deb.debian.org/ftp.se.debian.org/g /etc/apt/sources.list
 RUN apt-get update && \
     apt-get -y dist-upgrade && \
     apt-get install -y \
@@ -22,8 +21,6 @@ RUN /opt/sunet/sunet-auth-server/docker/setup_venv.sh
 # actual image
 FROM debian:stable
 env DEBIAN_FRONTEND noninteractive
-RUN /bin/sed -i s/deb.debian.org/ftp.se.debian.org/g /etc/apt/sources.list
-
 #
 # Install dependencies and tools that are helpful when troubleshooting
 #
