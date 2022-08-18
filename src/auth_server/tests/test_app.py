@@ -1079,3 +1079,54 @@ class TestAuthServer(TestCase):
         assert claims['aud'] == 'some_audience'
         assert claims['saml_issuer'] == 'https://idp.example.com'
         assert claims['saml_eppn'] == 'test@example.com'
+
+    def test_subject_request_response(self):
+        self.config['auth_flows'] = json.dumps(['TestFlow'])
+        self.config['pysaml2_config_path'] = str(Path(__file__).with_name('data') / 'saml' / 'saml2_settings.py')
+        self.config['saml2_discovery_service_url'] = 'https://disco.example.com/ds/'
+        self._update_app_config(config=self.config)
+
+        grant_request = {
+            'access_token': {'flags': ['bearer']},
+            'client': {'key': {'proof': 'test'}},
+            'interact': {'start': ['redirect']},
+            'subject': {'assertion_formats': ['saml2']},
+        }
+
+        response = self.client.post("/transaction", json=grant_request)
+        assert response.status_code == 200
+
+        # continue response with no continue reference in uri
+        assert 'continue' in response.json()
+        continue_response = response.json()['continue']
+        assert continue_response['uri'].startswith('http://testserver/continue/') is True
+        assert continue_response['access_token']['value'] is not None
+
+        # do interaction
+        interaction_response = response.json()['interact']
+        transaction_id = interaction_response['redirect'].split('http://testserver/interaction/redirect/')[1]
+
+        # check redirect to SAML SP
+        response = self.client.get(interaction_response['redirect'], allow_redirects=False)
+        assert response.status_code == 307
+        assert response.headers['location'].startswith('http://testserver/saml2/sp/authn/')
+
+        # fake a completed SAML authentication
+        self._fake_saml_authentication(transaction_id=transaction_id)
+
+        # complete interaction
+        response = self.client.get(interaction_response['redirect'], allow_redirects=False)
+        assert response.status_code == 200
+        assert '<h3>Interaction finished</h3>' in response.text
+
+        # continue request after interaction is completed
+        authorization_header = f'GNAP {continue_response["access_token"]["value"]}'
+        response = self.client.post(continue_response['uri'], json={}, headers={'Authorization': authorization_header})
+
+        assert response.status_code == 200
+        assert 'subject' in response.json()
+        subject = response.json()['subject']
+        assert subject['assertions'][0]['format'] == 'saml2'
+        assertion = json.loads(subject['assertions'][0]['value'])
+        assert assertion['issuer'] == 'https://idp.example.com'
+        assert assertion['attributes']['eduPersonPrincipalName'] == 'test@example.com'

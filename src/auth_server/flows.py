@@ -38,11 +38,15 @@ from auth_server.models.gnap import (
     Key,
     ProofMethod,
     StartInteractionMethod,
+    SubjectAssertion,
+    SubjectAssertionFormat,
+    SubjectResponse,
     UserCodeURI,
 )
 from auth_server.proof.common import lookup_client_key_from_config
 from auth_server.proof.jws import check_jws_proof, check_jwsd_proof
 from auth_server.proof.mtls import check_mtls_proof
+from auth_server.time_utils import utc_now
 from auth_server.tls_fed_auth import entity_to_key, get_entity
 from auth_server.utils import get_hex_uuid4, get_values
 
@@ -99,13 +103,39 @@ class BaseAuthFlow(ABC):
             'validate_proof',
             'handle_access_token',
             'handle_interaction',
+            'handle_subject',
             'create_auth_token',
             'finalize_transaction',
         ]
 
-    @classmethod
-    def load_state(cls, state: Mapping[str, Any]):
-        raise NotImplementedError()
+    async def _run_steps(self, steps: List[str]) -> Optional[GrantResponse]:
+        for flow_step in steps:
+            m = getattr(self, flow_step)
+            self.state.flow_step = flow_step
+            logger.debug(f'step {flow_step} in {self.get_name()} will be called')
+            res = await m()
+            if isinstance(res, GrantResponse):
+                logger.info(f'step {flow_step} in {self.get_name()} returned GrantResponse')
+                logger.debug(res.dict(exclude_none=True))
+                return res
+            logger.debug(f'step {flow_step} done, next step will be called')
+        return None
+
+    async def continue_transaction(self, continue_request: ContinueRequest):
+        # check the client authentication for the continuation request against the same key used for the grant request
+        self.state.proof_ok = await self.check_proof(
+            gnap_key=self.state.grant_request.client.key, gnap_request=continue_request
+        )
+
+        # run the remaining steps in the flow
+        steps = await self.steps()
+        continue_steps_index = steps.index(self.state.flow_step)
+        continue_steps = steps[continue_steps_index + 1 :]  # remaining steps starts at latest completed step + 1
+        return await self._run_steps(steps=continue_steps)
+
+    async def transaction(self) -> Optional[GrantResponse]:
+        steps = await self.steps()
+        return await self._run_steps(steps=steps)
 
     async def check_proof(self, gnap_key: Key, gnap_request: Optional[Union[GrantRequest, ContinueRequest]]) -> bool:
         # MTLS
@@ -156,6 +186,10 @@ class BaseAuthFlow(ABC):
                 claims.saml_targeted_id = self.state.saml_assertion.attributes.targeted_id
         return claims
 
+    @classmethod
+    def load_state(cls, state: Mapping[str, Any]):
+        raise NotImplementedError()
+
     async def lookup_client(self) -> Optional[GrantResponse]:
         raise NotImplementedError()
 
@@ -163,18 +197,9 @@ class BaseAuthFlow(ABC):
         raise NotImplementedError()
 
     async def validate_proof(self) -> Optional[GrantResponse]:
-        # please mypy, should be enforced in previous steps
-        assert isinstance(self.state.grant_request.client, Client)
-        assert isinstance(self.state.grant_request.client.key, Key)
-
-        self.state.proof_ok = await self.check_proof(
-            gnap_key=self.state.grant_request.client.key,
-            gnap_request=self.state.grant_request,
-        )
-        return None
+        raise NotImplementedError()
 
     async def handle_subject(self) -> Optional[GrantResponse]:
-        # TODO: we should allow requests for saml attributes
         raise NotImplementedError()
 
     async def handle_access_token(self) -> Optional[GrantResponse]:
@@ -187,48 +212,7 @@ class BaseAuthFlow(ABC):
         raise NotImplementedError()
 
     async def finalize_transaction(self) -> Optional[GrantResponse]:
-        logger.debug(f'finalizing transaction: {self.state.transaction_id}')
-        if self.state.flow_state is not FlowState.APPROVED:
-            logger.error(f'transaction flow state {self.state.flow_state} != {FlowState.APPROVED}')
-            raise NextFlowException(status_code=400, detail='transaction not approved, can not finalize it')
-
-        self.state.flow_state = FlowState.FINALIZED
-        transaction_state_db = await get_transaction_state_db()
-        if transaction_state_db is not None:
-            # Save transaction state for as long as the token is valid
-            # TODO: Maybe we should save data about finalized transactions in some other way
-            await transaction_state_db.save(state=self.state, expires_in=self.config.auth_token_expires_in)
-
-        return self.state.grant_response
-
-    async def _run_steps(self, steps: List[str]) -> Optional[GrantResponse]:
-        for flow_step in steps:
-            m = getattr(self, flow_step)
-            self.state.flow_step = flow_step
-            logger.debug(f'step {flow_step} in {self.get_name()} will be called')
-            res = await m()
-            if isinstance(res, GrantResponse):
-                logger.info(f'step {flow_step} in {self.get_name()} returned GrantResponse')
-                logger.debug(res.dict(exclude_none=True))
-                return res
-            logger.debug(f'step {flow_step} done, next step will be called')
-        return None
-
-    async def continue_transaction(self, continue_request: ContinueRequest):
-        # check the client authentication for the continuation request against the same key used for the grant request
-        self.state.proof_ok = await self.check_proof(
-            gnap_key=self.state.grant_request.client.key, gnap_request=continue_request
-        )
-
-        # run the remaining steps in the flow
-        steps = await self.steps()
-        continue_steps_index = steps.index(self.state.flow_step)
-        continue_steps = steps[continue_steps_index + 1 :]  # remaining steps starts at latest completed step + 1
-        return await self._run_steps(steps=continue_steps)
-
-    async def transaction(self) -> Optional[GrantResponse]:
-        steps = await self.steps()
-        return await self._run_steps(steps=steps)
+        raise NotImplementedError()
 
 
 class CommonFlow(BaseAuthFlow):
@@ -249,6 +233,17 @@ class CommonFlow(BaseAuthFlow):
             raise NextFlowException(status_code=400, detail='key by reference not supported')
         return None
 
+    async def validate_proof(self) -> Optional[GrantResponse]:
+        # please mypy, should be enforced in previous steps
+        assert isinstance(self.state.grant_request.client, Client)
+        assert isinstance(self.state.grant_request.client.key, Key)
+
+        self.state.proof_ok = await self.check_proof(
+            gnap_key=self.state.grant_request.client.key,
+            gnap_request=self.state.grant_request,
+        )
+        return None
+
     async def handle_access_token(self) -> Optional[GrantResponse]:
         if isinstance(self.state.grant_request.access_token, list):
             if len(self.state.grant_request.access_token) > 1:
@@ -267,7 +262,7 @@ class CommonFlow(BaseAuthFlow):
 
         transaction_state_db = await get_transaction_state_db()
         if transaction_state_db is None:
-            raise NextFlowException(status_code=400, detail='interact not supported')
+            raise NextFlowException(status_code=400, detail='interaction not supported')
 
         interaction_response = InteractionResponse(expires_in=self.config.transaction_state_expires_in.seconds)
         supported_start_methods = [
@@ -317,7 +312,7 @@ class CommonFlow(BaseAuthFlow):
         if finish_method is not None:
             # nonce used to verify finish method redirect and push call
             interaction_response.finish = get_hex_uuid4(length=24)
-            # use continue url with no continue id id as the client will get the interaction reference
+            # use continue url with no continue id as the client will get the interaction reference
             # in the interaction finish
             self.state.interaction_reference = get_hex_uuid4(length=24)
             continue_url = self.request.url_for('continue_transaction')
@@ -345,6 +340,24 @@ class CommonFlow(BaseAuthFlow):
         logger.debug(f'state {self.state} saved: {res}')
         return self.state.grant_response
 
+    async def handle_subject(self) -> Optional[GrantResponse]:
+        if self.state.grant_request.subject is None:
+            return None
+        if self.state.grant_request.subject.assertion_formats is not None:
+            if (
+                SubjectAssertionFormat.SAML2 in self.state.grant_request.subject.assertion_formats
+                and self.state.saml_assertion is not None
+            ):
+                # saml assertion requested
+                subject_assertion = SubjectAssertion(
+                    format=SubjectAssertionFormat.SAML2,
+                    value=self.state.saml_assertion.json(by_alias=True, exclude_none=True),
+                )
+                self.state.grant_response.subject = SubjectResponse(
+                    assertions=[subject_assertion], updated_at=utc_now()
+                )
+        return None
+
     async def create_auth_token(self) -> Optional[GrantResponse]:
         if not self.state.proof_ok:
             return None
@@ -355,14 +368,27 @@ class CommonFlow(BaseAuthFlow):
         # Create access token
         token = jwt.JWT(header={'alg': 'ES256'}, claims=claims.to_rfc7519())
         token.make_signed_token(key=self.signing_key)
-        self.state.grant_response = GrantResponse(
-            access_token=AccessTokenResponse(
-                flags=[AccessTokenFlags.BEARER], access=self.state.requested_access, value=token.serialize()
-            )
+        self.state.grant_response.access_token = AccessTokenResponse(
+            flags=[AccessTokenFlags.BEARER], access=self.state.requested_access, value=token.serialize()
         )
         logger.info(f'OK:{self.state.key_reference}:{self.config.auth_token_audience}')
         logger.debug(f'claims: {claims}')
         return None
+
+    async def finalize_transaction(self) -> Optional[GrantResponse]:
+        logger.debug(f'finalizing transaction: {self.state.transaction_id}')
+        if self.state.flow_state is not FlowState.APPROVED:
+            logger.error(f'transaction flow state {self.state.flow_state} != {FlowState.APPROVED}')
+            raise NextFlowException(status_code=400, detail='transaction not approved, can not finalize it')
+
+        self.state.flow_state = FlowState.FINALIZED
+        transaction_state_db = await get_transaction_state_db()
+        if transaction_state_db is not None:
+            # Save transaction state for as long as the token is valid
+            # TODO: Maybe we should save data about finalized transactions in some other way
+            await transaction_state_db.save(state=self.state, expires_in=self.config.auth_token_expires_in)
+
+        return self.state.grant_response
 
 
 class TestFlow(CommonFlow):
