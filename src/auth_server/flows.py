@@ -372,7 +372,7 @@ class CommonFlow(BaseAuthFlow):
             flags=[AccessTokenFlags.BEARER], access=self.state.requested_access, value=token.serialize()
         )
         logger.info(f'OK:{self.state.key_reference}:{self.config.auth_token_audience}')
-        logger.debug(f'claims: {claims}')
+        logger.debug(f'claims: {claims.dict(exclude_none=True)}')
         return None
 
     async def finalize_transaction(self) -> Optional[GrantResponse]:
