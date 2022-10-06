@@ -11,7 +11,7 @@ from sys import stderr
 from typing import Any, Dict, List, Optional, Union
 
 import yaml
-from pydantic import AnyUrl, BaseModel, BaseSettings, Field, ValidationError
+from pydantic import AnyUrl, BaseModel, BaseSettings, Field, ValidationError, validator
 
 from auth_server.models.gnap import Proof
 from auth_server.models.jose import ECJWK, RSAJWK, SymmetricJWK
@@ -58,7 +58,7 @@ class AuthServerConfig(BaseSettings):
     log_level: str = Field(default='INFO')
     host: str = Field(default='0.0.0.0')
     port: int = Field(default=8080)
-    base_url: str = Field(default='')
+    application_root: str = Field(default="")
     auth_flows: List[str] = Field(default_factory=list)
     mdq_server: Optional[str] = Field(default=None)
     tls_fed_metadata: List[TLSFEDMetadata] = Field(default_factory=list)
@@ -75,6 +75,12 @@ class AuthServerConfig(BaseSettings):
     pysaml2_config_path: Optional[Path] = Field(default=None)
     pysaml2_config_name: str = 'SAML_CONFIG'
     saml2_discovery_service_url: Optional[AnyUrl]
+
+    @validator("application_root")
+    def application_root_must_not_end_with_slash(cls, v: str):
+        if v.endswith("/"):
+            v = v.removesuffix("/")
+        return v
 
     class Config:
         frozen = True  # make hashable

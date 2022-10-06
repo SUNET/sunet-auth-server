@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 
 class AuthServer(FastAPI):
     def __init__(self):
-        super().__init__()
         config = load_config()
+        super().__init__(root_path=config.application_root)
         init_logging(level=config.log_level)
 
         # Load flows
