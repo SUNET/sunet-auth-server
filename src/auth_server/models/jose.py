@@ -8,39 +8,39 @@ from pydantic import AnyUrl, BaseModel, Field
 
 from auth_server.time_utils import utc_now
 
-__author__ = 'lundberg'
+__author__ = "lundberg"
 
 
 class KeyType(str, Enum):
-    EC = 'EC'
-    RSA = 'RSA'
-    OCT = 'oct'
+    EC = "EC"
+    RSA = "RSA"
+    OCT = "oct"
 
 
 class KeyUse(str, Enum):
-    SIGN = 'sig'
-    ENCRYPT = 'enc'
+    SIGN = "sig"
+    ENCRYPT = "enc"
 
 
 class KeyOptions(str, Enum):
-    SIGN = 'sign'
-    VERIFY = 'verify'
-    ENCRYPT = 'encrypt'
-    DECRYPT = 'decrypt'
-    WRAP_KEY = 'wrapKey'
-    UNWRAP_KEY = 'unwrapKey'
-    DERIVE_KEY = 'deriveKey'
-    DERIVE_BITS = 'deriveBits'
+    SIGN = "sign"
+    VERIFY = "verify"
+    ENCRYPT = "encrypt"
+    DECRYPT = "decrypt"
+    WRAP_KEY = "wrapKey"
+    UNWRAP_KEY = "unwrapKey"
+    DERIVE_KEY = "deriveKey"
+    DERIVE_BITS = "deriveBits"
 
 
 class SupportedAlgorithms(str, Enum):
-    RS256 = 'RS256'
-    ES256 = 'ES256'
-    ES384 = 'ES384'
+    RS256 = "RS256"
+    ES256 = "ES256"
+    ES384 = "ES384"
 
 
 class SupportedHTTPMethods(str, Enum):
-    POST = 'POST'
+    POST = "POST"
 
 
 class RegisteredClaims(BaseModel):
@@ -59,11 +59,11 @@ class RegisteredClaims(BaseModel):
     def to_rfc7519(self):
         d = self.dict(exclude_none=True)
         if self.exp:
-            d['exp'] = int((self.iat + self.exp).timestamp())
+            d["exp"] = int((self.iat + self.exp).timestamp())
         if self.nbf:
-            d['nbf'] = int(self.nbf.timestamp())
+            d["nbf"] = int(self.nbf.timestamp())
         if self.iat:
-            d['iat'] = int(self.iat.timestamp())
+            d["iat"] = int(self.iat.timestamp())
         return d
 
 
@@ -76,7 +76,7 @@ class JWK(BaseModel):
     x5u: Optional[str]
     x5c: Optional[str]
     x5t: Optional[str]
-    x5tS256: Optional[str] = Field(alias='x5t#S256')
+    x5tS256: Optional[str] = Field(alias="x5t#S256")
 
 
 class ECJWK(JWK):
@@ -117,8 +117,8 @@ class JWKS(BaseModel):
 
 
 class SupportedJWSType(str, Enum):
-    JWS = 'gnap-binding+jws'
-    JWSD = 'gnap-binding+jwsd'
+    JWS = "gnap-binding+jws"
+    JWSD = "gnap-binding+jwsd"
 
 
 class JOSEHeader(BaseModel):
@@ -129,7 +129,7 @@ class JOSEHeader(BaseModel):
     x5u: Optional[str]
     x5c: Optional[str]
     x5t: Optional[str]
-    x5tS256: Optional[str] = Field(alias='x5t#S256')
+    x5tS256: Optional[str] = Field(alias="x5t#S256")
     typ: Optional[str]
     cty: Optional[str]
     crit: Optional[List]

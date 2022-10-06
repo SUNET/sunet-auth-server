@@ -14,34 +14,34 @@ from auth_server.models.gnap import ContinueRequest, GrantRequest, GrantResponse
 from auth_server.models.jose import JWKS, JWKTypes
 from auth_server.utils import get_signing_key, load_jwks
 
-__author__ = 'lundberg'
+__author__ = "lundberg"
 
 
 logger = logging.getLogger(__name__)
 
-root_router = APIRouter(route_class=ContextRequestRoute, prefix='')
+root_router = APIRouter(route_class=ContextRequestRoute, prefix="")
 
 
-@root_router.get('/.well-known/jwks.json', response_model=JWKS, response_model_exclude_unset=True)
+@root_router.get("/.well-known/jwks.json", response_model=JWKS, response_model_exclude_unset=True)
 async def get_jwks(jwks: JWKSet = Depends(load_jwks)):
     jwks = jwks.export(private_keys=False, as_dict=True)
     return jwks
 
 
-@root_router.get('/.well-known/jwk.json', response_model=JWKTypes, response_model_exclude_unset=True)
+@root_router.get("/.well-known/jwk.json", response_model=JWKTypes, response_model_exclude_unset=True)
 async def get_jwk(signing_key: JWK = Depends(get_signing_key)):
     return signing_key.export(private_key=False, as_dict=True)
 
 
 @root_router.get(
-    '/.well-known/public.pem', response_class=Response, responses={200: {"content": {"application/x-pem-file": {}}}}
+    "/.well-known/public.pem", response_class=Response, responses={200: {"content": {"application/x-pem-file": {}}}}
 )
 async def get_public_pem(signing_key: JWK = Depends(get_signing_key)):
     data = signing_key.export_to_pem(private_key=False)
-    return Response(content=data, media_type='application/x-pem-file')
+    return Response(content=data, media_type="application/x-pem-file")
 
 
-@root_router.post('/transaction', response_model=GrantResponse, response_model_exclude_none=True)
+@root_router.post("/transaction", response_model=GrantResponse, response_model_exclude_none=True)
 async def transaction(
     request: ContextRequest,
     grant_req: GrantRequest,
@@ -50,9 +50,9 @@ async def transaction(
     config: AuthServerConfig = Depends(load_config),
     signing_key: JWK = Depends(get_signing_key),
 ):
-    logger.debug(f'grant_req: {grant_req}')
-    logger.debug(f'client_cert: {client_cert}')
-    logger.debug(f'detached_jws: {detached_jws}')
+    logger.debug(f"grant_req: {grant_req}")
+    logger.debug(f"client_cert: {client_cert}")
+    logger.debug(f"detached_jws: {detached_jws}")
 
     request.context.client_cert = client_cert
     request.context.detached_jws = detached_jws
@@ -60,9 +60,9 @@ async def transaction(
     # Run configured auth flows
     for auth_flow_name, auth_flow in request.app.auth_flows.items():
         if auth_flow.get_version() != 1:
-            logger.warning(f'not loading {auth_flow_name} because it is version {auth_flow.version}')
+            logger.warning(f"not loading {auth_flow_name} because it is version {auth_flow.version}")
             continue
-        logger.debug(f'calling {auth_flow_name}')
+        logger.debug(f"calling {auth_flow_name}")
 
         # init a new transaction state
         state = TransactionState(
@@ -74,22 +74,22 @@ async def transaction(
         try:
             res = await flow.transaction()
         except NextFlowException as e:
-            logger.info(f'flow {auth_flow_name} stopped: {e.detail}')
+            logger.info(f"flow {auth_flow_name} stopped: {e.detail}")
             continue
         except StopTransactionException as e:
-            logger.error(f'transaction stopped in flow {auth_flow_name} with exception: {e.detail}')
+            logger.error(f"transaction stopped in flow {auth_flow_name} with exception: {e.detail}")
             raise HTTPException(status_code=e.status_code, detail=e.detail)
 
         if isinstance(res, GrantResponse):
-            logger.info(f'flow {auth_flow_name} returned GrantResponse')
+            logger.info(f"flow {auth_flow_name} returned GrantResponse")
             logger.debug(res.dict(exclude_none=True))
             return res
 
-    raise HTTPException(status_code=401, detail='permission denied')
+    raise HTTPException(status_code=401, detail="permission denied")
 
 
-@root_router.post('/continue/{continue_reference}', response_model=GrantResponse, response_model_exclude_none=True)
-@root_router.post('/continue', response_model=GrantResponse, response_model_exclude_none=True)
+@root_router.post("/continue/{continue_reference}", response_model=GrantResponse, response_model_exclude_none=True)
+@root_router.post("/continue", response_model=GrantResponse, response_model_exclude_none=True)
 async def continue_transaction(
     request: ContextRequest,
     continue_req: ContinueRequest,
@@ -100,16 +100,16 @@ async def continue_transaction(
     config: AuthServerConfig = Depends(load_config),
     signing_key: JWK = Depends(get_signing_key),
 ):
-    logger.debug(f'continue_req: {continue_req}')
-    logger.debug(f'client_cert: {client_cert}')
-    logger.debug(f'detached_jws: {detached_jws}')
-    logger.debug(f'authorization: {authorization}')
+    logger.debug(f"continue_req: {continue_req}")
+    logger.debug(f"client_cert: {client_cert}")
+    logger.debug(f"detached_jws: {detached_jws}")
+    logger.debug(f"authorization: {authorization}")
 
     request.context.client_cert = client_cert
     request.context.detached_jws = detached_jws
 
     if authorization is None:
-        raise HTTPException(status_code=401, detail='permission denied')
+        raise HTTPException(status_code=401, detail="permission denied")
 
     transaction_db = await get_transaction_state_db()
     if transaction_db is None:
@@ -124,16 +124,16 @@ async def continue_transaction(
     elif continue_reference is not None:
         transaction_doc = await transaction_db.get_document_by_continue_reference(continue_reference=continue_reference)
     else:
-        raise HTTPException(status_code=400, detail='reference for transaction to continue is missing')
+        raise HTTPException(status_code=400, detail="reference for transaction to continue is missing")
 
     if transaction_doc is None:
-        raise HTTPException(status_code=404, detail='transaction not found')
+        raise HTTPException(status_code=404, detail="transaction not found")
 
     transaction_state = TransactionState(**transaction_doc)
 
     # check continue access token
-    if authorization != f'GNAP {transaction_state.continue_access_token}':
-        raise HTTPException(status_code=401, detail='permission denied')
+    if authorization != f"GNAP {transaction_state.continue_access_token}":
+        raise HTTPException(status_code=401, detail="permission denied")
 
     # return continue response again if interaction is not completed
     if transaction_state.flow_state != FlowState.APPROVED:
@@ -144,7 +144,7 @@ async def continue_transaction(
     auth_flow_name = transaction_state.flow_name
     auth_flow = request.app.auth_flows.get(auth_flow_name)
     if not auth_flow:
-        raise HTTPException(status_code=400, detail='requested flow not loaded')
+        raise HTTPException(status_code=400, detail="requested flow not loaded")
     # update transaction_state with the clients current authentication as the authentication have to match
     # the transaction requests key that should be continued
     updated_transaction_doc = dict(**transaction_doc)
@@ -154,12 +154,12 @@ async def continue_transaction(
     try:
         res = await flow.continue_transaction(continue_request=continue_req)
     except (NextFlowException, StopTransactionException) as e:  # there is no next flow when continuing
-        logger.error(f'transaction stopped in flow {auth_flow_name} with exception: {e.detail}')
+        logger.error(f"transaction stopped in flow {auth_flow_name} with exception: {e.detail}")
         raise HTTPException(status_code=e.status_code, detail=e.detail)
 
     if isinstance(res, GrantResponse):
-        logger.info(f'flow {auth_flow_name} returned GrantResponse')
+        logger.info(f"flow {auth_flow_name} returned GrantResponse")
         logger.debug(res.dict(exclude_none=True))
         return res
 
-    raise HTTPException(status_code=401, detail='permission denied')
+    raise HTTPException(status_code=401, detail="permission denied")

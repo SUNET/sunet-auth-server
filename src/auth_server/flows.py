@@ -50,7 +50,7 @@ from auth_server.time_utils import utc_now
 from auth_server.tls_fed_auth import entity_to_key, get_entity
 from auth_server.utils import get_hex_uuid4, get_values
 
-__author__ = 'lundberg'
+__author__ = "lundberg"
 
 logger = logging.getLogger(__name__)
 
@@ -92,33 +92,33 @@ class BaseAuthFlow(ABC):
 
     @classmethod
     def get_name(cls) -> str:
-        return f'{cls.__name__}'
+        return f"{cls.__name__}"
 
     @staticmethod
     async def steps() -> List[str]:
         # This is the order the methods in the flow will be called
         return [
-            'lookup_client',
-            'lookup_client_key',
-            'validate_proof',
-            'handle_access_token',
-            'handle_interaction',
-            'handle_subject',
-            'create_auth_token',
-            'finalize_transaction',
+            "lookup_client",
+            "lookup_client_key",
+            "validate_proof",
+            "handle_access_token",
+            "handle_interaction",
+            "handle_subject",
+            "create_auth_token",
+            "finalize_transaction",
         ]
 
     async def _run_steps(self, steps: List[str]) -> Optional[GrantResponse]:
         for flow_step in steps:
             m = getattr(self, flow_step)
             self.state.flow_step = flow_step
-            logger.debug(f'step {flow_step} in {self.get_name()} will be called')
+            logger.debug(f"step {flow_step} in {self.get_name()} will be called")
             res = await m()
             if isinstance(res, GrantResponse):
-                logger.info(f'step {flow_step} in {self.get_name()} returned GrantResponse')
+                logger.info(f"step {flow_step} in {self.get_name()} returned GrantResponse")
                 logger.debug(res.dict(exclude_none=True))
                 return res
-            logger.debug(f'step {flow_step} done, next step will be called')
+            logger.debug(f"step {flow_step} done, next step will be called")
         return None
 
     async def continue_transaction(self, continue_request: ContinueRequest):
@@ -141,11 +141,11 @@ class BaseAuthFlow(ABC):
         # MTLS
         if gnap_key.proof.method is ProofMethod.MTLS:
             if not self.request.context.client_cert:
-                raise NextFlowException(status_code=400, detail='no client certificate found')
+                raise NextFlowException(status_code=400, detail="no client certificate found")
             return await check_mtls_proof(gnap_key=gnap_key, cert=self.request.context.client_cert)
         # HTTPSIGN
         elif gnap_key.proof.method is ProofMethod.HTTPSIGN:
-            raise NextFlowException(status_code=400, detail='httpsign is not implemented')
+            raise NextFlowException(status_code=400, detail="httpsign is not implemented")
         # JWS
         elif gnap_request and gnap_key.proof.method is ProofMethod.JWS:
             return await check_jws_proof(
@@ -156,7 +156,7 @@ class BaseAuthFlow(ABC):
         # JWSD
         elif gnap_request and gnap_key.proof.method is ProofMethod.JWSD:
             if not self.request.context.detached_jws:
-                raise NextFlowException(status_code=400, detail='no detached jws header found')
+                raise NextFlowException(status_code=400, detail="no detached jws header found")
             return await check_jwsd_proof(
                 request=self.request,
                 gnap_key=gnap_key,
@@ -165,7 +165,7 @@ class BaseAuthFlow(ABC):
                 access_token=self.state.continue_access_token,
             )
         else:
-            raise NextFlowException(status_code=400, detail='no supported proof method')
+            raise NextFlowException(status_code=400, detail="no supported proof method")
 
     async def create_claims(self) -> Claims:
         claims = Claims(
@@ -222,7 +222,7 @@ class CommonFlow(BaseAuthFlow):
 
     async def lookup_client(self) -> Optional[GrantResponse]:
         if not isinstance(self.state.grant_request.client, Client):
-            raise NextFlowException(status_code=400, detail='client by reference not implemented')
+            raise NextFlowException(status_code=400, detail="client by reference not implemented")
         return None
 
     async def lookup_client_key(self) -> Optional[GrantResponse]:
@@ -230,7 +230,7 @@ class CommonFlow(BaseAuthFlow):
         assert isinstance(self.state.grant_request.client, Client)
 
         if not isinstance(self.state.grant_request.client.key, Key):
-            raise NextFlowException(status_code=400, detail='key by reference not supported')
+            raise NextFlowException(status_code=400, detail="key by reference not supported")
         return None
 
     async def validate_proof(self) -> Optional[GrantResponse]:
@@ -247,7 +247,7 @@ class CommonFlow(BaseAuthFlow):
     async def handle_access_token(self) -> Optional[GrantResponse]:
         if isinstance(self.state.grant_request.access_token, list):
             if len(self.state.grant_request.access_token) > 1:
-                raise NextFlowException(status_code=400, detail='multiple access token requests not supported')
+                raise NextFlowException(status_code=400, detail="multiple access token requests not supported")
             self.state.grant_request.access_token = self.state.grant_request.access_token[0]
         # TODO: How do we want to validate the access request?
         if self.state.grant_request.access_token.access:
@@ -262,7 +262,7 @@ class CommonFlow(BaseAuthFlow):
 
         transaction_state_db = await get_transaction_state_db()
         if transaction_state_db is None:
-            raise NextFlowException(status_code=400, detail='interaction not supported')
+            raise NextFlowException(status_code=400, detail="interaction not supported")
 
         interaction_response = InteractionResponse(expires_in=self.config.transaction_state_expires_in.seconds)
         supported_start_methods = [
@@ -279,8 +279,8 @@ class CommonFlow(BaseAuthFlow):
         if not start_methods:
             # no start interaction methods shared by client and AS
             detail = (
-                f'no supported start interaction method found. AS supports '
-                f'{[method.value for method in supported_start_methods]}'
+                f"no supported start interaction method found. AS supports "
+                f"{[method.value for method in supported_start_methods]}"
             )
             raise NextFlowException(status_code=400, detail=detail)
 
@@ -288,8 +288,8 @@ class CommonFlow(BaseAuthFlow):
             if self.state.grant_request.interact.finish.method not in supported_finish_methods:
                 # no finish interaction methods shared by client and AS
                 detail = (
-                    f'no supported finish interaction method found. AS supports '
-                    f'{[method.value for method in supported_finish_methods]}'
+                    f"no supported finish interaction method found. AS supports "
+                    f"{[method.value for method in supported_finish_methods]}"
                 )
                 raise NextFlowException(status_code=400, detail=detail)
             finish_method = self.state.grant_request.interact.finish.method
@@ -297,7 +297,7 @@ class CommonFlow(BaseAuthFlow):
         # return all mutually supported interaction methods according to draft
         if StartInteractionMethod.REDIRECT in start_methods:
             interaction_response.redirect = cast(
-                AnyUrl, self.request.url_for('redirect', transaction_id=self.state.transaction_id)
+                AnyUrl, self.request.url_for("redirect", transaction_id=self.state.transaction_id)
             )
         if StartInteractionMethod.USER_CODE in start_methods or StartInteractionMethod.USER_CODE_URI in start_methods:
             self.state.user_code = get_hex_uuid4(length=8)
@@ -305,7 +305,7 @@ class CommonFlow(BaseAuthFlow):
                 interaction_response.user_code = self.state.user_code
             if StartInteractionMethod.USER_CODE_URI in start_methods:
                 interaction_response.user_code_uri = UserCodeURI(
-                    code=self.state.user_code, uri=cast(AnyUrl, self.request.url_for('user_code_input'))
+                    code=self.state.user_code, uri=cast(AnyUrl, self.request.url_for("user_code_input"))
                 )
 
         # finish method can be one or zero
@@ -315,14 +315,14 @@ class CommonFlow(BaseAuthFlow):
             # use continue url with no continue id as the client will get the interaction reference
             # in the interaction finish
             self.state.interaction_reference = get_hex_uuid4(length=24)
-            continue_url = self.request.url_for('continue_transaction')
+            continue_url = self.request.url_for("continue_transaction")
             wait = None  # the client will be notified when the interaction is complete
         else:
             # as the client doesn't support interaction finish we have to use the continue reference in the
             # continue uri
             self.state.continue_reference = get_hex_uuid4(length=8)
             continue_url = self.request.url_for(
-                'continue_transaction', continue_reference=self.state.continue_reference
+                "continue_transaction", continue_reference=self.state.continue_reference
             )
             wait = 30  # I guess it takes at least 30 seconds for a user to authenticate
 
@@ -337,7 +337,7 @@ class CommonFlow(BaseAuthFlow):
         self.state.grant_response.interact = interaction_response
         self.state.flow_state = FlowState.PENDING
         res = await transaction_state_db.save(self.state, expires_in=self.config.transaction_state_expires_in)
-        logger.debug(f'state {self.state} saved: {res}')
+        logger.debug(f"state {self.state} saved: {res}")
         return self.state.grant_response
 
     async def handle_subject(self) -> Optional[GrantResponse]:
@@ -366,20 +366,20 @@ class CommonFlow(BaseAuthFlow):
         claims = await self.create_claims()
 
         # Create access token
-        token = jwt.JWT(header={'alg': 'ES256'}, claims=claims.to_rfc7519())
+        token = jwt.JWT(header={"alg": "ES256"}, claims=claims.to_rfc7519())
         token.make_signed_token(key=self.signing_key)
         self.state.grant_response.access_token = AccessTokenResponse(
             flags=[AccessTokenFlags.BEARER], access=self.state.requested_access, value=token.serialize()
         )
-        logger.info(f'OK:{self.state.key_reference}:{self.config.auth_token_audience}')
-        logger.debug(f'claims: {claims.dict(exclude_none=True)}')
+        logger.info(f"OK:{self.state.key_reference}:{self.config.auth_token_audience}")
+        logger.debug(f"claims: {claims.dict(exclude_none=True)}")
         return None
 
     async def finalize_transaction(self) -> Optional[GrantResponse]:
-        logger.debug(f'finalizing transaction: {self.state.transaction_id}')
+        logger.debug(f"finalizing transaction: {self.state.transaction_id}")
         if self.state.flow_state is not FlowState.APPROVED:
-            logger.error(f'transaction flow state {self.state.flow_state} != {FlowState.APPROVED}')
-            raise NextFlowException(status_code=400, detail='transaction not approved, can not finalize it')
+            logger.error(f"transaction flow state {self.state.flow_state} != {FlowState.APPROVED}")
+            raise NextFlowException(status_code=400, detail="transaction not approved, can not finalize it")
 
         self.state.flow_state = FlowState.FINALIZED
         transaction_state_db = await get_transaction_state_db()
@@ -398,7 +398,7 @@ class TestFlow(CommonFlow):
 
     async def check_proof(self, gnap_key: Key, gnap_request: Optional[Union[GrantRequest, ContinueRequest]]) -> bool:
         if gnap_key.proof.method is ProofMethod.TEST:
-            logger.warning(f'TEST_MODE - access token will be returned with no proof')
+            logger.warning(f"TEST_MODE - access token will be returned with no proof")
             return True
         else:
             # try any other supported proof method, used in tests
@@ -406,7 +406,7 @@ class TestFlow(CommonFlow):
 
     async def create_claims(self) -> Claims:
         claims = await super().create_claims()
-        claims.source = 'test mode'
+        claims.source = "test mode"
         return claims
 
 
@@ -426,8 +426,8 @@ class ConfigFlow(CommonFlow):
         # Update the claims with any claims found in config for this key
         claims_dict = base_claims.dict(exclude_none=True)
         claims_dict.update(self.state.config_claims)
-        if 'source' not in claims_dict:
-            claims_dict['source'] = 'config'
+        if "source" not in claims_dict:
+            claims_dict["source"] = "config"
         return ConfigClaims(**claims_dict)
 
     async def lookup_client_key(self) -> Optional[GrantResponse]:
@@ -435,17 +435,17 @@ class ConfigFlow(CommonFlow):
         assert isinstance(self.state.grant_request.client, Client)
 
         if not isinstance(self.state.grant_request.client.key, str):
-            raise NextFlowException(status_code=400, detail='key by reference is mandatory')
+            raise NextFlowException(status_code=400, detail="key by reference is mandatory")
 
-        logger.info('Looking up key in config')
-        logger.debug(f'key reference: {self.state.grant_request.client.key}')
+        logger.info("Looking up key in config")
+        logger.debug(f"key reference: {self.state.grant_request.client.key}")
         key_reference = self.state.grant_request.client.key
         self.state.key_reference = key_reference  # Remember the key reference for later use
         client_key = await lookup_client_key_from_config(key_reference=key_reference)
         if client_key is None:
-            raise NextFlowException(status_code=400, detail='no client key found')
+            raise NextFlowException(status_code=400, detail="no client key found")
 
-        logger.debug(f'key by reference found: {client_key}')
+        logger.debug(f"key by reference found: {client_key}")
         self.state.grant_request.client.key = client_key
         # Load any claims associated with the key
         if self.state.key_reference in self.config.client_keys:  # please mypy
@@ -456,7 +456,7 @@ class ConfigFlow(CommonFlow):
 class OnlyMTLSProofFlow(CommonFlow):
     async def check_proof(self, gnap_key: Key, gnap_request: Optional[Union[GrantRequest, ContinueRequest]]) -> bool:
         if gnap_key.proof.method is not ProofMethod.MTLS:
-            raise NextFlowException(status_code=400, detail='MTLS is the only supported proof method')
+            raise NextFlowException(status_code=400, detail="MTLS is the only supported proof method")
         return await check_mtls_proof(
             gnap_key=self.state.grant_request.client.key, cert=self.request.context.client_cert
         )
@@ -464,7 +464,7 @@ class OnlyMTLSProofFlow(CommonFlow):
     async def validate_proof(self) -> Optional[GrantResponse]:
         await super().validate_proof()
         if not self.state.proof_ok:
-            raise NextFlowException(status_code=401, detail='no client certificate found')
+            raise NextFlowException(status_code=401, detail="no client certificate found")
         return None
 
     async def handle_interaction(self) -> Optional[GrantResponse]:
@@ -483,48 +483,48 @@ class MDQFlow(OnlyMTLSProofFlow):
         assert isinstance(self.state.grant_request.client, Client)
 
         if not isinstance(self.state.grant_request.client.key, str):
-            raise NextFlowException(status_code=400, detail='key by reference is mandatory')
+            raise NextFlowException(status_code=400, detail="key by reference is mandatory")
 
         key_id = self.state.grant_request.client.key
-        logger.debug(f'key reference: {key_id}')
+        logger.debug(f"key reference: {key_id}")
 
         if self.config.mdq_server is None:
-            logger.error('MDQ server not configured but MDQ flow loaded')
-            raise StopTransactionException(status_code=500, detail='bad configuration')
+            logger.error("MDQ server not configured but MDQ flow loaded")
+            raise StopTransactionException(status_code=500, detail="bad configuration")
 
         # Look for a key using mdq
-        logger.info(f'Trying to load key from mdq')
+        logger.info(f"Trying to load key from mdq")
         self.state.mdq_data = await xml_mdq_get(entity_id=key_id, mdq_url=self.config.mdq_server)
         client_key = await mdq_data_to_key(self.state.mdq_data)
 
         if not client_key:
-            raise NextFlowException(status_code=400, detail=f'no client key found for {key_id}')
+            raise NextFlowException(status_code=400, detail=f"no client key found for {key_id}")
         self.state.grant_request.client.key = client_key
         return None
 
     async def create_claims(self) -> MDQClaims:
         if not self.state.mdq_data:
-            raise NextFlowException(status_code=400, detail='missing mdq data')
+            raise NextFlowException(status_code=400, detail="missing mdq data")
 
         # Get data from metadata
         # entity id
         entity_descriptor = list(
-            get_values('urn:oasis:names:tc:SAML:2.0:metadata:EntityDescriptor', self.state.mdq_data.metadata)
+            get_values("urn:oasis:names:tc:SAML:2.0:metadata:EntityDescriptor", self.state.mdq_data.metadata)
         )
         try:
-            entity_id = entity_descriptor[0]['@entityID']
+            entity_id = entity_descriptor[0]["@entityID"]
         except (IndexError, KeyError):
-            raise NextFlowException(status_code=401, detail='malformed metadata')
+            raise NextFlowException(status_code=401, detail="malformed metadata")
         # scopes
         scopes = []
-        for scope in get_values('urn:mace:shibboleth:metadata:1.0:Scope', self.state.mdq_data.metadata):
-            scopes.append(scope['#text'])
+        for scope in get_values("urn:mace:shibboleth:metadata:1.0:Scope", self.state.mdq_data.metadata):
+            scopes.append(scope["#text"])
         # source
         registration_info = list(
-            get_values('urn:oasis:names:tc:SAML:metadata:rpi:RegistrationInfo', self.state.mdq_data.metadata)
+            get_values("urn:oasis:names:tc:SAML:metadata:rpi:RegistrationInfo", self.state.mdq_data.metadata)
         )
         try:
-            source = registration_info[0]['@registrationAuthority']
+            source = registration_info[0]["@registrationAuthority"]
         except (IndexError, KeyError):
             source = self.config.mdq_server  # Default source to mdq server if registrationAuthority is not set
 
@@ -542,28 +542,28 @@ class TLSFEDFlow(OnlyMTLSProofFlow):
         assert isinstance(self.state.grant_request.client, Client)
 
         if not isinstance(self.state.grant_request.client.key, str):
-            raise NextFlowException(status_code=400, detail='key by reference is mandatory')
+            raise NextFlowException(status_code=400, detail="key by reference is mandatory")
 
         key_id = self.state.grant_request.client.key
-        logger.debug(f'key reference: {key_id}')
+        logger.debug(f"key reference: {key_id}")
 
         if not self.config.tls_fed_metadata:
-            logger.error('TLS fed auth not configured but TLS fed auth flow loaded')
-            raise StopTransactionException(status_code=500, detail='bad configuration')
+            logger.error("TLS fed auth not configured but TLS fed auth flow loaded")
+            raise StopTransactionException(status_code=500, detail="bad configuration")
 
         # Look for a key in the TLS fed metadata
-        logger.info(f'Trying to load key from TLS fed auth')
+        logger.info(f"Trying to load key from TLS fed auth")
         self.state.entity = await get_entity(entity_id=key_id)
         client_key = await entity_to_key(self.state.entity)
 
         if not client_key:
-            raise NextFlowException(status_code=400, detail=f'no client key found for {key_id}')
+            raise NextFlowException(status_code=400, detail=f"no client key found for {key_id}")
         self.state.grant_request.client.key = client_key
         return None
 
     async def create_claims(self) -> TLSFEDClaims:
         if not self.state.entity:
-            raise NextFlowException(status_code=400, detail='missing metadata entity')
+            raise NextFlowException(status_code=400, detail="missing metadata entity")
 
         # Get scopes from metadata
         scopes = None

@@ -4,10 +4,10 @@ import sys
 
 from loguru import logger
 
-__author__ = 'lundberg'
+__author__ = "lundberg"
 
-LOGURU_FORMAT = '<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> |\
- <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>'
+LOGURU_FORMAT = "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> |\
+ <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
 
 
 class InterceptHandler(logging.Handler):
@@ -32,10 +32,10 @@ logging.getLogger().level = 0  # DEBUG
 
 
 def init_logging(
-    level: str = 'INFO',
+    level: str = "INFO",
     fmt=LOGURU_FORMAT,
     colorize: bool = True,
 ) -> None:
     logger.remove()  # Remove the default handler
-    logger.add(sys.stderr, format=fmt, colorize=colorize, level='ERROR', enqueue=True)
+    logger.add(sys.stderr, format=fmt, colorize=colorize, level="ERROR", enqueue=True)
     logger.add(sys.stdout, format=fmt, colorize=colorize, level=level, enqueue=True)

@@ -5,7 +5,7 @@ from starlette.responses import Response
 from starlette.templating import Jinja2Templates as _Jinja2Templates
 from starlette.templating import _TemplateResponse
 
-__author__ = 'lundberg'
+__author__ = "lundberg"
 
 
 # Workaround for bug in Starlette.

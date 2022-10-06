@@ -17,9 +17,9 @@ from auth_server.time_utils import utc_now
 from auth_server.tls_fed_auth import MetadataEntity
 from auth_server.utils import get_hex_uuid4
 
-__author__ = 'lundberg'
+__author__ = "lundberg"
 
-T = TypeVar('T', bound='TransactionState')
+T = TypeVar("T", bound="TransactionState")
 
 
 async def get_transaction_state_db() -> Optional[TransactionStateDB]:
@@ -30,10 +30,10 @@ async def get_transaction_state_db() -> Optional[TransactionStateDB]:
 
 
 class FlowState(str, Enum):
-    PROCESSING = 'processing'
-    PENDING = 'pending'
-    APPROVED = 'approved'
-    FINALIZED = 'finalized'
+    PROCESSING = "processing"
+    PENDING = "pending"
+    APPROVED = "approved"
+    FINALIZED = "finalized"
 
 
 class TransactionState(BaseModel, ABC):
@@ -85,30 +85,30 @@ class TLSFEDState(TransactionState):
 
 class TransactionStateDB(BaseDB):
     def __init__(self, db_client: AsyncIOMotorClient):
-        super().__init__(db_client=db_client, db_name='auth_server', collection='transaction_states')
+        super().__init__(db_client=db_client, db_name="auth_server", collection="transaction_states")
 
     @classmethod
     async def init(cls, db_client: AsyncIOMotorClient) -> TransactionStateDB:
         db = cls(db_client=db_client)
         indexes = {
-            'auto-discard': {'key': [('expires_at', 1)], 'expireAfterSeconds': 0},
-            'unique-transaction-id': {'key': [('transaction_id', 1)], 'unique': True},
-            'unique-interaction-reference': {
-                'key': [('interaction_reference', 1)],
-                'unique': True,
-                'partialFilterExpression': {'external_id': {'$type': 'string'}},
+            "auto-discard": {"key": [("expires_at", 1)], "expireAfterSeconds": 0},
+            "unique-transaction-id": {"key": [("transaction_id", 1)], "unique": True},
+            "unique-interaction-reference": {
+                "key": [("interaction_reference", 1)],
+                "unique": True,
+                "partialFilterExpression": {"external_id": {"$type": "string"}},
             },
-            'unique-user-code': {
-                'key': [('user_code', 1)],
-                'unique': True,
-                'partialFilterExpression': {'external_id': {'$type': 'string'}},
+            "unique-user-code": {
+                "key": [("user_code", 1)],
+                "unique": True,
+                "partialFilterExpression": {"external_id": {"$type": "string"}},
             },
         }
         await db.setup_indexes(indexes=indexes)
         return db
 
     async def get_document_by_transaction_id(self, transactions_id: str) -> Optional[Mapping[str, Any]]:
-        return await self._get_document_by_attr('transaction_id', transactions_id)
+        return await self._get_document_by_attr("transaction_id", transactions_id)
 
     async def get_state_by_transaction_id(self, transactions_id: str) -> Optional[TransactionState]:
         doc = await self.get_document_by_transaction_id(transactions_id=transactions_id)
@@ -117,22 +117,22 @@ class TransactionStateDB(BaseDB):
         return TransactionState.from_dict(state=doc)
 
     async def get_document_by_interaction_reference(self, interaction_reference: str) -> Optional[Mapping[str, Any]]:
-        return await self._get_document_by_attr('interaction_reference', interaction_reference)
+        return await self._get_document_by_attr("interaction_reference", interaction_reference)
 
     async def get_document_by_continue_reference(self, continue_reference: str) -> Optional[Mapping[str, Any]]:
-        return await self._get_document_by_attr('continue_reference', continue_reference)
+        return await self._get_document_by_attr("continue_reference", continue_reference)
 
     async def get_state_by_user_code(self, user_code: str) -> Optional[TransactionState]:
-        doc = await self._get_document_by_attr('user_code', user_code)
+        doc = await self._get_document_by_attr("user_code", user_code)
         if not doc:
             return None
         return TransactionState.from_dict(state=doc)
 
     async def remove_state(self, transactions_id: str) -> None:
-        await self.remove_document({'transaction_id': transactions_id})
+        await self.remove_document({"transaction_id": transactions_id})
 
     async def save(self, state: T, expires_in: timedelta):
         state.expires_at = state.expires_at + expires_in
-        test_doc = {'transaction_id': state.transaction_id}
+        test_doc = {"transaction_id": state.transaction_id}
         res = await self._coll.replace_one(test_doc, state.to_dict(), upsert=True)
         return res.acknowledged

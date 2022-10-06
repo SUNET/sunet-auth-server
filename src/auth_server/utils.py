@@ -16,7 +16,7 @@ from jwcrypto import jwk
 
 from auth_server.config import ConfigurationError, load_config
 
-__author__ = 'lundberg'
+__author__ = "lundberg"
 
 from auth_server.models.gnap import HashMethod
 
@@ -27,17 +27,17 @@ logger = logging.getLogger(__name__)
 def load_jwks() -> jwk.JWKSet:
     config = load_config()
     if config.keystore_path.exists():
-        with open(config.keystore_path, 'r') as f:
+        with open(config.keystore_path, "r") as f:
             jwks = jwk.JWKSet.from_json(f.read())
-            logger.info(f'jwks loaded from {config.keystore_path}')
+            logger.info(f"jwks loaded from {config.keystore_path}")
     else:
-        logger.info('Creating new jwks')
-        key = jwk.JWK.generate(kid='default', kty='EC', crv='P-256')
+        logger.info("Creating new jwks")
+        key = jwk.JWK.generate(kid="default", kty="EC", crv="P-256")
         jwks = jwk.JWKSet()
         jwks.add(key)
-        with open(config.keystore_path, 'w') as f:
+        with open(config.keystore_path, "w") as f:
             json.dump(jwks.export(as_dict=True), f)
-            logger.info(f'jwks written to {config.keystore_path}')
+            logger.info(f"jwks written to {config.keystore_path}")
     return jwks
 
 
@@ -47,23 +47,23 @@ def get_signing_key() -> jwk.JWK:
     jwks = load_jwks()
     signing_key = jwks.get_key(config.signing_key_id)
     if signing_key is None:
-        raise ConfigurationError(f'no JWK with id {config.signing_key_id} found in JWKS')
+        raise ConfigurationError(f"no JWK with id {config.signing_key_id} found in JWKS")
     return signing_key
 
 
 def load_cert_from_str(cert: str) -> Certificate:
-    if not cert.startswith('-----BEGIN CERTIFICATE-----'):
-        cert = f'-----BEGIN CERTIFICATE-----\n{cert}\n-----END CERTIFICATE-----'
+    if not cert.startswith("-----BEGIN CERTIFICATE-----"):
+        cert = f"-----BEGIN CERTIFICATE-----\n{cert}\n-----END CERTIFICATE-----"
     return load_pem_x509_certificate(cert.encode())
 
 
 def serialize_certificate(cert: Certificate) -> str:
-    return cert.public_bytes(encoding=Encoding.PEM).decode('utf-8')
+    return cert.public_bytes(encoding=Encoding.PEM).decode("utf-8")
 
 
 def import_class(class_path: str) -> Callable:
-    path_split = class_path.split('.')
-    module_path = '.'.join(path_split[:-1])
+    path_split = class_path.split(".")
+    module_path = ".".join(path_split[:-1])
     class_name = path_split[-1]
     module = importlib.import_module(module_path)
     klass = getattr(module, class_name)
@@ -92,7 +92,7 @@ def get_values(key: str, obj: Union[Mapping, Sequence]) -> Generator[Any, None, 
 
 def get_hex_uuid4(length=32) -> str:
     if length > 32:
-        raise ValueError('Max length is 32')
+        raise ValueError("Max length is 32")
     return uuid4().hex[:length]
 
 
@@ -101,7 +101,7 @@ def get_hash_by_name(hash_name: str) -> HashAlgorithm:
     for alg in supported_hash_algs:
         if alg.name == hash_name:
             return alg
-    raise NotImplementedError(f'Hash algorithm {hash_name} not implemented')
+    raise NotImplementedError(f"Hash algorithm {hash_name} not implemented")
 
 
 def hash_with(hash_alg: HashAlgorithm, data: bytes) -> bytes:
@@ -153,19 +153,19 @@ def get_interaction_hash(
     hash_alg = get_hash_by_name(hash_name=hash_method.value)
     plaintext = f"{client_nonce}\n{as_nonce}\n{interact_ref}\n{transaction_url}".encode()
     hash_res = hash_with(hash_alg, plaintext)
-    return urlsafe_b64encode(hash_res).decode(encoding='utf-8')
+    return urlsafe_b64encode(hash_res).decode(encoding="utf-8")
 
 
 async def push_interaction_finish(url: str, interaction_hash: str, interaction_reference: str) -> None:
-    logger.debug(f'Trying interaction PUSH finish to {url}')
-    body = {'hash': interaction_hash, 'interact_ref': interaction_reference}
+    logger.debug(f"Trying interaction PUSH finish to {url}")
+    body = {"hash": interaction_hash, "interact_ref": interaction_reference}
     try:
         async with aiohttp.ClientSession() as session:
             response = await session.post(url=url, json=body)
     except aiohttp.ClientError as e:
-        logger.error(f'PUSH finish to {url} failed: {e}')
+        logger.error(f"PUSH finish to {url} failed: {e}")
         return None
     if response.status != 200:
-        logger.error(f'PUSH finish to {url} returned {response.status}')
+        logger.error(f"PUSH finish to {url} returned {response.status}")
         return None
-    logger.info(f'Successfully delivered interaction PUSH finish to {url}')
+    logger.info(f"Successfully delivered interaction PUSH finish to {url}")

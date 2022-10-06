@@ -8,7 +8,7 @@ from pymongo import MongoClient, WriteConcern
 
 from auth_server.config import load_config
 
-__author__ = 'lundberg'
+__author__ = "lundberg"
 
 logger = logging.getLogger(__name__)
 
@@ -46,10 +46,10 @@ class BaseDB(object):
         self._db = self._conn[db_name]
         self._coll = self._db[collection]
         if safe_writes:
-            self._coll = self._coll.with_options(write_concern=WriteConcern(w='majority'))
+            self._coll = self._coll.with_options(write_concern=WriteConcern(w="majority"))
 
     def __repr__(self):
-        return f'<AsyncBaseDB {self.__class__.__name__}: {self._db_name}.{self._coll_name}>'
+        return f"<AsyncBaseDB {self.__class__.__name__}: {self._db_name}.{self._coll_name}>"
 
     __str__ = __repr__
 
@@ -77,14 +77,14 @@ class BaseDB(object):
         :return: document dict or None
         """
         if value is None:
-            raise DBError(f'Missing value to filter docs by {attr}')
+            raise DBError(f"Missing value to filter docs by {attr}")
 
         docs = await self._coll.find({attr: value}).to_list(length=2)  # Try to get two docs for multiple check
         doc_count = len(docs)
         if doc_count == 0:
             return None
         elif doc_count > 1:
-            raise MultipleDocumentsReturned(f'Multiple matching documents for {attr}={repr(value)}')
+            raise MultipleDocumentsReturned(f"Multiple matching documents for {attr}={repr(value)}")
         return docs[0]
 
     async def _get_documents_by_attr(self, attr: str, value: str) -> AsyncGenerator[Mapping, None]:
@@ -133,11 +133,11 @@ class BaseDB(object):
 
         :return: Document count
         """
-        args: Dict[Any, Any] = {'filter': {}}
+        args: Dict[Any, Any] = {"filter": {}}
         if spec:
-            args['filter'] = spec
+            args["filter"] = spec
         if limit:
-            args['limit'] = limit
+            args["limit"] = limit
         return await self._coll.count_documents(**args)
 
     async def remove_document(self, spec_or_id: Union[dict, ObjectId]) -> bool:
@@ -147,7 +147,7 @@ class BaseDB(object):
         :param spec_or_id: spec or document id (_id)
         """
         if isinstance(spec_or_id, ObjectId):
-            spec_or_id = {'_id': spec_or_id}
+            spec_or_id = {"_id": spec_or_id}
         result = await self._coll.delete_one(spec_or_id)
         return result.acknowledged
 
@@ -157,15 +157,15 @@ class BaseDB(object):
         """
         # indexes={'index-name': {'key': [('key', 1)], 'param1': True, 'param2': False}, }
         # http://docs.mongodb.org/manual/reference/method/db.collection.ensureIndex/
-        default_indexes = ['_id_']  # _id_ index can not be deleted from a mongo collection
+        default_indexes = ["_id_"]  # _id_ index can not be deleted from a mongo collection
         current_indexes = await self._coll.index_information()
         for name in current_indexes:
             if name not in indexes and name not in default_indexes:
                 await self._coll.drop_index(name)
         for name, params in indexes.items():
             if name not in current_indexes:
-                key = params.pop('key')
-                params['name'] = name
+                key = params.pop("key")
+                params["name"] = name
                 await self._coll.create_index(key, **params)
 
     async def close(self):

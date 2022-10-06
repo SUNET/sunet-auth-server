@@ -8,7 +8,7 @@ test:
 
 reformat:
 	isort --line-width 120 --atomic --project auth_server $(SOURCE)
-	black --line-length 120 --target-version py37 --skip-string-normalization $(SOURCE)
+	black --line-length 120 --target-version py39 $(SOURCE)
 
 typecheck:
 	mypy --ignore-missing-imports $(SOURCE)

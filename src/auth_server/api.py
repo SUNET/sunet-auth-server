@@ -16,7 +16,7 @@ from auth_server.routers.saml2_sp import saml2_router
 from auth_server.routers.status import status_router
 from auth_server.utils import import_class
 
-__author__ = 'lundberg'
+__author__ = "lundberg"
 
 
 logger = logging.getLogger(__name__)
@@ -45,19 +45,19 @@ class AuthServer(FastAPI):
                 builtin_flow = self.builtin_flow.get(FlowName(flow))
                 if builtin_flow:
                     flows[builtin_flow.get_name()] = builtin_flow
-                    logger.debug(f'Loaded built-in flow {flow}')
+                    logger.debug(f"Loaded built-in flow {flow}")
             except ValueError:  # Not a registered flow
                 try:
                     custom_flow = cast(Type[BaseAuthFlow], import_class(flow))
                     custom_flow_name = custom_flow.get_name()
                     if custom_flow_name in flows:
                         # reject a custom flow that tries to overwrite another flow
-                        raise ConfigurationError(f'there is already a flow named {custom_flow_name} loaded')
+                        raise ConfigurationError(f"there is already a flow named {custom_flow_name} loaded")
                     flows[custom_flow_name] = custom_flow
-                    logger.debug(f'Loaded custom flow {flow}')
+                    logger.debug(f"Loaded custom flow {flow}")
                 except (ValueError, ModuleNotFoundError) as e:
-                    logger.error(f'Could not load custom flow {flow}: {e}')
-        logger.info(f'Loaded flows: {[flow.get_name() for flow in flows.values()]}')
+                    logger.error(f"Could not load custom flow {flow}: {e}")
+        logger.info(f"Loaded flows: {[flow.get_name() for flow in flows.values()]}")
         return flows
 
 
@@ -69,5 +69,5 @@ def init_auth_server_api() -> AuthServer:
     app.include_router(interaction_router)
     app.include_router(saml2_router)
     app.include_router(status_router)
-    app.mount("/static", StaticFiles(packages=['auth_server']), name="static")  # defaults to the "statics" directory
+    app.mount("/static", StaticFiles(packages=["auth_server"]), name="static")  # defaults to the "statics" directory
     return app

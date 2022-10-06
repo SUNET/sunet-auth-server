@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-__author__ = 'lundberg'
+__author__ = "lundberg"
 
 
 def utc_now() -> datetime:

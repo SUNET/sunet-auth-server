@@ -15,7 +15,7 @@ from auth_server.models.jose import (
     SymmetricJWK,
 )
 
-__author__ = 'lundberg'
+__author__ = "lundberg"
 
 
 # Data models for GNAP
@@ -28,13 +28,13 @@ class GnapBaseModel(BaseModel):
 
 
 class ProofMethod(str, Enum):
-    DPOP = 'dpop'
-    HTTPSIGN = 'httpsign'
-    JWSD = 'jwsd'
-    JWS = 'jws'
-    MTLS = 'mtls'
-    OAUTHPOP = 'oauthpop'
-    TEST = 'test'
+    DPOP = "dpop"
+    HTTPSIGN = "httpsign"
+    JWSD = "jwsd"
+    JWS = "jws"
+    MTLS = "mtls"
+    OAUTHPOP = "oauthpop"
+    TEST = "test"
 
 
 class Proof(GnapBaseModel):
@@ -45,14 +45,14 @@ class Key(GnapBaseModel):
     proof: Proof
     jwk: Optional[Union[ECJWK, RSAJWK, SymmetricJWK]]
     cert: Optional[str]
-    cert_S256: Optional[str] = Field(default=None, alias='cert#S256')
+    cert_S256: Optional[str] = Field(default=None, alias="cert#S256")
 
-    @validator('proof', pre=True)
+    @validator("proof", pre=True)
     def expand_proof(cls, v: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
         # If additional parameters are not required or used for a specific method,
         # the method MAY be passed as a string instead of an object.
         if isinstance(v, str):
-            return {'method': v}
+            return {"method": v}
         return v
 
 
@@ -90,8 +90,8 @@ class Access(GnapBaseModel):
 
 
 class AccessTokenFlags(str, Enum):
-    BEARER = 'bearer'
-    DURABLE = 'durable'
+    BEARER = "bearer"
+    DURABLE = "durable"
 
 
 class AccessTokenRequest(GnapBaseModel):
@@ -102,18 +102,18 @@ class AccessTokenRequest(GnapBaseModel):
 
 
 class SubjectIdentifierFormat(str, Enum):
-    ACCOUNT = 'account'
-    ALIASES = 'aliases'
-    DID = 'did'
-    EMAIL = 'email'
-    ISS_SUB = 'iss_sub'
-    OPAQUE = 'opaque'
-    PHONE_NUMBER = 'phone_number'
+    ACCOUNT = "account"
+    ALIASES = "aliases"
+    DID = "did"
+    EMAIL = "email"
+    ISS_SUB = "iss_sub"
+    OPAQUE = "opaque"
+    PHONE_NUMBER = "phone_number"
 
 
 class SubjectAssertionFormat(str, Enum):
-    ID_TOKEN = 'id_token'
-    SAML2 = 'saml2'
+    ID_TOKEN = "id_token"
+    SAML2 = "saml2"
 
 
 class SubjectRequest(GnapBaseModel):
@@ -156,21 +156,21 @@ class User(GnapBaseModel):
 
 
 class StartInteractionMethod(str, Enum):
-    REDIRECT = 'redirect'
-    APP = 'app'
-    USER_CODE = 'user_code'  # for use with a stable URI
-    USER_CODE_URI = 'user_code_uri'  # for use with a dynamic URI
+    REDIRECT = "redirect"
+    APP = "app"
+    USER_CODE = "user_code"  # for use with a stable URI
+    USER_CODE_URI = "user_code_uri"  # for use with a dynamic URI
 
 
 class FinishInteractionMethod(str, Enum):
-    REDIRECT = 'redirect'
-    PUSH = 'push'
+    REDIRECT = "redirect"
+    PUSH = "push"
 
 
 class HashMethod(str, Enum):
     # Hash names has to match https://www.iana.org/assignments/named-information/named-information.xhtml#hash-alg
-    SHA_512 = 'sha-512'
-    SHA3_512 = 'sha3-512'
+    SHA_512 = "sha-512"
+    SHA3_512 = "sha3-512"
 
 
 class FinishInteraction(GnapBaseModel):
@@ -228,7 +228,7 @@ class AccessTokenResponse(GnapBaseModel):
     label: Optional[str]
     manage: Optional[AnyUrl]
     access: Optional[List[Union[str, Access]]]
-    expires_in: Optional[int] = Field(default=None, description='seconds until expiry')
+    expires_in: Optional[int] = Field(default=None, description="seconds until expiry")
     key: Optional[Union[str, Key]]
     flags: Optional[List[AccessTokenFlags]]
 
@@ -236,17 +236,17 @@ class AccessTokenResponse(GnapBaseModel):
 class SubjectResponse(GnapBaseModel):
     sub_ids: Optional[List[SubjectIdentifier]]
     assertions: Optional[List[SubjectAssertion]]
-    updated_at: Optional[datetime] = Field(default=None, description='ISO8610 date string')
+    updated_at: Optional[datetime] = Field(default=None, description="ISO8610 date string")
 
 
 class ErrorCode(str, Enum):
-    INVALID_CLIENT = 'invalid_client'
-    INVALID_INTERACTION = 'invalid_interaction'
-    INVALID_REQUEST = 'invalid_request'
-    REQUEST_DENIED = 'request_denied'
-    TOO_FAST = 'too_fast'
-    UNKNOWN_REQUEST = 'unknown_request'
-    USER_DENIED = 'user_denied'
+    INVALID_CLIENT = "invalid_client"
+    INVALID_INTERACTION = "invalid_interaction"
+    INVALID_REQUEST = "invalid_request"
+    REQUEST_DENIED = "request_denied"
+    TOO_FAST = "too_fast"
+    UNKNOWN_REQUEST = "unknown_request"
+    USER_DENIED = "user_denied"
 
 
 # TODO: Change FastApi HTTPException responses to ErrorResponse
@@ -260,7 +260,7 @@ class ContinueRequest(GnapBaseModel):
 
 
 class GrantResponse(GnapBaseModel):
-    continue_: Optional[Continue] = Field(default=None, alias='continue')
+    continue_: Optional[Continue] = Field(default=None, alias="continue")
     access_token: Optional[AccessTokenResponse]
     interact: Optional[InteractionResponse]
     subject: Optional[SubjectResponse]

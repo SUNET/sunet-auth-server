@@ -18,29 +18,29 @@ from auth_server.tests.utils import create_tls_fed_metadata, tls_fed_metadata_to
 from auth_server.time_utils import utc_now
 from auth_server.tls_fed_auth import Metadata, MetadataEntity, load_metadata, load_metadata_source
 
-__author__ = 'lundberg'
+__author__ = "lundberg"
 
 
 class TestTLSMetadata(IsolatedAsyncioTestCase):
     def setUp(self) -> None:
-        self.datadir = Path(__file__).with_name('data')
-        self.entity_id = 'https://test.localhost'
-        self.issuer = 'metadata.example.com'
+        self.datadir = Path(__file__).with_name("data")
+        self.entity_id = "https://test.localhost"
+        self.issuer = "metadata.example.com"
         self.about_now = utc_now()
         self.max_age = timedelta(days=365)
         self.expires = timedelta(days=14)
         self.cache_ttl = timedelta(hours=1)
-        self.scopes = ['test.localhost']
+        self.scopes = ["test.localhost"]
 
         # Create metadata jws and save it as a temporary file
-        with open(f'{self.datadir}/tls_fed_jwks.json', 'r') as f:
+        with open(f"{self.datadir}/tls_fed_jwks.json", "r") as f:
             self.tls_fed_jwks = jwk.JWKSet()
             self.tls_fed_jwks.import_keyset(f.read())
 
         # mypy bug, file is opened as bytes not str: https://issueexplorer.com/issue/python/mypy/11193
-        with open(f'{self.datadir}/test.cert', 'rb') as f:  # type: ignore
+        with open(f"{self.datadir}/test.cert", "rb") as f:  # type: ignore
             self.client_cert = x509.load_pem_x509_certificate(data=f.read())  # type: ignore
-        self.client_cert_str = base64.b64encode(self.client_cert.public_bytes(encoding=Encoding.DER)).decode('utf-8')
+        self.client_cert_str = base64.b64encode(self.client_cert.public_bytes(encoding=Encoding.DER)).decode("utf-8")
 
     async def _load_metadata(
         self, metadata: Optional[Union[TLSFEDMetadata, str]] = None, strict: bool = True
@@ -54,13 +54,13 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
             )
         metadata_jws = tls_fed_metadata_to_jws(
             metadata,
-            key=self.tls_fed_jwks.get_key('metadata_signing_key_id'),
+            key=self.tls_fed_jwks.get_key("metadata_signing_key_id"),
             issuer=self.issuer,
             issue_time=self.about_now,
             expires=self.expires,
             alg=SupportedAlgorithms.ES256,
             compact=False,
-        ).decode('utf-8')
+        ).decode("utf-8")
 
         metadata_source = await load_metadata_source(raw_jws=metadata_jws, jwks=self.tls_fed_jwks, strict=strict)
         if metadata_source is None:
@@ -87,19 +87,19 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
             client_cert=self.client_cert_str,
         ).json(by_alias=True)
         deserialized_metadata = json.loads(serialized_metadata)
-        entity = deserialized_metadata['entities'][0]
+        entity = deserialized_metadata["entities"][0]
 
         # introduce errors in entity data
         bad_extension_entity = copy.deepcopy(entity)
 
         # bad saml scope extension
-        bad_extension_entity['entity_id'] = 'https://bad-extension-entity.local'
-        saml_scope_extension = bad_extension_entity['extensions'][RegisteredExtensions.SAML_SCOPE.value]
-        saml_scope_extension['not_scope'] = saml_scope_extension['scope']
-        del saml_scope_extension['scope']
-        bad_extension_entity['extensions'][RegisteredExtensions.SAML_SCOPE.value] = saml_scope_extension
+        bad_extension_entity["entity_id"] = "https://bad-extension-entity.local"
+        saml_scope_extension = bad_extension_entity["extensions"][RegisteredExtensions.SAML_SCOPE.value]
+        saml_scope_extension["not_scope"] = saml_scope_extension["scope"]
+        del saml_scope_extension["scope"]
+        bad_extension_entity["extensions"][RegisteredExtensions.SAML_SCOPE.value] = saml_scope_extension
 
-        deserialized_metadata['entities'].extend([bad_extension_entity])
+        deserialized_metadata["entities"].extend([bad_extension_entity])
         modified_metadata = json.dumps(deserialized_metadata)
         # no metadata should be returned when using default strict mode
         metadata = await self._load_metadata(metadata=modified_metadata, strict=True)
@@ -119,11 +119,11 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
         ).json(by_alias=True)
         deserialized_metadata = json.loads(serialized_metadata)
 
-        entity = deserialized_metadata['entities'][0]
+        entity = deserialized_metadata["entities"][0]
         unknown_extension_entity = copy.deepcopy(entity)
-        unknown_extension_entity['entity_id'] = 'https://unknown_extension_entity'
-        unknown_extension_entity['extensions']['not_a_registered_extension'] = {'some_key': 'some_value'}
-        deserialized_metadata['entities'].extend([unknown_extension_entity])
+        unknown_extension_entity["entity_id"] = "https://unknown_extension_entity"
+        unknown_extension_entity["extensions"]["not_a_registered_extension"] = {"some_key": "some_value"}
+        deserialized_metadata["entities"].extend([unknown_extension_entity])
         modified_metadata = json.dumps(deserialized_metadata)
         # both entities should be returned when using strict mode
         metadata = await self._load_metadata(metadata=modified_metadata, strict=True)
@@ -131,6 +131,6 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
         assert metadata is not None
         assert len(metadata.entities) == 2
         # but the unregistered extension should be removed
-        entity = metadata.entities['https://unknown_extension_entity']
+        entity = metadata.entities["https://unknown_extension_entity"]
         assert entity.extensions.saml_scope.scope == self.scopes
-        assert entity.extensions.dict()['not_a_registered_extension'] == {'some_key': 'some_value'}
+        assert entity.extensions.dict()["not_a_registered_extension"] == {"some_key": "some_value"}

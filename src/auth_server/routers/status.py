@@ -9,12 +9,12 @@ from auth_server.config import load_config
 from auth_server.db.client import get_motor_client
 from auth_server.models.status import Status, StatusResponse
 
-__author__ = 'lundberg'
+__author__ = "lundberg"
 
 
 logger = logging.getLogger(__name__)
 
-status_router = APIRouter(prefix='/status')
+status_router = APIRouter(prefix="/status")
 
 
 async def _mongodb_health_check():
@@ -25,14 +25,14 @@ async def _mongodb_health_check():
 
     client = await get_motor_client()
     try:
-        await client.admin.command('ismaster')
+        await client.admin.command("ismaster")
         return True
     except ConnectionFailure as e:
-        logging.error(f'mongodb not healthy: {e}')
+        logging.error(f"mongodb not healthy: {e}")
         return False
 
 
-@status_router.get('/healthy', response_model=StatusResponse, response_model_exclude_unset=True)
+@status_router.get("/healthy", response_model=StatusResponse, response_model_exclude_unset=True)
 async def healthy():
     checks = [_mongodb_health_check()]
     check_results = await asyncio.gather(*checks)

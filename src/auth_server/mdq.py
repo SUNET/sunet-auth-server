@@ -18,15 +18,15 @@ if TYPE_CHECKING:
 from auth_server.models.gnap import Key, ProofMethod
 from auth_server.utils import get_values, hash_with, load_cert_from_str, serialize_certificate
 
-__author__ = 'lundberg'
+__author__ = "lundberg"
 
 
 logger = logging.getLogger(__name__)
 
 
 class KeyUse(str, Enum):
-    SIGNING = 'signing'
-    ENCRYPTION = 'encryption'
+    SIGNING = "signing"
+    ENCRYPTION = "encryption"
 
 
 class MDQBase(BaseModel):
@@ -40,7 +40,7 @@ class MDQCert(MDQBase):
     use: KeyUse
     cert: Certificate
 
-    @validator('cert', pre=True)
+    @validator("cert", pre=True)
     def deserialize_cert(cls, v: str) -> Certificate:
         if isinstance(v, Certificate):
             return v
@@ -49,14 +49,14 @@ class MDQCert(MDQBase):
     def dict(
         self,
         *,
-        include: Union['AbstractSetIntStr', 'MappingIntStrAny'] = None,
-        exclude: Union['AbstractSetIntStr', 'MappingIntStrAny'] = None,
+        include: Union["AbstractSetIntStr", "MappingIntStrAny"] = None,
+        exclude: Union["AbstractSetIntStr", "MappingIntStrAny"] = None,
         by_alias: bool = False,
         skip_defaults: bool = None,
         exclude_unset: bool = False,
         exclude_defaults: bool = False,
         exclude_none: bool = False,
-    ) -> 'DictStrAny':
+    ) -> "DictStrAny":
         # serialize Certificate on dict use
         d = super().dict(
             include=include,
@@ -67,7 +67,7 @@ class MDQCert(MDQBase):
             exclude_defaults=exclude_defaults,
             exclude_none=exclude_none,
         )
-        d['cert'] = serialize_certificate(d['cert'])
+        d["cert"] = serialize_certificate(d["cert"])
         return d
 
 
@@ -79,22 +79,22 @@ class MDQData(MDQBase):
 async def xml_mdq_get(entity_id: str, mdq_url: str) -> MDQData:
     # SHA1 hash and create hex representation of entity id
     entity_id_hash = hash_with(SHA1(), entity_id.encode())
-    identifier = f'{{sha1}}{entity_id_hash.hex()}'
-    logger.debug(f'mdq identifier: {identifier}')
+    identifier = f"{{sha1}}{entity_id_hash.hex()}"
+    logger.debug(f"mdq identifier: {identifier}")
 
     # Get xml from the MDQ service
-    headers = {'Accept': 'application/samlmetadata+xml'}
+    headers = {"Accept": "application/samlmetadata+xml"}
     session = aiohttp.ClientSession()
-    url = f'{mdq_url}/{identifier}'
-    logger.debug(f'Trying {url}')
+    url = f"{mdq_url}/{identifier}"
+    logger.debug(f"Trying {url}")
     try:
         response = await session.get(url=url, headers=headers)
     except aiohttp.ClientError as e:
-        logger.error(f'{url} failed: {e}')
+        logger.error(f"{url} failed: {e}")
         return MDQData()
 
     if response.status != 200:
-        logger.error(f'{mdq_url}/{identifier} returned {response.status}')
+        logger.error(f"{mdq_url}/{identifier} returned {response.status}")
         return MDQData()
 
     xml = await response.text()
@@ -105,14 +105,14 @@ async def xml_mdq_get(entity_id: str, mdq_url: str) -> MDQData:
         entity = xmltodict.parse(xml, process_namespaces=True)
         certs = []
         # Certs
-        for key_descriptor in get_values(key='urn:oasis:names:tc:SAML:2.0:metadata:KeyDescriptor', obj=entity):
-            use = list(get_values(key='@use', obj=key_descriptor))[0]
-            raw_cert = list(get_values(key='http://www.w3.org/2000/09/xmldsig#:X509Certificate', obj=key_descriptor))[0]
+        for key_descriptor in get_values(key="urn:oasis:names:tc:SAML:2.0:metadata:KeyDescriptor", obj=entity):
+            use = list(get_values(key="@use", obj=key_descriptor))[0]
+            raw_cert = list(get_values(key="http://www.w3.org/2000/09/xmldsig#:X509Certificate", obj=key_descriptor))[0]
             cert = load_cert_from_str(raw_cert)
             certs.append(MDQCert(use=KeyUse(use), cert=cert))
         return MDQData(certs=certs, metadata=entity)
     except (ExpatError, ValueError):  # TODO: handle exceptions properly
-        logger.exception(f'Failed to parse mdq entity: {entity_id}')
+        logger.exception(f"Failed to parse mdq entity: {entity_id}")
     return MDQData()
 
 
@@ -120,9 +120,9 @@ async def mdq_data_to_key(mdq_data: MDQData) -> Optional[Key]:
     signing_cert = [item.cert for item in mdq_data.certs if item.use == KeyUse.SIGNING]
     # There should only be one or zero signing certs
     if signing_cert:
-        logger.info(f'Found cert in metadata')
+        logger.info(f"Found cert in metadata")
         return Key(
             proof=ProofMethod.MTLS,
-            cert_S256=b64encode(signing_cert[0].fingerprint(algorithm=SHA256())).decode('utf-8'),
+            cert_S256=b64encode(signing_cert[0].fingerprint(algorithm=SHA256())).decode("utf-8"),
         )
     return None

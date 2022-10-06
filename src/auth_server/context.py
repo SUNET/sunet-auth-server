@@ -7,7 +7,7 @@ from fastapi.routing import APIRoute
 from jwcrypto import jws
 from pydantic import BaseModel
 
-__author__ = 'lundberg'
+__author__ = "lundberg"
 
 
 class Context(BaseModel):

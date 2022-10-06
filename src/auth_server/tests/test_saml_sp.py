@@ -26,33 +26,33 @@ from auth_server.saml2 import (
 )
 from auth_server.testing import MongoTemporaryInstance
 
-__author__ = 'lundberg'
+__author__ = "lundberg"
 
 from auth_server.time_utils import utc_now
 
 
 class TestSAMLSP(TestCase):
     def setUp(self) -> None:
-        self.datadir = Path(__file__).with_name('data') / 'saml'
+        self.datadir = Path(__file__).with_name("data") / "saml"
         self.mongo_db = MongoTemporaryInstance.get_instance()
         self.config: Dict[str, Any] = {
-            'testing': 'true',
-            'log_level': 'DEBUG',
-            'auth_token_issuer': 'http://testserver',
-            'mongo_uri': self.mongo_db.uri,
-            'pysaml2_config_path': f'{self.datadir}/saml2_settings.py',
-            'saml2_discovery_service_url': 'http://disco.localhost.test/ds/',
+            "testing": "true",
+            "log_level": "DEBUG",
+            "auth_token_issuer": "http://testserver",
+            "mongo_uri": self.mongo_db.uri,
+            "pysaml2_config_path": f"{self.datadir}/saml2_settings.py",
+            "saml2_discovery_service_url": "http://disco.localhost.test/ds/",
         }
         environ.update(self.config)
         self.app = init_auth_server_api()
         self.client = TestClient(self.app)
-        self.transaction_states = self.mongo_db.conn['auth_server']['transaction_states']
+        self.transaction_states = self.mongo_db.conn["auth_server"]["transaction_states"]
         self.test_transaction_state = TransactionState(
-            flow_name='test',
-            grant_request=GrantRequest(client=Client(key='test'), access_token=AccessTokenRequest(access=['test'])),
+            flow_name="test",
+            grant_request=GrantRequest(client=Client(key="test"), access_token=AccessTokenRequest(access=["test"])),
         )
         self.transaction_states.insert_one(self.test_transaction_state.dict(exclude_none=True))
-        self.test_idp = 'https://idp.example.com/simplesaml/saml2/idp/metadata.php'
+        self.test_idp = "https://idp.example.com/simplesaml/saml2/idp/metadata.php"
         self.outstanding_queries_cache = OutstandingQueriesCache(
             db_client=MongoClient(self.mongo_db.uri, tz_aware=True)
         )
@@ -60,45 +60,45 @@ class TestSAMLSP(TestCase):
             db_client=MongoClient(self.mongo_db.uri, tz_aware=True)
         )
         self.test_session_info = SessionInfo(
-            issuer='https://idp.example.com/simplesaml/saml2/idp/metadata.php',
+            issuer="https://idp.example.com/simplesaml/saml2/idp/metadata.php",
             authn_info=[
-                AuthnInfo(authn_class='https://refeds.org/profile/mfa', authn_authority=[], authn_instant=utc_now())
+                AuthnInfo(authn_class="https://refeds.org/profile/mfa", authn_authority=[], authn_instant=utc_now())
             ],
             name_id=NameID(
-                format='urn:oasis:names:tc:SAML:2.0:nameid-format:transient',
-                name_qualifier='',
-                sp_name_qualifier='http://test.localhost/saml2-metadata',
+                format="urn:oasis:names:tc:SAML:2.0:nameid-format:transient",
+                name_qualifier="",
+                sp_name_qualifier="http://test.localhost/saml2-metadata",
                 sp_provided_id=None,
-                id='1f87035b4c1325b296a53d92097e6b3fa36d7e30ee82e3fcb0680d60243c1f03',
+                id="1f87035b4c1325b296a53d92097e6b3fa36d7e30ee82e3fcb0680d60243c1f03",
             ),
             attributes=SAMLAttributes(
                 assurance=[
-                    'http://www.swamid.se/policy/assurance/al1',
-                    'http://www.swamid.se/policy/assurance/al2',
-                    'https://refeds.org/assurance',
-                    'https://refeds.org/assurance/ID/unique',
-                    'https://refeds.org/assurance/ID/eppn-unique-no-reassign',
-                    'https://refeds.org/assurance/IAP/low',
-                    'https://refeds.org/assurance/IAP/medium',
+                    "http://www.swamid.se/policy/assurance/al1",
+                    "http://www.swamid.se/policy/assurance/al2",
+                    "https://refeds.org/assurance",
+                    "https://refeds.org/assurance/ID/unique",
+                    "https://refeds.org/assurance/ID/eppn-unique-no-reassign",
+                    "https://refeds.org/assurance/IAP/low",
+                    "https://refeds.org/assurance/IAP/medium",
                 ],
-                common_name='Test Testaren Testsson',
-                country_code='se',
-                country_name='Sweden',
-                date_of_birth='19010203',
-                display_name='Testsson',
-                eppn='eppn@idp.example.com',
-                given_name='Test Testaren',
+                common_name="Test Testaren Testsson",
+                country_code="se",
+                country_name="Sweden",
+                date_of_birth="19010203",
+                display_name="Testsson",
+                eppn="eppn@idp.example.com",
+                given_name="Test Testaren",
                 home_organization=None,
                 home_organization_type=None,
-                mail='testsson@example.com',
-                nin='190102031234',
+                mail="testsson@example.com",
+                nin="190102031234",
                 organization_acronym=None,
                 organization_name=None,
-                personal_identity_number='190102031234',
+                personal_identity_number="190102031234",
                 scoped_affiliation=None,
-                surname='Testsson',
-                targeted_id='https://idp.example.com/simplesaml/saml2/idp/metadata.php!http://test.localhost/saml2-metadata!398f4967ef4ec07985d93a9200d3891184b9c0f6c79db53280894ae75673eab8',
-                unique_id='eppn@idp.example.com',
+                surname="Testsson",
+                targeted_id="https://idp.example.com/simplesaml/saml2/idp/metadata.php!http://test.localhost/saml2-metadata!398f4967ef4ec07985d93a9200d3891184b9c0f6c79db53280894ae75673eab8",
+                unique_id="eppn@idp.example.com",
             ),
         )
 
@@ -208,7 +208,7 @@ class TestSAMLSP(TestCase):
         environ.clear()
 
     def _get_transaction_state_by_id(self, transaction_id) -> TransactionState:
-        doc = self.transaction_states.find_one({'transaction_id': transaction_id})
+        doc = self.transaction_states.find_one({"transaction_id": transaction_id})
         assert doc is not None  # please mypy
         assert isinstance(doc, Mapping) is True  # please mypy
         return TransactionState(**doc)
@@ -225,52 +225,52 @@ class TestSAMLSP(TestCase):
         tomorrow = datetime.utcnow() + timedelta(days=1)
         yesterday = datetime.utcnow() - timedelta(days=1)
 
-        sp_baseurl = 'http://test.localhost/'
+        sp_baseurl = "http://test.localhost/"
 
-        resp = ' '.join(
+        resp = " ".join(
             saml_response_tpl.format(
                 **{
-                    'session_id': request_id,
-                    'timestamp': timestamp.strftime('%Y-%m-%dT%H:%M:%SZ'),
-                    'tomorrow': tomorrow.strftime('%Y-%m-%dT%H:%M:%SZ'),
-                    'yesterday': yesterday.strftime('%Y-%m-%dT%H:%M:%SZ'),
-                    'sp_url': sp_baseurl,
+                    "session_id": request_id,
+                    "timestamp": timestamp.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "tomorrow": tomorrow.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "yesterday": yesterday.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "sp_url": sp_baseurl,
                 }
             ).split()
         )
 
-        return resp.encode('utf-8')
+        return resp.encode("utf-8")
 
     def get_current_saml_request_id(self) -> str:
         ids = list(self.outstanding_queries_cache.keys())
         if len(ids) != 1:
-            raise RuntimeError('More or less than one authn request in the session')
+            raise RuntimeError("More or less than one authn request in the session")
         return ids[0]
 
     def test_authn_request(self):
-        authn_url = saml2_router.url_path_for('authenticate', transaction_id=self.test_transaction_state.transaction_id)
-        response = self.client.get(f'{authn_url}?idp={self.test_idp}', allow_redirects=False)
+        authn_url = saml2_router.url_path_for("authenticate", transaction_id=self.test_transaction_state.transaction_id)
+        response = self.client.get(f"{authn_url}?idp={self.test_idp}", allow_redirects=False)
         assert response.status_code == 303
         assert (
-            response.headers['location'].startswith(
-                'https://idp.example.com/simplesaml/saml2/idp/SSOService.php?SAMLRequest='
+            response.headers["location"].startswith(
+                "https://idp.example.com/simplesaml/saml2/idp/SSOService.php?SAMLRequest="
             )
             is True
         )
 
     def test_saml_acs(self):
         # do authn request
-        authn_url = saml2_router.url_path_for('authenticate', transaction_id=self.test_transaction_state.transaction_id)
-        self.client.get(f'{authn_url}?idp={self.test_idp}', allow_redirects=False)
+        authn_url = saml2_router.url_path_for("authenticate", transaction_id=self.test_transaction_state.transaction_id)
+        self.client.get(f"{authn_url}?idp={self.test_idp}", allow_redirects=False)
         auth_req_ref = self.get_current_saml_request_id()
         generated_authn_response = self.generate_auth_response(
             request_id=auth_req_ref, saml_response_tpl=self.saml_response_tpl_success
         )
         # simulate IdP response
-        data = {'SAMLResponse': base64.b64encode(generated_authn_response), 'RelayState': ''}
-        response = self.client.post(saml2_router.url_path_for('assertion_consumer_service'), data=data)
+        data = {"SAMLResponse": base64.b64encode(generated_authn_response), "RelayState": ""}
+        response = self.client.post(saml2_router.url_path_for("assertion_consumer_service"), data=data)
         assert response.status_code == 303
-        assert response.headers['location'].startswith('/interaction/redirect/') is True
+        assert response.headers["location"].startswith("/interaction/redirect/") is True
 
         # check authentication result
         transaction_state = self._get_transaction_state_by_id(self.test_transaction_state.transaction_id)
@@ -280,19 +280,19 @@ class TestSAMLSP(TestCase):
 
     def test_idp_discovery(self):
         # test initial redirect
-        authn_url = saml2_router.url_path_for('authenticate', transaction_id=self.test_transaction_state.transaction_id)
-        response = self.client.get(f'{authn_url}', allow_redirects=False)
+        authn_url = saml2_router.url_path_for("authenticate", transaction_id=self.test_transaction_state.transaction_id)
+        response = self.client.get(f"{authn_url}", allow_redirects=False)
         assert response.status_code == 303
-        assert response.headers['location'].startswith(self.config['saml2_discovery_service_url']) is True
-        parsed_redirect_url = urlparse(response.headers['location'])
+        assert response.headers["location"].startswith(self.config["saml2_discovery_service_url"]) is True
+        parsed_redirect_url = urlparse(response.headers["location"])
         parsed_redirect_qs = parse_qs(parsed_redirect_url.query)
-        assert parsed_redirect_qs['entityID'][0] == 'http://test.localhost/saml2-metadata'
+        assert parsed_redirect_qs["entityID"][0] == "http://test.localhost/saml2-metadata"
         assert (
-            parsed_redirect_qs['return'][0].startswith('http://testserver/saml2/sp/discovery-response/?target=') is True
+            parsed_redirect_qs["return"][0].startswith("http://testserver/saml2/sp/discovery-response/?target=") is True
         )
 
         # test discovery response
-        parsed_return_url = urlparse(parsed_redirect_qs['return'][0])
+        parsed_return_url = urlparse(parsed_redirect_qs["return"][0])
         parsed_return_qs = parse_qs(parsed_return_url.query)
         discovery_response_url = (
             f'{saml2_router.url_path_for("discovery_service_response")}'
@@ -301,13 +301,13 @@ class TestSAMLSP(TestCase):
         response2 = self.client.get(discovery_response_url, allow_redirects=False)
         assert response2.status_code == 303
         assert (
-            response2.headers['location'].startswith(
-                'https://idp.example.com/simplesaml/saml2/idp/SSOService.php?SAMLRequest='
+            response2.headers["location"].startswith(
+                "https://idp.example.com/simplesaml/saml2/idp/SSOService.php?SAMLRequest="
             )
             is True
         )
 
     def test_get_metadata(self):
-        response = self.client.get(saml2_router.url_path_for('metadata'))
-        assert response.headers['content-type'] == 'text/xml; charset=utf-8'
+        response = self.client.get(saml2_router.url_path_for("metadata"))
+        assert response.headers["content-type"] == "text/xml; charset=utf-8"
         assert response.text is not None

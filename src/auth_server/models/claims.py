@@ -6,7 +6,7 @@ from pydantic import Extra
 from auth_server.models.gnap import Access
 from auth_server.models.jose import RegisteredClaims
 
-__author__ = 'lundberg'
+__author__ = "lundberg"
 
 
 class Claims(RegisteredClaims):

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-__author__ = 'lundberg'
+__author__ = "lundberg"
 
 from collections.abc import MutableMapping
 from datetime import timedelta
@@ -23,10 +23,10 @@ class MongoCacheDB(object):
         self._coll_name = collection
         self._db = self._conn[db_name]
         self._coll = self._db[collection]
-        self._coll.create_index('lookup_key', unique=True)
-        self._coll.create_index('modified_ts', expireAfterSeconds=expire_after.seconds)
+        self._coll.create_index("lookup_key", unique=True)
+        self._coll.create_index("modified_ts", expireAfterSeconds=expire_after.seconds)
         if safe_writes:
-            self._coll = self._coll.with_options(write_concern=WriteConcern(w='majority'))
+            self._coll = self._coll.with_options(write_concern=WriteConcern(w="majority"))
 
     def _get_documents_by_filter(
         self,
@@ -71,11 +71,11 @@ class MongoCacheDB(object):
 
         :return: Document count
         """
-        args: Dict[Any, Any] = {'filter': {}}
+        args: Dict[Any, Any] = {"filter": {}}
         if spec:
-            args['filter'] = spec
+            args["filter"] = spec
         if limit:
-            args['limit'] = limit
+            args["limit"] = limit
         return self._coll.count_documents(**args)
 
     def all_items(self, fields: Optional[Union[Dict[str, bool], List[str]]]) -> Iterator[MutableMapping]:
@@ -86,30 +86,30 @@ class MongoCacheDB(object):
             yield doc
 
     def update_item(self, key: str, value: Any) -> None:
-        doc = {'lookup_key': key, 'data': value, 'modified_ts': utc_now()}
-        self._coll.replace_one({'lookup_key': key}, doc, upsert=True)
+        doc = {"lookup_key": key, "data": value, "modified_ts": utc_now()}
+        self._coll.replace_one({"lookup_key": key}, doc, upsert=True)
 
     def get_item(self, key: str) -> MutableMapping:
-        docs = self._get_documents_by_filter(spec={'lookup_key': key}, fields={'_id': False, 'data': True}, limit=1)
+        docs = self._get_documents_by_filter(spec={"lookup_key": key}, fields={"_id": False, "data": True}, limit=1)
         for doc in docs:
-            return doc['data']
+            return doc["data"]
         raise KeyError(key)
 
     def get_items(self) -> Iterator[Tuple[str, Any]]:
-        docs = self.all_items(fields={'_id': False, 'lookup_key': True, 'data': True})
+        docs = self.all_items(fields={"_id": False, "lookup_key": True, "data": True})
         for doc in docs:
-            yield doc['lookup_key'], doc['data']
+            yield doc["lookup_key"], doc["data"]
 
     def get_values(self) -> Iterator[Any]:
-        docs = self.all_items(fields={'_id': False, 'data': True})
+        docs = self.all_items(fields={"_id": False, "data": True})
         for doc in docs:
-            yield doc['data']
+            yield doc["data"]
 
     def remove_item(self, key: str) -> None:
-        self._coll.delete_one(filter={'lookup_key': key})
+        self._coll.delete_one(filter={"lookup_key": key})
 
     def contains_item(self, key: str) -> bool:
-        return bool(self.db_count(spec={'lookup_key': key}, limit=1))
+        return bool(self.db_count(spec={"lookup_key": key}, limit=1))
 
 
 class MongoCache(MutableMapping):
