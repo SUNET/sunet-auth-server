@@ -20,6 +20,8 @@ base_dir=${base_dir-'/opt/sunet'}
 project_dir=${project_dir-"${base_dir}/sunet-auth-server/src"}
 app_dir=${app_dir-"${project_dir}/${app_name}"}
 cfg_dir=${cfg_dir-"${base_dir}/etc"}
+username=${username-'sunet'}
+group=${group-'sunet'}
 # These *can* be set from Puppet, but are less expected to...
 log_dir=${log_dir-'/var/log/sunet'}
 state_dir=${state_dir-"${base_dir}/run"}
@@ -30,8 +32,8 @@ worker_timeout=${worker_timeout-30}
 # Need to tell Gunicorn to trust the X-Forwarded-* headers
 forwarded_allow_ips=${forwarded_allow_ips-'*'}
 
-test -d "${log_dir}" && chown -R sunet: "${log_dir}"
-test -d "${state_dir}" && chown -R sunet: "${state_dir}"
+test -d "${log_dir}" && chown -R ${username}:${group} "${log_dir}"
+test -d "${state_dir}" && chown -R ${username}:${group} "${state_dir}"
 
 # set PYTHONPATH if it is not already set using Docker environment
 export PYTHONPATH=${PYTHONPATH-${project_dir}}
@@ -53,10 +55,10 @@ fi
 echo ""
 echo "$0: Starting ${app_name}"
 
-exec start-stop-daemon --start -c sunet:sunet --exec \
+exec start-stop-daemon --start -c ${username}:${group} --exec \
      /opt/sunet/bin/gunicorn \
      --pidfile "${state_dir}/${app_name}.pid" \
-     --user=sunet --group=sunet -- \
+     --user=${username} --group=${group} -- \
      --bind 0.0.0.0:8080 \
      --workers "${workers}" --worker-class "${worker_class}" \
      --threads "${worker_threads}" --timeout "${worker_timeout}" \
