@@ -450,10 +450,6 @@ elementpath==3.0.2 \
     # via
     #   -c requirements.txt
     #   xmlschema
-exceptiongroup==1.0.1 \
-    --hash=sha256:4d6c0aa6dd825810941c792f53d7b8d71da26f5e5f84f20f9508e8f2d33b140a \
-    --hash=sha256:73866f7f842ede6cb1daa42c4af078e2035e5f7607f0e2c762cc51bb31bbe7b2
-    # via pytest
 executing==1.2.0 \
     --hash=sha256:0314a69e37426e3608aada02473b4161d4caf5a4b244d1d0c48072b8fee7bacc \
     --hash=sha256:19da64c18d2d851112f09c287f8d3dbbdf725ab0e569077efb6cdcbd3497c107
@@ -908,9 +904,9 @@ pydantic==1.10.2 \
     #   -c constraints.txt
     #   -c requirements.txt
     #   fastapi
-pygments==2.13.0 \
-    --hash=sha256:56a8508ae95f98e2b9bdf93a6be5ae3f7d8af858b43e02c5a2ff083726be40c1 \
-    --hash=sha256:f643f331ab57ba3c9d89212ee4a2dabc6e94f117cf4eefde99a0574720d14c42
+pygments==2.15.0 \
+    --hash=sha256:77a3299119af881904cd5ecd1ac6a66214b6e9bed1f2db16993b54adede64094 \
+    --hash=sha256:f7e36cffc4c517fbc252861b9a6e4644ca0e5abadf9a113c72d1358ad09b9500
     # via ipython
 pymongo==4.3.2 \
     --hash=sha256:006799ddba1f2e73ce27689f016791ab80e51876c52ae2265d8c76016baaa10e \
@@ -1117,13 +1113,6 @@ starlette==0.20.4 \
     # via
     #   -c requirements.txt
     #   fastapi
-tomli==2.0.1 \
-    --hash=sha256:939de3e7a6161af0c887ef91b7d41a53e7c5a1ca976325f429cb46ea9bc30ecc \
-    --hash=sha256:de526c12914f0c550d15924c62d72abc48d6fe7364aa87328337a31007fe8a4f
-    # via
-    #   coverage
-    #   mypy
-    #   pytest
 traitlets==5.5.0 \
     --hash=sha256:1201b2c9f76097195989cdf7f65db9897593b0dfd69e4ac96016661bb6f0d30f \
     --hash=sha256:b122f9ff2f2f6c1709dab289a05555be011c87828e911c0cf4074b85cb780a79
