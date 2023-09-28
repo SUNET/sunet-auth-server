@@ -70,7 +70,7 @@ async def user_code_finish(request: ContextRequest, user_code: Optional[str] = F
 
     # now that we have found the transaction state use the redirect endpoint to continue the user authentication
     redirect_url = request.url_for("redirect", transaction_id=transaction_state.transaction_id)
-    return RedirectResponse(redirect_url)
+    return RedirectResponse(status_code=303, url=redirect_url)
 
 
 async def finish_interaction(
