@@ -1,6 +1,6 @@
 SOURCE=src
 PYTHON=$(shell which python)
-PIPCOMPILE=pip-compile --generate-hashes --upgrade --extra-index-url https://pypi.sunet.se/simple
+PIPCOMPILE=pip-compile -v --generate-hashes --upgrade --extra-index-url https://pypi.sunet.se/simple
 PIPSYNC=pip-sync --index-url https://pypi.sunet.se/simple --python-executable $(PYTHON)
 
 test:
