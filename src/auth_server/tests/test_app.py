@@ -676,7 +676,7 @@ class TestAuthServer(TestCase):
         response = self.client.post(
             "/interaction/code", data={"user_code": interaction_response["user_code"]}, allow_redirects=False
         )
-        assert response.status_code == 307
+        assert response.status_code == 303
 
         transaction_id = response.headers["location"].split("http://testserver/interaction/redirect/")[1]
         redirect_interaction_endpoint = response.headers["location"]
@@ -718,7 +718,7 @@ class TestAuthServer(TestCase):
             data={"user_code": interaction_response["user_code_uri"]["code"]},
             allow_redirects=False,
         )
-        assert response.status_code == 307
+        assert response.status_code == 303
 
         transaction_id = response.headers["location"].split("http://testserver/interaction/redirect/")[1]
         redirect_interaction_endpoint = response.headers["location"]
