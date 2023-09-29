@@ -39,7 +39,6 @@ class BaseDB(object):
     """Base class for common db operations"""
 
     def __init__(self, db_client: AsyncIOMotorClient, db_name: str, collection: str, safe_writes: bool = False):
-
         self._conn = db_client
         self._db_name = db_name
         self._coll_name = collection

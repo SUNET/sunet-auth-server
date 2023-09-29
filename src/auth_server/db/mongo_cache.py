@@ -17,7 +17,6 @@ class MongoCacheDB(object):
     def __init__(
         self, db_client: MongoClient, db_name: str, collection: str, expire_after: timedelta, safe_writes: bool = False
     ):
-
         self._conn = db_client
         self._db_name = db_name
         self._coll_name = collection
