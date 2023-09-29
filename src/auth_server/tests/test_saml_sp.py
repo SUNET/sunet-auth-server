@@ -71,7 +71,7 @@ class TestSAMLSP(TestCase):
                 sp_provided_id=None,
                 id="1f87035b4c1325b296a53d92097e6b3fa36d7e30ee82e3fcb0680d60243c1f03",
             ),
-            attributes=SAMLAttributes(
+            attributes=SAMLAttributes(  # type: ignore[call-arg]
                 assurance=[
                     "http://www.swamid.se/policy/assurance/al1",
                     "http://www.swamid.se/policy/assurance/al2",

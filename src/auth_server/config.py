@@ -74,7 +74,7 @@ class AuthServerConfig(BaseSettings):
     transaction_state_expires_in: timedelta = Field(default="PT5M")
     pysaml2_config_path: Optional[Path] = Field(default=None)
     pysaml2_config_name: str = "SAML_CONFIG"
-    saml2_discovery_service_url: Optional[AnyUrl]
+    saml2_discovery_service_url: Optional[AnyUrl] = None
 
     @validator("application_root")
     def application_root_must_not_end_with_slash(cls, v: str):
@@ -106,7 +106,8 @@ def load_config() -> AuthServerConfig:
             data = read_config_file(config_file=config_file, config_ns=config_ns)
             config = AuthServerConfig.parse_obj(data)
         else:
-            config = AuthServerConfig()
+            # config will be instantiated with env vars if there is no config file
+            config = AuthServerConfig()  # type: ignore[call-arg]
         # Save config to a file in /dev/shm for introspection
         fd_int = os.open(f"/dev/shm/{config.app_name}_config.yaml", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with open(fd_int, "w") as fd:

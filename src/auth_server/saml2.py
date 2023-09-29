@@ -94,7 +94,8 @@ class SAMLAttributes(BaseModel):
         result: Dict[str, Union[str, List[str]]] = {}
         result.update(ava)
         result.update(single_values)
-        return cls(**result)
+        # what's up with pydantic typing, hopefully an upgrade to 2 will solve this
+        return cls(**result)  # type: ignore[arg-type]
 
 
 class SessionInfo(BaseModel):

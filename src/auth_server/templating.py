@@ -19,7 +19,7 @@ class TestableJinja2Templates(_Jinja2Templates):
         context: dict,
         status_code: int = 200,
         headers: Optional[Mapping[str, str]] = None,
-        media_type: str = None,
+        media_type: Optional[str] = None,
         background=None,
     ) -> _TemplateResponse:
         if "request" not in context:

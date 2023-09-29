@@ -48,13 +48,13 @@ class RegisteredClaims(BaseModel):
     https://tools.ietf.org/html/rfc7519#section-4.1
     """
 
-    iss: Optional[str]  # Issuer
-    sub: Optional[str]  # Subject
-    aud: Optional[str]  # Audience
+    iss: Optional[str] = None  # Issuer
+    sub: Optional[str] = None  # Subject
+    aud: Optional[str] = None  # Audience
     exp: Optional[timedelta]  # Expiration Time
     nbf: Optional[datetime] = Field(default_factory=utc_now)  # Not Before
     iat: Optional[datetime] = Field(default_factory=utc_now)  # Issued At
-    jti: Optional[str]  # JWT ID
+    jti: Optional[str] = None  # JWT ID
 
     def to_rfc7519(self):
         d = self.dict(exclude_none=True)
@@ -69,41 +69,41 @@ class RegisteredClaims(BaseModel):
 
 class JWK(BaseModel):
     kty: KeyType
-    use: Optional[KeyUse]
-    key_opts: Optional[List[KeyOptions]]
-    alg: Optional[str]
-    kid: Optional[str]
-    x5u: Optional[str]
-    x5c: Optional[str]
-    x5t: Optional[str]
-    x5tS256: Optional[str] = Field(alias="x5t#S256")
+    use: Optional[KeyUse] = None
+    key_opts: Optional[List[KeyOptions]] = None
+    alg: Optional[str] = None
+    kid: Optional[str] = None
+    x5u: Optional[str] = None
+    x5c: Optional[str] = None
+    x5t: Optional[str] = None
+    x5tS256: Optional[str] = Field(default=None, alias="x5t#S256")
 
 
 class ECJWK(JWK):
-    crv: Optional[str]
-    x: Optional[str]
-    y: Optional[str]
-    d: Optional[str]
-    n: Optional[str]
-    e: Optional[str]
+    crv: Optional[str] = None
+    x: Optional[str] = None
+    y: Optional[str] = None
+    d: Optional[str] = None
+    n: Optional[str] = None
+    e: Optional[str] = None
 
 
 class RSAJWK(JWK):
-    d: Optional[str]
-    n: Optional[str]
-    e: Optional[str]
-    p: Optional[str]
-    q: Optional[str]
-    dp: Optional[str]
-    dq: Optional[str]
-    qi: Optional[str]
-    oth: Optional[str]
-    r: Optional[str]
-    t: Optional[str]
+    d: Optional[str] = None
+    n: Optional[str] = None
+    e: Optional[str] = None
+    p: Optional[str] = None
+    q: Optional[str] = None
+    dp: Optional[str] = None
+    dq: Optional[str] = None
+    qi: Optional[str] = None
+    oth: Optional[str] = None
+    r: Optional[str] = None
+    t: Optional[str] = None
 
 
 class SymmetricJWK(JWK):
-    k: Optional[str]
+    k: Optional[str] = None
 
 
 # Workaround for mypy not liking Union[ECJWK, RSAJWK, SymmetricJWK] as response_model. It should work.
@@ -122,14 +122,14 @@ class SupportedJWSType(str, Enum):
 
 
 class JOSEHeader(BaseModel):
-    kid: Optional[str]
+    kid: Optional[str] = None
     alg: SupportedAlgorithms
-    jku: Optional[AnyUrl]
-    jwk: Optional[Union[ECJWK, RSAJWK, SymmetricJWK]]
-    x5u: Optional[str]
-    x5c: Optional[str]
-    x5t: Optional[str]
+    jku: Optional[AnyUrl] = None
+    jwk: Optional[Union[ECJWK, RSAJWK, SymmetricJWK]] = None
+    x5u: Optional[str] = None
+    x5c: Optional[str] = None
+    x5t: Optional[str] = None
     x5tS256: Optional[str] = Field(alias="x5t#S256")
-    typ: Optional[str]
-    cty: Optional[str]
-    crit: Optional[List]
+    typ: Optional[str] = None
+    cty: Optional[str] = None
+    crit: Optional[List] = None

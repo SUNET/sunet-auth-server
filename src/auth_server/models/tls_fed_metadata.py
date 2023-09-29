@@ -16,7 +16,7 @@ from auth_server.models.jose import JOSEHeader
 class TLSFEDJOSEHeader(JOSEHeader):
     iat: datetime
     exp: datetime
-    iss: Optional[str]
+    iss: Optional[str] = None
 
 
 class RegisteredExtensions(str, Enum):
@@ -32,7 +32,7 @@ class Extensions(BaseModel):
         extra = Extra.allow
         allow_population_by_field_name = True  # allow registered extension to also be set by name, not only by alias
 
-    saml_scope: Optional[SAMLScopeExtension] = Field(default=None, alias=RegisteredExtensions.SAML_SCOPE.value)
+    saml_scope: Optional[SAMLScopeExtension] = Field(default=None, alias=RegisteredExtensions.SAML_SCOPE.value)  # type: ignore[literal-required]
 
 
 class CertIssuers(BaseModel):
