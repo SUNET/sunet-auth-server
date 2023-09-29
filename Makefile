@@ -8,10 +8,10 @@ test:
 
 reformat:
 	isort --line-width 120 --atomic --project auth_server $(SOURCE)
-	black --line-length 120 --target-version py39 $(SOURCE)
+	black --line-length 120 --target-version py310 $(SOURCE)
 
 typecheck:
-	mypy --ignore-missing-imports $(SOURCE)
+	mypy --install-types --non-interactive --pretty --ignore-missing-imports --warn-unused-ignores $(SOURCE)
 
 sync_deps:
 	$(PIPSYNC) requirements.txt
