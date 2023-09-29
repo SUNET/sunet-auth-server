@@ -267,8 +267,10 @@ class TestSAMLSP(TestCase):
             request_id=auth_req_ref, saml_response_tpl=self.saml_response_tpl_success
         )
         # simulate IdP response
-        data = {"SAMLResponse": base64.b64encode(generated_authn_response), "RelayState": ""}
-        response = self.client.post(saml2_router.url_path_for("assertion_consumer_service"), data=data)
+        data = {"SAMLResponse": base64.b64encode(generated_authn_response).decode("utf-8"), "RelayState": ""}
+        response = self.client.post(
+            saml2_router.url_path_for("assertion_consumer_service"), data=data, follow_redirects=False
+        )
         assert response.status_code == 303
         assert response.headers["location"].startswith("/interaction/redirect/") is True
 
