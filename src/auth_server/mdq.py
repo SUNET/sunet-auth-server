@@ -15,7 +15,7 @@ from pyexpat import ExpatError
 if TYPE_CHECKING:
     from pydantic.typing import AbstractSetIntStr, MappingIntStrAny, DictStrAny
 
-from auth_server.models.gnap import Key, ProofMethod
+from auth_server.models.gnap import Key, Proof, ProofMethod
 from auth_server.utils import get_values, hash_with, load_cert_from_str, serialize_certificate
 
 __author__ = "lundberg"
@@ -49,10 +49,10 @@ class MDQCert(MDQBase):
     def dict(
         self,
         *,
-        include: Union["AbstractSetIntStr", "MappingIntStrAny"] = None,
-        exclude: Union["AbstractSetIntStr", "MappingIntStrAny"] = None,
+        include: Optional[Union["AbstractSetIntStr", "MappingIntStrAny"]] = None,
+        exclude: Optional[Union["AbstractSetIntStr", "MappingIntStrAny"]] = None,
         by_alias: bool = False,
-        skip_defaults: bool = None,
+        skip_defaults: Optional[bool] = None,
         exclude_unset: bool = False,
         exclude_defaults: bool = False,
         exclude_none: bool = False,
@@ -120,9 +120,9 @@ async def mdq_data_to_key(mdq_data: MDQData) -> Optional[Key]:
     signing_cert = [item.cert for item in mdq_data.certs if item.use == KeyUse.SIGNING]
     # There should only be one or zero signing certs
     if signing_cert:
-        logger.info(f"Found cert in metadata")
-        return Key(
-            proof=ProofMethod.MTLS,
+        logger.info("Found cert in metadata")
+        return Key(  # type: ignore[call-arg]
+            proof=Proof(method=ProofMethod.MTLS),
             cert_S256=b64encode(signing_cert[0].fingerprint(algorithm=SHA256())).decode("utf-8"),
         )
     return None

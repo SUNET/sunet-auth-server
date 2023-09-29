@@ -71,7 +71,7 @@ class TestSAMLSP(TestCase):
                 sp_provided_id=None,
                 id="1f87035b4c1325b296a53d92097e6b3fa36d7e30ee82e3fcb0680d60243c1f03",
             ),
-            attributes=SAMLAttributes(
+            attributes=SAMLAttributes(  # type: ignore[call-arg]
                 assurance=[
                     "http://www.swamid.se/policy/assurance/al1",
                     "http://www.swamid.se/policy/assurance/al2",
@@ -267,8 +267,10 @@ class TestSAMLSP(TestCase):
             request_id=auth_req_ref, saml_response_tpl=self.saml_response_tpl_success
         )
         # simulate IdP response
-        data = {"SAMLResponse": base64.b64encode(generated_authn_response), "RelayState": ""}
-        response = self.client.post(saml2_router.url_path_for("assertion_consumer_service"), data=data)
+        data = {"SAMLResponse": base64.b64encode(generated_authn_response).decode("utf-8"), "RelayState": ""}
+        response = self.client.post(
+            saml2_router.url_path_for("assertion_consumer_service"), data=data, follow_redirects=False
+        )
         assert response.status_code == 303
         assert response.headers["location"].startswith("/interaction/redirect/") is True
 

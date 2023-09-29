@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from auth_server.db.client import BaseDB, get_motor_client
 from auth_server.mdq import MDQData
-from auth_server.models.gnap import Access, GNAPJOSEHeader, GrantRequest, GrantResponse
+from auth_server.models.gnap import Access, GrantRequest, GrantResponse
 from auth_server.saml2 import SessionInfo
 from auth_server.time_utils import utc_now
 from auth_server.tls_fed_auth import MetadataEntity
@@ -41,17 +41,17 @@ class TransactionState(BaseModel, ABC):
     flow_state: FlowState = Field(default=FlowState.PROCESSING)
     grant_request: GrantRequest
     grant_response: GrantResponse = Field(default_factory=GrantResponse)
-    key_reference: Optional[str]
+    key_reference: Optional[str] = None
     proof_ok: bool = False
     requested_access: List[Union[str, Access]] = Field(default_factory=list)
-    saml_assertion: Optional[SessionInfo]
-    interaction_reference: Optional[str]
-    user_code: Optional[str]
-    continue_reference: Optional[str]
-    continue_access_token: Optional[str]
+    saml_assertion: Optional[SessionInfo] = None
+    interaction_reference: Optional[str] = None
+    user_code: Optional[str] = None
+    continue_reference: Optional[str] = None
+    continue_access_token: Optional[str] = None
     # meta
     flow_name: str
-    flow_step: Optional[str]
+    flow_step: Optional[str] = None
     created_at: datetime = Field(default_factory=utc_now)
     expires_at: datetime = Field(default_factory=utc_now)  # default to now, set new expire_at when saving the state
 

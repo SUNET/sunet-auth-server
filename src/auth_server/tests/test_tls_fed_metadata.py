@@ -37,9 +37,8 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
             self.tls_fed_jwks = jwk.JWKSet()
             self.tls_fed_jwks.import_keyset(f.read())
 
-        # mypy bug, file is opened as bytes not str: https://issueexplorer.com/issue/python/mypy/11193
-        with open(f"{self.datadir}/test.cert", "rb") as f:  # type: ignore
-            self.client_cert = x509.load_pem_x509_certificate(data=f.read())  # type: ignore
+        with open(f"{self.datadir}/test.cert", "rb") as f:
+            self.client_cert = x509.load_pem_x509_certificate(data=f.read())
         self.client_cert_str = base64.b64encode(self.client_cert.public_bytes(encoding=Encoding.DER)).decode("utf-8")
 
     async def _load_metadata(

@@ -97,7 +97,9 @@ async def finish_interaction(
             client_nonce=transaction_state.grant_request.interact.finish.nonce,
             as_nonce=transaction_state.grant_response.interact.finish,
             interact_ref=interact_ref,
-            transaction_url=request.url_for("transaction"),
+            transaction_url=str(
+                request.url_for("transaction"),
+            ),
         )
 
         # redirect method

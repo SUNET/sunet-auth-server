@@ -106,7 +106,6 @@ async def check_jwsd_proof(
     key_reference: Optional[str] = None,
     access_token: Optional[str] = None,
 ) -> bool:
-
     if request.context.detached_jws is None:
         raise HTTPException(status_code=400, detail="No detached JWS found")
 

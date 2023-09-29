@@ -134,11 +134,14 @@ class TestAuthServer(TestCase):
 
     def _fake_saml_authentication(self, transaction_id: str):
         transaction_state = self._get_transaction_state_by_id(transaction_id)
-        attributes = SAMLAttributes(eppn="test@example.com", unique_id="test@example.com", targeted_id="idp!sp!unique")
+        # seems like mypy no longer understands allow_population_by_field_name
+        attributes = SAMLAttributes(eppn="test@example.com", unique_id="test@example.com", targeted_id="idp!sp!unique")  # type: ignore[call-arg]
         name_id = NameID(
             format="urn:oasis:names:tc:SAML:2.0:nameid-format:transient",
             sp_name_qualifier="http://test.localhost/saml2-metadata",
             id="some_id",
+            name_qualifier="some_name_qualifer",
+            sp_provided_id="some_other_id",
         )
         transaction_state.saml_assertion = SessionInfo(
             issuer="https://idp.example.com", attributes=attributes, name_id=name_id

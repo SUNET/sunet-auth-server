@@ -3,12 +3,11 @@ from __future__ import annotations
 
 import logging
 from abc import ABC
-from typing import Any, List, Mapping, Optional, Union, cast
+from typing import Any, List, Mapping, Optional, Union
 
 from fastapi import HTTPException
 from jwcrypto import jwt
 from jwcrypto.jwk import JWK
-from pydantic import AnyUrl
 
 from auth_server.config import AuthServerConfig
 from auth_server.context import ContextRequest
@@ -296,8 +295,8 @@ class CommonFlow(BaseAuthFlow):
 
         # return all mutually supported interaction methods according to draft
         if StartInteractionMethod.REDIRECT in start_methods:
-            interaction_response.redirect = cast(
-                AnyUrl, self.request.url_for("redirect", transaction_id=self.state.transaction_id)
+            interaction_response.redirect = str(
+                self.request.url_for("redirect", transaction_id=self.state.transaction_id)
             )
         if StartInteractionMethod.USER_CODE in start_methods or StartInteractionMethod.USER_CODE_URI in start_methods:
             self.state.user_code = get_hex_uuid4(length=8)
@@ -305,7 +304,7 @@ class CommonFlow(BaseAuthFlow):
                 interaction_response.user_code = self.state.user_code
             if StartInteractionMethod.USER_CODE_URI in start_methods:
                 interaction_response.user_code_uri = UserCodeURI(
-                    code=self.state.user_code, uri=cast(AnyUrl, self.request.url_for("user_code_input"))
+                    code=self.state.user_code, uri=str(self.request.url_for("user_code_input"))
                 )
 
         # finish method can be one or zero
@@ -329,7 +328,7 @@ class CommonFlow(BaseAuthFlow):
         # TODO: create jwt for continue access token?
         self.state.continue_access_token = get_hex_uuid4()
         continue_response = Continue(
-            uri=cast(AnyUrl, continue_url),
+            uri=str(continue_url),
             wait=wait,
             access_token=ContinueAccessToken(value=self.state.continue_access_token),
         )

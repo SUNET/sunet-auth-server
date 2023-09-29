@@ -51,7 +51,6 @@ def create_tls_fed_metadata(
     organization_id: str = "SE0123456789",
     scopes: Optional[List[str]] = None,
 ) -> TLSFEDMetadata:
-
     if scopes is None:
         scopes = list()
 

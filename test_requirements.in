@@ -1,12 +1,9 @@
 -r requirements.in
--c requirements.txt
 requests
 pytest-cov>=2.7.1
 pytest>=5.2.0
+httpx
 mypy
-# type stubs for mypy
-types-PyYAML
-types-pkg_resources
-types-cryptography
-types-aiofiles
-types-python-dateutil
+
+# missing types
+motor-types

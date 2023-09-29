@@ -15,7 +15,7 @@ from jwcrypto import jwk, jws
 from pydantic import BaseModel, ValidationError
 
 from auth_server.config import load_config
-from auth_server.models.gnap import Key, ProofMethod
+from auth_server.models.gnap import Key, Proof, ProofMethod
 from auth_server.models.tls_fed_metadata import Entity
 from auth_server.models.tls_fed_metadata import Model as TLSFEDMetadataModel
 from auth_server.models.tls_fed_metadata import TLSFEDJOSEHeader
@@ -29,12 +29,12 @@ logger = logging.getLogger(__name__)
 class MetadataSource(BaseModel):
     issued_at: datetime
     expires_at: datetime
-    issuer: str
+    issuer: Optional[str] = None
     metadata: TLSFEDMetadataModel
 
 
 class MetadataEntity(Entity):
-    issuer: str
+    issuer: Optional[str] = None
     expires_at: datetime
     # organization_id should be part of the Entity schema
     organization_id: str
@@ -120,7 +120,7 @@ async def load_metadata_source(
         try:
             jose_headers.append(TLSFEDJOSEHeader.parse_obj(item))
         except ValidationError:
-            logger.exception(f"header could not be validated")
+            logger.exception("header could not be validated")
             continue
 
     # verify jws
@@ -133,11 +133,11 @@ async def load_metadata_source(
             jose_header = header
             break
         except jws.InvalidJWSSignature:
-            logger.debug(f"")
+            logger.debug("invalid JWS signature")
             continue
 
     if not verified:
-        logger.exception(f"metadata could not be verified")
+        logger.exception("metadata could not be verified")
         return None
 
     # validate jws
@@ -269,8 +269,8 @@ async def entity_to_key(entity: Optional[MetadataEntity]) -> Optional[Key]:
     if certs:
         # TODO: how do we handle multiple certs?
         logger.info(f"Found cert in metadata")
-        return Key(
-            proof=ProofMethod.MTLS,
+        return Key(  # type: ignore[call-arg]
+            proof=Proof(method=ProofMethod.MTLS),
             cert_S256=base64.b64encode(certs[0].fingerprint(algorithm=SHA256())).decode("utf-8"),
         )
     return None

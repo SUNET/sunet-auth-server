@@ -1,6 +1,6 @@
 SOURCE=src
 PYTHON=$(shell which python)
-PIPCOMPILE=pip-compile --generate-hashes --upgrade --extra-index-url https://pypi.sunet.se/simple
+PIPCOMPILE=pip-compile -v --generate-hashes --upgrade --extra-index-url https://pypi.sunet.se/simple
 PIPSYNC=pip-sync --index-url https://pypi.sunet.se/simple --python-executable $(PYTHON)
 
 test:
@@ -8,10 +8,10 @@ test:
 
 reformat:
 	isort --line-width 120 --atomic --project auth_server $(SOURCE)
-	black --line-length 120 --target-version py39 $(SOURCE)
+	black --line-length 120 --target-version py310 $(SOURCE)
 
 typecheck:
-	mypy --ignore-missing-imports $(SOURCE)
+	mypy --install-types --non-interactive --pretty --ignore-missing-imports --warn-unused-ignores $(SOURCE)
 
 sync_deps:
 	$(PIPSYNC) requirements.txt
