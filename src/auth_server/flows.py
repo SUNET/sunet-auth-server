@@ -176,6 +176,7 @@ class BaseAuthFlow(ABC):
         )
         if self.state.saml_assertion is not None:
             claims.saml_issuer = self.state.saml_assertion.issuer
+            claims.saml_assurance = self.state.saml_assertion.attributes.assurance
             # return either eppn, unique_id or targeted_id, in that order
             if self.state.saml_assertion.attributes.eppn:
                 claims.saml_eppn = self.state.saml_assertion.attributes.eppn

@@ -15,6 +15,7 @@ class Claims(RegisteredClaims):
     origins: Optional[List[str]] = None  # What should we use this for?
     requested_access: Optional[List[Union[str, Access]]] = None
     saml_issuer: Optional[str] = None
+    saml_assurance: Optional[list[str]] = None
     saml_eppn: Optional[str] = None
     saml_unique_id: Optional[str] = None
     saml_targeted_id: Optional[str] = None
