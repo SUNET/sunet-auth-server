@@ -96,7 +96,7 @@ async def discovery_service_response(
     logger.debug(f"discovery response target: {target}, entityID: {entity_id}")
 
     authn_id = AuthnRequestRef(target)
-    # check if this response if from an ongoing authentication request
+    # check if this response is from an ongoing authentication request
     if authn_id not in saml2_sp.authn_req_cache:
         logger.error(f"Could not find target: {target}")
         raise HTTPException(status_code=400, detail="authentication request target not found")

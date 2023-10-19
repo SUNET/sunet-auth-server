@@ -938,10 +938,10 @@ class TestAuthServer(TestCase):
             key=self.client_jwk,
             protected=json.dumps(jws_header),
         )
-        data = _jws.serialize(compact=True)
+        content = _jws.serialize(compact=True)
 
         client_header = {"Content-Type": "application/jose+json"}
-        response = self.client.post("/transaction", data=data, headers=client_header)
+        response = self.client.post("/transaction", content=content, headers=client_header)
         assert response.status_code == 200
 
         # continue response with no continue reference in uri
@@ -981,7 +981,7 @@ class TestAuthServer(TestCase):
         continue_data = _jws.serialize(compact=True)
         authorization_header = f'GNAP {continue_response["access_token"]["value"]}'
         client_header["Authorization"] = authorization_header
-        response = self.client.post(continue_response["uri"], data=continue_data, headers=client_header)
+        response = self.client.post(continue_response["uri"], content=continue_data, headers=client_header)
 
         assert response.status_code == 200
         assert "access_token" in response.json()
@@ -1022,7 +1022,7 @@ class TestAuthServer(TestCase):
         data = _jws.serialize(compact=True)
 
         # Remove payload from serialized jws
-        header, payload, signature = data.split(".")
+        header, _, signature = data.split(".")
         client_header = {"Detached-JWS": f"{header}..{signature}"}
 
         response = self.client.post("/transaction", json=req.dict(exclude_unset=True), headers=client_header)
@@ -1065,7 +1065,7 @@ class TestAuthServer(TestCase):
         continue_data = _jws.serialize(compact=True)
 
         # Remove payload from serialized jws
-        continue_header, continue_payload, continue_signature = continue_data.split(".")
+        continue_header, _, continue_signature = continue_data.split(".")
         client_header = {"Detached-JWS": f"{continue_header}..{continue_signature}"}
 
         authorization_header = f'GNAP {continue_response["access_token"]["value"]}'
