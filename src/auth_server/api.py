@@ -69,5 +69,7 @@ def init_auth_server_api() -> AuthServer:
     app.include_router(interaction_router)
     app.include_router(saml2_router)
     app.include_router(status_router)
-    app.mount("/static", StaticFiles(packages=["auth_server"]), name="static")  # defaults to the "statics" directory
+    app.mount(
+        "/static", StaticFiles(packages=["auth_server"]), name="static"
+    )  # defaults to the "statics" directory (the ending s is not a mistake) because starlette says so
     return app
