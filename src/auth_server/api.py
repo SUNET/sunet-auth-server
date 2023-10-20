@@ -3,6 +3,7 @@ import logging
 from typing import Dict, Type, cast
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 
 from auth_server.config import AuthServerConfig, ConfigurationError, FlowName, load_config
@@ -65,6 +66,13 @@ def init_auth_server_api() -> AuthServer:
     app = AuthServer()
     app.router.route_class = ContextRequestRoute
     app.add_middleware(JOSEMiddleware)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     app.include_router(root_router)
     app.include_router(interaction_router)
     app.include_router(saml2_router)
