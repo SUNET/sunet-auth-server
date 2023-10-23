@@ -294,7 +294,7 @@ async def process_assertion(saml_response: str) -> Optional[AssertionData]:
     logger.debug(f"authn response: {response}")
 
     if authn_ref not in saml2_sp.authn_req_cache:
-        logger.info(f"Unknown response")
+        logger.info("Unknown response")
         raise BadSAMLResponse("Unknown response")
 
     session_info = SessionInfo.from_pysaml2(response.session_info())

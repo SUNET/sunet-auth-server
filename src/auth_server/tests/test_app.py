@@ -278,7 +278,7 @@ class TestAuthServer(TestCase):
         data = _jws.serialize(compact=True)
 
         client_header = {"Content-Type": "application/jose+json"}
-        response = self.client.post("/transaction", data=data, headers=client_header)
+        response = self.client.post("/transaction", content=data, headers=client_header)
 
         assert response.status_code == 200
         assert "access_token" in response.json()
@@ -309,7 +309,7 @@ class TestAuthServer(TestCase):
         data = _jws.serialize(compact=True)
 
         # Remove payload from serialized jws
-        header, payload, signature = data.split(".")
+        header, _, signature = data.split(".")
         client_header = {"Detached-JWS": f"{header}..{signature}"}
 
         response = self.client.post("/transaction", json=req.dict(exclude_unset=True), headers=client_header)

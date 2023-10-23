@@ -124,11 +124,9 @@ async def check_jwsd_proof(
         # rebuilding the request as that was what was signed
         assert isinstance(gnap_request_orig.client, Client)  # please mypy
         gnap_request_orig.client.key = key_reference
-        payload = base64url_encode(gnap_request_orig.json(exclude_unset=True))
-    else:
-        payload = base64url_encode(gnap_request_orig.json(exclude_unset=True))
 
     logger.debug(f"gnap_request_orig: {gnap_request_orig.json(exclude_unset=True)}")
+    payload = base64url_encode(gnap_request_orig.json(exclude_unset=True))
     raw_jws = f"{header}.{payload}.{signature}"
     _jws = jws.JWS()
 
