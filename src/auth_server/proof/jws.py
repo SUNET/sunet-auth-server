@@ -128,6 +128,7 @@ async def check_jwsd_proof(
     else:
         payload = base64url_encode(gnap_request_orig.json(exclude_unset=True))
 
+    logger.debug(f"gnap_request_orig: {gnap_request_orig.json(exclude_unset=True)}")
     raw_jws = f"{header}.{payload}.{signature}"
     _jws = jws.JWS()
 
