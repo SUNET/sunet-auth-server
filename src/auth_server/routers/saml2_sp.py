@@ -101,9 +101,10 @@ async def discovery_service_response(
         logger.error(f"Could not find target: {target}")
         raise HTTPException(status_code=400, detail="authentication request target not found")
 
-    # discovery response seems to check out, use entityid as idp
-    _configured_idps = saml2_sp.client.config.metadata.identity_providers()
-    if entity_id not in _configured_idps:
+    # discovery response seems to check out, check if entity_id is in metadata
+    try:
+        _found_idp = saml2_sp.client.metadata[entity_id]
+    except KeyError:
         logger.error(f"Unknown SAML2 idp: {entity_id} not in metadata")
         raise HTTPException(status_code=400, detail="requested IdP not found in metadata")
 
