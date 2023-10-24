@@ -120,7 +120,7 @@ class BaseAuthFlow(ABC):
             logger.debug(f"step {flow_step} done, next step will be called")
         return None
 
-    async def continue_transaction(self, continue_request: ContinueRequest):
+    async def continue_transaction(self, continue_request: ContinueRequest) -> Optional[GrantResponse]:
         # check the client authentication for the continuation request against the same key used for the grant request
         self.state.proof_ok = await self.check_proof(
             gnap_key=self.state.grant_request.client.key, gnap_request=continue_request
@@ -326,7 +326,6 @@ class CommonFlow(BaseAuthFlow):
             )
             wait = 30  # I guess it takes at least 30 seconds for a user to authenticate
 
-        # TODO: create jwt for continue access token?
         self.state.continue_access_token = get_hex_uuid4()
         continue_response = Continue(
             uri=str(continue_url),

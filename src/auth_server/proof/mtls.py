@@ -27,16 +27,19 @@ async def check_mtls_proof(gnap_key: Key, cert: str) -> bool:
     if gnap_key.cert_S256 is not None:
         logger.debug(f"cert#S256: {gnap_key.cert_S256}")
         if tls_fingerprint == gnap_key.cert_S256:
-            logger.info(f"TLS cert fingerprint matches grant request cert#S256")
+            logger.info("TLS cert fingerprint matches grant request cert#S256")
             return True
-        logger.info(f"TLS cert fingerprint does NOT match grant request cert#S256")
+        logger.info("TLS cert fingerprint does NOT match grant request cert#S256")
     elif gnap_key.cert is not None:
         grant_cert = load_cert_from_str(gnap_key.cert)
         grant_cert_fingerprint = b64encode(grant_cert.fingerprint(algorithm=SHA256())).decode("utf-8")
         logger.debug(f"grant cert fingerprint: {grant_cert_fingerprint}")
         if tls_fingerprint == grant_cert_fingerprint:
-            logger.info(f"TLS cert fingerprint matches grant request cert fingerprint")
+            logger.info("TLS cert fingerprint matches grant request cert fingerprint")
             return True
-        logger.info(f"TLS cert fingerprint does NOT match grant request cert fingerprint")
+        logger.info("TLS cert fingerprint does NOT match grant request cert fingerprint")
 
+    logger.info("TLS cert does NOT match grant request cert")
+    logger.debug(f"tried gnap_key.cert_S256: {bool(gnap_key.cert_S256)}")
+    logger.debug(f"tried gnap_key.cert: {bool(gnap_key.cert)}")
     return False

@@ -130,16 +130,19 @@ async def continue_transaction(
         raise HTTPException(status_code=404, detail="transaction not found")
 
     transaction_state = TransactionState(**transaction_doc)
+    logger.debug(f"transaction_state loaded: {transaction_state}")
 
     # check continue access token
     if authorization != f"GNAP {transaction_state.continue_access_token}":
         raise HTTPException(status_code=401, detail="permission denied")
 
-    # return continue response again if interaction is not completed
+    # return continue response again if interaction is not completed or interaction reference is not used
     if transaction_state.flow_state != FlowState.APPROVED:
-        # TODO: update expires_in and return error message to clients not waiting long enough
+        logger.debug(f"transaction state: {transaction_state.flow_state}. Can not continue yet.")
+        # TODO: update expires_in, auth token and return error message to clients not waiting long enough
         return transaction_state.grant_response
 
+    logger.debug(f"transaction state: {transaction_state.flow_state}. Continuing flow")
     # initialize flow to continue
     auth_flow_name = transaction_state.flow_name
     auth_flow = request.app.auth_flows.get(auth_flow_name)
