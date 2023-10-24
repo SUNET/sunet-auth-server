@@ -92,7 +92,7 @@ async def transaction(
 @root_router.post("/continue", response_model=GrantResponse, response_model_exclude_none=True)
 async def continue_transaction(
     request: ContextRequest,
-    continue_req: ContinueRequest,
+    continue_req: Optional[ContinueRequest] = None,
     continue_reference: Optional[str] = None,
     client_cert: Optional[str] = Header(None),
     detached_jws: Optional[str] = Header(None),
