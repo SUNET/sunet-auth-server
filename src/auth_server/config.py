@@ -71,7 +71,7 @@ class AuthServerConfig(BaseSettings):
     proof_jws_max_age: timedelta = Field(default="PT5M")
     client_keys: Dict[str, ClientKey] = Field(default_factory=dict)
     mongo_uri: Optional[str] = None
-    transaction_state_expires_in: timedelta = Field(default="PT5M")
+    transaction_state_expires_in: timedelta = Field(default="PT10M")
     pysaml2_config_path: Optional[Path] = Field(default=None)
     pysaml2_config_name: str = "SAML_CONFIG"
     saml2_discovery_service_url: Optional[AnyUrl] = None
