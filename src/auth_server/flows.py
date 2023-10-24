@@ -388,6 +388,10 @@ class CommonFlow(BaseAuthFlow):
             raise NextFlowException(status_code=400, detail="transaction not approved, can not finalize it")
 
         self.state.flow_state = FlowState.FINALIZED
+        # no interaction or continuation is allowed in finalized state
+        self.state.grant_response.interact = None
+        self.state.grant_response.continue_ = None
+        logger.debug(f"transaction flow state set to: {self.state.flow_state}")
         transaction_state_db = await get_transaction_state_db()
         if transaction_state_db is not None:
             # Save transaction state for as long as the token is valid
