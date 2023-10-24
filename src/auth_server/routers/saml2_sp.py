@@ -15,6 +15,7 @@ from auth_server.context import ContextRequest, ContextRequestRoute
 from auth_server.db.transaction_state import get_transaction_state_db
 from auth_server.routers.interaction import interaction_router
 from auth_server.saml2 import (
+    SAML2SP,
     AuthnRequestRef,
     BadSAMLResponse,
     get_authn_request,
@@ -34,24 +35,26 @@ templates = TestableJinja2Templates(directory=str(Path(__file__).with_name("temp
 async def authenticate(
     request: ContextRequest,
     transaction_id: Optional[str],
-    idp: Optional[str] = None,
 ):
     saml2_sp = await get_saml2_sp()
     if saml2_sp is None:
         # there is no pysaml2 config or any database available
         raise HTTPException(status_code=400, detail="SAML authentication not configured")
 
+    # use single IdP config option if set
+    idp = saml2_sp.single_idp
+
     # create a unique authn req reference to map this request to the current transaction
-    _authn_id = AuthnRequestRef(str(uuid.uuid4()))
-    saml2_sp.authn_req_cache[_authn_id] = transaction_id
-    logger.debug(f"Stored authn request[{_authn_id}]: {saml2_sp.authn_req_cache[_authn_id]}")
+    authn_id = AuthnRequestRef(str(uuid.uuid4()))
+    saml2_sp.authn_req_cache[authn_id] = transaction_id
+    logger.debug(f"Stored authn request[{authn_id}]: {saml2_sp.authn_req_cache[authn_id]}")
 
     if idp is None:
         # No IdP requested, send user to discovery service
         if saml2_sp.discovery_service_url is None:
-            logger.error(f"No IdP requested and no discovery service configured")
+            logger.error("No IdP requested and no discovery service configured")
             raise HTTPException(status_code=400, detail="no IdP requested")
-        return_url = f'{request.url_for("discovery_service_response")}/?target={_authn_id}'
+        return_url = f'{request.url_for("discovery_service_response")}/?target={authn_id}'
         logger.debug(f"discovery service return_url: {return_url}")
         discovery_service_redirect_url = saml2_sp.client.create_discovery_service_request(
             url=saml2_sp.discovery_service_url, entity_id=saml2_sp.client.config.entityid, return_url=return_url
@@ -59,25 +62,7 @@ async def authenticate(
         logger.debug(f"discovery service redirect url: {discovery_service_redirect_url}")
         return RedirectResponse(discovery_service_redirect_url, status_code=303)
 
-    _configured_idps = saml2_sp.client.config.metadata.identity_providers()
-    if idp not in _configured_idps:
-        logger.error(f"Unknown SAML2 idp: {idp} not in metadata")
-        raise HTTPException(status_code=400, detail="requested IdP not found in metadata")
-
-    logger.info(f"creating authn request, idp {idp} will be used")
-    authn_request = await get_authn_request(
-        relay_state="",
-        authn_id=_authn_id,
-        selected_idp=idp,
-        force_authn=True,
-        sign_alg=saml2_sp.authn_sign_alg,
-        digest_alg=saml2_sp.authn_digest_alg,
-    )
-
-    idp_redirect_url = await get_redirect_url(authn_request)
-    logger.info(f"redirecting user to the IdP")
-    logger.debug(f"idp_redirect_url: {idp_redirect_url}")
-    return RedirectResponse(idp_redirect_url, status_code=303)
+    return await redirect_to_idp(saml2_sp=saml2_sp, authn_id=authn_id, idp_entity_id=idp)
 
 
 @saml2_router.get("/sp/discovery-response", response_class=HTMLResponse)
@@ -101,18 +86,22 @@ async def discovery_service_response(
         logger.error(f"Could not find target: {target}")
         raise HTTPException(status_code=400, detail="authentication request target not found")
 
-    # discovery response seems to check out, check if entity_id is in metadata
+    # discovery response seems to check out, send user to the IdP
+    return await redirect_to_idp(saml2_sp=saml2_sp, authn_id=authn_id, idp_entity_id=entity_id)
+
+
+async def redirect_to_idp(saml2_sp: SAML2SP, authn_id: AuthnRequestRef, idp_entity_id: str) -> Response:
     try:
-        _found_idp = saml2_sp.client.metadata[entity_id]
+        _found_idp = saml2_sp.client.metadata[idp_entity_id]
     except KeyError:
-        logger.error(f"Unknown SAML2 idp: {entity_id} not in metadata")
+        logger.error(f"Unknown SAML2 idp: {idp_entity_id} not in metadata")
         raise HTTPException(status_code=400, detail="requested IdP not found in metadata")
 
-    logger.info(f"creating authn request, idp {entity_id} will be used")
+    logger.info(f"creating authn request, idp {idp_entity_id} will be used")
     authn_request = await get_authn_request(
         relay_state="",
         authn_id=authn_id,
-        selected_idp=entity_id,
+        selected_idp=idp_entity_id,
         force_authn=True,
         sign_alg=saml2_sp.authn_sign_alg,
         digest_alg=saml2_sp.authn_digest_alg,
@@ -125,7 +114,7 @@ async def discovery_service_response(
 
 
 @saml2_router.post("/sp/saml2-acs", response_class=HTMLResponse)
-async def assertion_consumer_service(saml_response: str = Form(alias="SAMLResponse")):
+async def assertion_consumer_service(request: ContextRequest, saml_response: str = Form(alias="SAMLResponse")):
     """
     Assertion consumer service, receives POSTs from SAML2 IdP's
     """
@@ -152,7 +141,7 @@ async def assertion_consumer_service(saml_response: str = Form(alias="SAMLRespon
 
     transaction_state = await transaction_db.get_state_by_transaction_id(transaction_id)
     if transaction_state is None:
-        logger.error(f"transaction state not found")
+        logger.error("transaction state not found")
         logger.debug(f"transaction_id: {transaction_id}")
         raise HTTPException(status_code=404, detail="transaction not found")
 
@@ -160,8 +149,9 @@ async def assertion_consumer_service(saml_response: str = Form(alias="SAMLRespon
     await transaction_db.save(transaction_state, expires_in=config.transaction_state_expires_in)
     logger.debug(f"saml_assertion added to transaction state with id: {transaction_id}")
 
-    finish_interaction_url = interaction_router.url_path_for("redirect", transaction_id=transaction_id)
+    finish_interaction_url = request.url_for("redirect", transaction_id=transaction_id)
     logger.info("saml authentication done, redirecting user to finish interaction")
+    logger.debug(f"redirecting to: {finish_interaction_url}")
     return RedirectResponse(finish_interaction_url, status_code=303)
 
 

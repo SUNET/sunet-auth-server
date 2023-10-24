@@ -75,6 +75,7 @@ class AuthServerConfig(BaseSettings):
     pysaml2_config_path: Optional[Path] = Field(default=None)
     pysaml2_config_name: str = "SAML_CONFIG"
     saml2_discovery_service_url: Optional[AnyUrl] = None
+    saml2_single_idp: Optional[str] = None
 
     @validator("application_root")
     def application_root_must_not_end_with_slash(cls, v: str):

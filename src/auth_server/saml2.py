@@ -39,7 +39,8 @@ class SAML2SP:
     client: Saml2Client
     outstanding_queries_cache: OutstandingQueriesCache
     authn_req_cache: AuthenticationRequestCache
-    discovery_service_url: Optional[AnyUrl]
+    single_idp: Optional[str] = None
+    discovery_service_url: Optional[AnyUrl] = None
     authn_sign_alg: str = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
     authn_digest_alg: str = "http://www.w3.org/2001/04/xmlenc#sha256"
 
@@ -215,6 +216,7 @@ async def get_saml2_sp() -> Optional[SAML2SP]:
         outstanding_queries_cache=OutstandingQueriesCache(db_client=mongo_client),
         authn_req_cache=AuthenticationRequestCache(db_client=mongo_client),
         discovery_service_url=config.saml2_discovery_service_url,
+        single_idp=config.saml2_single_idp,
     )
 
 
