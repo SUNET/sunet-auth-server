@@ -104,9 +104,7 @@ async def finish_interaction(
 
         # redirect method
         if transaction_state.grant_request.interact.finish.method is FinishInteractionMethod.REDIRECT:
-            redirect_url = (
-                f"{transaction_state.grant_request.interact.finish.uri}?hash={interaction_hash}&{interact_ref}"
-            )
+            redirect_url = f"{transaction_state.grant_request.interact.finish.uri}?hash={interaction_hash}&interact_ref={interact_ref}"
             return RedirectResponse(redirect_url)
         # push method
         elif transaction_state.grant_request.interact.finish.method is FinishInteractionMethod.PUSH:
