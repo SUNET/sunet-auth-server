@@ -97,6 +97,18 @@ async def redirect_to_idp(saml2_sp: SAML2SP, authn_id: AuthnRequestRef, idp_enti
         logger.error(f"Unknown SAML2 idp: {idp_entity_id} not in metadata")
         raise HTTPException(status_code=400, detail="requested IdP not found in metadata")
 
+    transaction_db = await get_transaction_state_db()
+    if transaction_db is None:
+        logger.error(f"No transaction db found")
+        raise HTTPException(status_code=400, detail="SAML authentication misconfigured")
+
+    # get any requested authentication context from subject request
+    required_loa = None
+    transaction_id = saml2_sp.authn_req_cache[authn_id]
+    transaction_state = await transaction_db.get_state_by_transaction_id(transaction_id=transaction_id)
+    if transaction_state is not None and transaction_state.requested_subject.authentication_context is not None:
+        required_loa = transaction_state.requested_subject.authentication_context
+
     logger.info(f"creating authn request, idp {idp_entity_id} will be used")
     authn_request = await get_authn_request(
         relay_state="",
@@ -105,6 +117,7 @@ async def redirect_to_idp(saml2_sp: SAML2SP, authn_id: AuthnRequestRef, idp_enti
         force_authn=True,
         sign_alg=saml2_sp.authn_sign_alg,
         digest_alg=saml2_sp.authn_digest_alg,
+        required_loa=required_loa,
     )
 
     idp_redirect_url = await get_redirect_url(authn_request)

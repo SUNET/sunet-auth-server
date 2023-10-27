@@ -119,6 +119,7 @@ class SubjectAssertionFormat(str, Enum):
 class SubjectRequest(GnapBaseModel):
     sub_id_formats: Optional[List[SubjectIdentifierFormat]] = None
     assertion_formats: Optional[List[SubjectAssertionFormat]] = None
+    authentication_context: Optional[List[str]] = None
 
 
 class Display(GnapBaseModel):

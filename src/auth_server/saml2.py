@@ -43,6 +43,7 @@ class SAML2SP:
     discovery_service_url: Optional[AnyUrl] = None
     authn_sign_alg: str = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
     authn_digest_alg: str = "http://www.w3.org/2001/04/xmlenc#sha256"
+    authentication_context_map: dict[str, str] = Field(default_factory=dict)
 
 
 class AuthnInfo(BaseModel):
@@ -217,6 +218,7 @@ async def get_saml2_sp() -> Optional[SAML2SP]:
         authn_req_cache=AuthenticationRequestCache(db_client=mongo_client),
         discovery_service_url=config.saml2_discovery_service_url,
         single_idp=config.saml2_single_idp,
+        authentication_context_map=config.saml2_authentication_context_map,
     )
 
 
@@ -256,8 +258,9 @@ async def get_authn_request(
     sign_alg: Optional[str] = None,
     digest_alg: Optional[str] = None,
     subject: Optional[Subject] = None,
+    required_loa: Optional[list[str]] = None,
 ):
-    kwargs = {
+    kwargs: dict[str, Any] = {
         "force_authn": str(force_authn).lower(),
     }
     logger.debug(f"Authn request args: {kwargs}")
@@ -265,6 +268,12 @@ async def get_authn_request(
     saml2_sp = await get_saml2_sp()
     if saml2_sp is None:
         return None
+
+    # LOA
+    if required_loa is not None:
+        logger.debug(f"Requesting AuthnContext {required_loa}")
+        loa_uris = [saml2_sp.authentication_context_map[loa] for loa in required_loa]
+        kwargs["requested_authn_context"] = {"authn_context_class_ref": loa_uris, "comparison": "exact"}
 
     try:
         (session_id, info) = saml2_sp.client.prepare_for_authenticate(

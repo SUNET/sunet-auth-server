@@ -101,8 +101,9 @@ class BaseAuthFlow(ABC):
             "lookup_client_key",
             "validate_proof",
             "handle_access_token",
+            "handle_subject_request",
             "handle_interaction",
-            "handle_subject",
+            "handle_subject_response",
             "create_auth_token",
             "finalize_transaction",
         ]
@@ -199,13 +200,16 @@ class BaseAuthFlow(ABC):
     async def validate_proof(self) -> Optional[GrantResponse]:
         raise NotImplementedError()
 
-    async def handle_subject(self) -> Optional[GrantResponse]:
-        raise NotImplementedError()
-
     async def handle_access_token(self) -> Optional[GrantResponse]:
         raise NotImplementedError()
 
+    async def handle_subject_request(self) -> Optional[GrantResponse]:
+        raise NotImplementedError()
+
     async def handle_interaction(self) -> Optional[GrantResponse]:
+        raise NotImplementedError()
+
+    async def handle_subject_response(self) -> Optional[GrantResponse]:
         raise NotImplementedError()
 
     async def create_auth_token(self) -> Optional[GrantResponse]:
@@ -252,6 +256,11 @@ class CommonFlow(BaseAuthFlow):
         # TODO: How do we want to validate the access request?
         if self.state.grant_request.access_token.access:
             self.state.requested_access = self.state.grant_request.access_token.access
+        return None
+
+    async def handle_subject_request(self) -> Optional[GrantResponse]:
+        if self.state.grant_request.subject is not None:
+            self.state.requested_subject = self.state.grant_request.subject
         return None
 
     async def handle_interaction(self) -> Optional[GrantResponse]:
@@ -339,12 +348,12 @@ class CommonFlow(BaseAuthFlow):
         logger.debug(f"state {self.state} saved: {res}")
         return self.state.grant_response
 
-    async def handle_subject(self) -> Optional[GrantResponse]:
-        if self.state.grant_request.subject is None:
+    async def handle_subject_response(self) -> Optional[GrantResponse]:
+        if self.state.requested_subject is None:
             return None
-        if self.state.grant_request.subject.assertion_formats is not None:
+        if self.state.requested_subject.assertion_formats is not None:
             if (
-                SubjectAssertionFormat.SAML2 in self.state.grant_request.subject.assertion_formats
+                SubjectAssertionFormat.SAML2 in self.state.requested_subject.assertion_formats
                 and self.state.saml_assertion is not None
             ):
                 # saml assertion requested

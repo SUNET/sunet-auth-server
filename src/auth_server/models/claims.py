@@ -5,6 +5,7 @@ from pydantic import Extra
 
 from auth_server.models.gnap import Access
 from auth_server.models.jose import RegisteredClaims
+from auth_server.saml2 import AuthnInfo
 
 __author__ = "lundberg"
 
@@ -16,6 +17,7 @@ class Claims(RegisteredClaims):
     requested_access: Optional[List[Union[str, Access]]] = None
     saml_issuer: Optional[str] = None
     saml_assurance: Optional[list[str]] = None
+    saml_authn_info: Optional[list[AuthnInfo]] = None
     saml_eppn: Optional[str] = None
     saml_unique_id: Optional[str] = None
     saml_targeted_id: Optional[str] = None

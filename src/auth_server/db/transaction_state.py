@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from auth_server.db.client import BaseDB, get_motor_client
 from auth_server.mdq import MDQData
-from auth_server.models.gnap import Access, GrantRequest, GrantResponse
+from auth_server.models.gnap import Access, GrantRequest, GrantResponse, SubjectRequest
 from auth_server.saml2 import SessionInfo
 from auth_server.time_utils import utc_now
 from auth_server.tls_fed_auth import MetadataEntity
@@ -44,6 +44,7 @@ class TransactionState(BaseModel, ABC):
     key_reference: Optional[str] = None
     proof_ok: bool = False
     requested_access: List[Union[str, Access]] = Field(default_factory=list)
+    requested_subject: SubjectRequest = Field(default_factory=SubjectRequest)
     saml_assertion: Optional[SessionInfo] = None
     interaction_reference: Optional[str] = None
     user_code: Optional[str] = None
