@@ -108,11 +108,11 @@ class TransactionStateDB(BaseDB):
         await db.setup_indexes(indexes=indexes)
         return db
 
-    async def get_document_by_transaction_id(self, transactions_id: str) -> Optional[Mapping[str, Any]]:
-        return await self._get_document_by_attr("transaction_id", transactions_id)
+    async def get_document_by_transaction_id(self, transaction_id: str) -> Optional[Mapping[str, Any]]:
+        return await self._get_document_by_attr("transaction_id", transaction_id)
 
-    async def get_state_by_transaction_id(self, transactions_id: str) -> Optional[TransactionState]:
-        doc = await self.get_document_by_transaction_id(transactions_id=transactions_id)
+    async def get_state_by_transaction_id(self, transaction_id: str) -> Optional[TransactionState]:
+        doc = await self.get_document_by_transaction_id(transaction_id=transaction_id)
         if not doc:
             return None
         return TransactionState.from_dict(state=doc)
@@ -129,8 +129,8 @@ class TransactionStateDB(BaseDB):
             return None
         return TransactionState.from_dict(state=doc)
 
-    async def remove_state(self, transactions_id: str) -> None:
-        await self.remove_document({"transaction_id": transactions_id})
+    async def remove_state(self, transaction_id: str) -> None:
+        await self.remove_document({"transaction_id": transaction_id})
 
     async def save(self, state: T, expires_in: timedelta):
         state.expires_at = state.expires_at + expires_in

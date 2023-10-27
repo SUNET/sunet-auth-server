@@ -126,7 +126,7 @@ class MongoCache(MutableMapping):
     def __setitem__(self, key: str, value: Any) -> None:
         self._db.update_item(key, value)
 
-    def __getitem__(self, key: str) -> MutableMapping:
+    def __getitem__(self, key: str) -> Any:
         return self._db.get_item(key)
 
     def __delitem__(self, key: str) -> None:
