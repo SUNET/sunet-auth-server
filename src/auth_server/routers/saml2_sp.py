@@ -34,7 +34,7 @@ templates = TestableJinja2Templates(directory=str(Path(__file__).with_name("temp
 @saml2_router.get("/sp/authn/{transaction_id}", response_class=HTMLResponse)
 async def authenticate(
     request: ContextRequest,
-    transaction_id: Optional[str],
+    transaction_id: str,
 ):
     saml2_sp = await get_saml2_sp()
     if saml2_sp is None:
@@ -157,6 +157,16 @@ async def assertion_consumer_service(request: ContextRequest, saml_response: str
         logger.error("transaction state not found")
         logger.debug(f"transaction_id: {transaction_id}")
         raise HTTPException(status_code=404, detail="transaction not found")
+
+    # TODO: do we want this? shouldn't scope from the user identifier be used anyway?
+    ## get the scopes from metadata
+    # scopes = []
+    # metadata_scopes = saml2_sp.client.metadata.shibmd_scopes(entity_id=assertion_data.session_info.issuer)
+    # for item in metadata_scopes:
+    #    if item.get("regexp") is True:
+    #        # Let's not open this can of regex if we don't have to
+    #        continue
+    #    scopes.append(item.get("text"))
 
     transaction_state.saml_assertion = assertion_data.session_info
     await transaction_db.save(transaction_state, expires_in=config.transaction_state_expires_in)
