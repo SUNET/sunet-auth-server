@@ -18,7 +18,7 @@ class InterceptHandler(logging.Handler):
 
         # Find caller from where originated the logged message
         frame, depth = logging.currentframe(), 2
-        skip_frames_in = [logging.__file__, __file__, _logger.__file__]
+        skip_frames_in = {logging.__file__, __file__, _logger.__file__}
         while frame.f_code.co_filename in skip_frames_in:
             frame = frame.f_back
             depth += 1
