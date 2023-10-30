@@ -221,8 +221,14 @@ class TestSAMLSP(TestCase):
         assert isinstance(doc, Mapping) is True  # please mypy
         return TransactionState(**doc)
 
+    def _save_transaction_state(self, transaction_state: TransactionState) -> None:
+        self.transaction_states.replace_one(
+            filter={"transaction_id": transaction_state.transaction_id},
+            replacement=transaction_state.dict(exclude_none=True),
+        )
+
     @staticmethod
-    def generate_auth_response(
+    def _generate_auth_response(
         request_id: str, saml_response_tpl: str, assertion_age: timedelta = timedelta(seconds=5)
     ) -> bytes:
         """
@@ -249,7 +255,7 @@ class TestSAMLSP(TestCase):
 
         return resp.encode("utf-8")
 
-    def get_current_saml_request_id(self) -> str:
+    def _get_current_saml_request_id(self) -> str:
         ids = list(self.outstanding_queries_cache.keys())
         if len(ids) != 1:
             raise RuntimeError("More or less than one authn request in the session")
@@ -271,11 +277,14 @@ class TestSAMLSP(TestCase):
     def test_saml_acs(self):
         self.config["saml2_single_idp"] = self.test_idp
         self._update_app_config(config=self.config)
+        transaction_state = self._get_transaction_state_by_id(self.test_transaction_state.transaction_id)
+        transaction_state.requested_subject.authentication_context = ["https://refeds.org/profile/mfa"]
+        self._save_transaction_state(transaction_state)
         # do authn request
         authn_url = saml2_router.url_path_for("authenticate", transaction_id=self.test_transaction_state.transaction_id)
-        self.client.get(f"{authn_url}?idp={self.test_idp}", allow_redirects=False)
-        auth_req_ref = self.get_current_saml_request_id()
-        generated_authn_response = self.generate_auth_response(
+        self.client.get(f"{authn_url}", allow_redirects=False)
+        auth_req_ref = self._get_current_saml_request_id()
+        generated_authn_response = self._generate_auth_response(
             request_id=auth_req_ref, saml_response_tpl=self.saml_response_tpl_success
         )
         # simulate IdP response
