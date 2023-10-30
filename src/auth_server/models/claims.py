@@ -12,6 +12,7 @@ __author__ = "lundberg"
 
 class Claims(RegisteredClaims):
     version: int = 1
+    auth_source: str
     source: Optional[str] = None
     origins: Optional[List[str]] = None  # What should we use this for?
     requested_access: Optional[List[Union[str, Access]]] = None

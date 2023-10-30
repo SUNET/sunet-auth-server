@@ -18,7 +18,7 @@ from starlette.testclient import TestClient
 
 from auth_server.api import init_auth_server_api
 from auth_server.config import ClientKey, load_config
-from auth_server.db.transaction_state import TransactionState
+from auth_server.db.transaction_state import AuthSource, TransactionState
 from auth_server.models.gnap import (
     AccessTokenFlags,
     AccessTokenRequest,
@@ -190,6 +190,7 @@ class TestAuthServer(TestCase):
 
         # Verify token and check claims
         claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims["auth_source"] == AuthSource.TEST
         assert claims["aud"] == "some_audience"
 
     def test_config_from_yaml(self):
@@ -217,6 +218,7 @@ class TestAuthServer(TestCase):
 
         # Verify token and check claims
         claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims["auth_source"] == AuthSource.TEST
         assert claims["aud"] == "another_audience"
         assert claims["iss"] == "authserver.local"
 
@@ -235,6 +237,9 @@ class TestAuthServer(TestCase):
         access_token = response.json()["access_token"]
         assert AccessTokenFlags.BEARER.value in access_token["flags"]
         assert access_token["value"] is not None
+        # Verify token and check claims
+        claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims["auth_source"] == AuthSource.TEST
 
     @mock.patch("aiohttp.ClientSession.get", new_callable=AsyncMock)
     def test_transaction_mtls_mdq_with_key_reference(self, mock_mdq):
@@ -254,6 +259,9 @@ class TestAuthServer(TestCase):
         access_token = response.json()["access_token"]
         assert AccessTokenFlags.BEARER.value in access_token["flags"]
         assert access_token["value"] is not None
+        # Verify token and check claims
+        claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims["auth_source"] == AuthSource.MDQ
 
     def test_transaction_jws(self):
         client_key_dict = self.client_jwk.export(as_dict=True)
@@ -285,6 +293,9 @@ class TestAuthServer(TestCase):
         access_token = response.json()["access_token"]
         assert AccessTokenFlags.BEARER.value in access_token["flags"]
         assert access_token["value"] is not None
+        # Verify token and check claims
+        claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims["auth_source"] == AuthSource.TEST
 
     def test_transaction_jwsd(self):
         client_key_dict = self.client_jwk.export(as_dict=True)
@@ -319,6 +330,9 @@ class TestAuthServer(TestCase):
         access_token = response.json()["access_token"]
         assert AccessTokenFlags.BEARER.value in access_token["flags"]
         assert access_token["value"] is not None
+        # Verify token and check claims
+        claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims["auth_source"] == AuthSource.TEST
 
     @mock.patch("aiohttp.ClientSession.get", new_callable=AsyncMock)
     def test_mdq_flow(self, mock_mdq):
@@ -341,6 +355,7 @@ class TestAuthServer(TestCase):
 
         # Verify token and check claims
         claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims["auth_source"] == AuthSource.MDQ
         assert claims["entity_id"] == "https://test.localhost"
         assert claims["scopes"] == ["localhost"]
         assert claims["source"] == "http://www.swamid.se/"
@@ -386,6 +401,7 @@ class TestAuthServer(TestCase):
 
         # Verify token and check claims
         claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims["auth_source"] == AuthSource.TLSFED
         assert claims["entity_id"] == "https://test.localhost"
         assert claims["scopes"] == ["test.localhost"]
         assert claims["organization_id"] == "SE0123456789"
@@ -434,6 +450,7 @@ class TestAuthServer(TestCase):
 
             # Verify token and check claims
             claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+            assert claims["auth_source"] == AuthSource.TLSFED
             assert claims["entity_id"] == "https://test.localhost"
             assert claims["scopes"] == ["test.localhost"]
             assert claims["organization_id"] == "SE0123456789"
@@ -496,6 +513,7 @@ class TestAuthServer(TestCase):
         assert AccessTokenFlags.BEARER.value in access_token["flags"]
         # Verify token and check claims
         claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims["auth_source"] == AuthSource.CONFIG
         assert claims["sub"] == key_reference
         assert claims["test_claim"] == "test_claim_value"
         assert claims["source"] == "config"
@@ -787,9 +805,12 @@ class TestAuthServer(TestCase):
 
         # Verify token and check claims
         claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims["auth_source"] == AuthSource.TEST
         assert claims["aud"] == "some_audience"
         assert claims["saml_issuer"] == "https://idp.example.com"
         assert claims["saml_eppn"] == "test@example.com"
+        assert claims["saml_assurance"] is not None
+        assert claims["saml_entitlement"] is not None
 
     def test_transaction_continue_check_progress(self):
         self.config["auth_flows"] = json.dumps(["TestFlow"])
@@ -909,6 +930,7 @@ class TestAuthServer(TestCase):
 
         # Verify token and check claims
         claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims["auth_source"] == AuthSource.INTERACTION
         assert claims["aud"] == "some_audience"
         assert claims["saml_issuer"] == "https://idp.example.com"
         assert claims["saml_eppn"] == "test@example.com"
@@ -990,6 +1012,7 @@ class TestAuthServer(TestCase):
 
         # Verify token and check claims
         claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims["auth_source"] == AuthSource.INTERACTION
         assert claims["aud"] == "some_audience"
         assert claims["saml_issuer"] == "https://idp.example.com"
         assert claims["saml_eppn"] == "test@example.com"
@@ -1079,6 +1102,7 @@ class TestAuthServer(TestCase):
 
         # Verify token and check claims
         claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims["auth_source"] == AuthSource.INTERACTION
         assert claims["aud"] == "some_audience"
         assert claims["saml_issuer"] == "https://idp.example.com"
         assert claims["saml_eppn"] == "test@example.com"

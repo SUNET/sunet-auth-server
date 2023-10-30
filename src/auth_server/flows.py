@@ -168,11 +168,15 @@ class BaseAuthFlow(ABC):
             raise NextFlowException(status_code=400, detail="no supported proof method")
 
     async def create_claims(self) -> Claims:
+        if self.state.auth_source is None:
+            raise NextFlowException(status_code=400, detail="no auth source set")
+
         claims = Claims(
             iss=self.config.auth_token_issuer,
             exp=self.config.auth_token_expires_in,
             aud=self.config.auth_token_audience,
             sub=self.state.key_reference,
+            auth_source=self.state.auth_source,
             requested_access=self.state.requested_access,
         )
         if self.state.saml_assertion is not None:

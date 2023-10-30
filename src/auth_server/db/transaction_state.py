@@ -36,6 +36,14 @@ class FlowState(str, Enum):
     FINALIZED = "finalized"
 
 
+class AuthSource(str, Enum):
+    INTERACTION = "interaction"
+    CONFIG = "config"
+    MDQ = "mdq"
+    TLSFED = "tlsfed"
+    TEST = "test"
+
+
 class TransactionState(BaseModel, ABC):
     transaction_id: str = Field(default_factory=get_hex_uuid4)
     flow_state: FlowState = Field(default=FlowState.PROCESSING)
@@ -51,6 +59,7 @@ class TransactionState(BaseModel, ABC):
     continue_reference: Optional[str] = None
     continue_access_token: Optional[str] = None
     # meta
+    auth_source: Optional[AuthSource] = None
     flow_name: str
     flow_step: Optional[str] = None
     created_at: datetime = Field(default_factory=utc_now)
@@ -65,22 +74,25 @@ class TransactionState(BaseModel, ABC):
 
 
 class TestState(TransactionState):
-    pass
+    auth_source = AuthSource.TEST
 
 
 class InteractionState(TransactionState):
-    pass
+    auth_source = AuthSource.INTERACTION
 
 
 class ConfigState(TransactionState):
+    auth_source = AuthSource.CONFIG
     config_claims: Dict[str, Any] = Field(default_factory=dict)
 
 
 class MDQState(TransactionState):
+    auth_source = AuthSource.MDQ
     mdq_data: Optional[MDQData]
 
 
 class TLSFEDState(TransactionState):
+    auth_source = AuthSource.TLSFED
     entity: Optional[MetadataEntity]
 
 
