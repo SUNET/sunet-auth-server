@@ -218,7 +218,6 @@ async def get_saml2_sp() -> Optional[SAML2SP]:
         authn_req_cache=AuthenticationRequestCache(db_client=mongo_client),
         discovery_service_url=config.saml2_discovery_service_url,
         single_idp=config.saml2_single_idp,
-        authentication_context_map=config.saml2_authentication_context_map,
     )
 
 
@@ -271,9 +270,8 @@ async def get_authn_request(
 
     # LOA
     if required_loa is not None:
-        logger.debug(f"Requesting AuthnContext {required_loa}")
-        loa_uris = [saml2_sp.authentication_context_map[loa] for loa in required_loa]
-        kwargs["requested_authn_context"] = {"authn_context_class_ref": loa_uris, "comparison": "exact"}
+        logger.info(f"Requesting AuthnContext {required_loa}")
+        kwargs["requested_authn_context"] = {"authn_context_class_ref": required_loa, "comparison": "exact"}
 
     try:
         (session_id, info) = saml2_sp.client.prepare_for_authenticate(

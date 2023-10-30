@@ -76,19 +76,6 @@ class AuthServerConfig(BaseSettings):
     pysaml2_config_name: str = "SAML_CONFIG"
     saml2_discovery_service_url: Optional[AnyUrl] = None
     saml2_single_idp: Optional[str] = None
-    saml2_authentication_context_map: dict[str, str] = Field(
-        default={
-            "swamid_al1": "http://www.swamid.se/policy/assurance/al1",
-            "swamid_al2": "http://www.swamid.se/policy/assurance/al2",
-            "swamid_al3": "http://www.swamid.se/policy/assurance/al3",
-            "refeds_assurance": "https://refeds.org/assurance",
-            "refeds_iap_high": "https://refeds.org/assurance/IAP/high",
-            "refeds_iap_low": "https://refeds.org/assurance/IAP/low",
-            "refeds_iap_medium": "https://refeds.org/assurance/IAP/medium",
-            "refeds_eppn_unique": "https://refeds.org/assurance/ID/eppn-unique-no-reassign",
-            "refeds_id_unique": "https://refeds.org/assurance/ID/unique",
-        }
-    )
 
     @validator("application_root")
     def application_root_must_not_end_with_slash(cls, v: str):
