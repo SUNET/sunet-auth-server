@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-import logging
 from typing import Dict, Type, cast
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from loguru import logger
 from starlette.staticfiles import StaticFiles
 
 from auth_server.config import AuthServerConfig, ConfigurationError, FlowName, load_config
@@ -20,14 +20,11 @@ from auth_server.utils import import_class
 __author__ = "lundberg"
 
 
-logger = logging.getLogger(__name__)
-
-
 class AuthServer(FastAPI):
     def __init__(self):
         config = load_config()
         super().__init__(root_path=config.application_root)
-        init_logging(level=config.log_level)
+        init_logging(level=config.log_level, colorize=config.log_color, fmt=config.log_format)
 
         # Load flows
         self.builtin_flow: Dict[FlowName, Type[BaseAuthFlow]] = {

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import logging
 import sys
+from typing import Optional
 
 from loguru import logger
 
@@ -11,6 +12,7 @@ LOGURU_FORMAT = "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: 
 
 
 class InterceptHandler(logging.Handler):
+    @logger.catch(default=True, onerror=lambda _: sys.exit(1))
     def emit(self, record):
         # Get corresponding Loguru level if it exists
         try:
@@ -33,9 +35,11 @@ logging.getLogger().level = 0  # DEBUG
 
 def init_logging(
     level: str = "INFO",
-    fmt=LOGURU_FORMAT,
     colorize: bool = True,
+    fmt: Optional[str] = None,
 ) -> None:
+    if fmt is None:
+        fmt = LOGURU_FORMAT
     logger.remove()  # Remove the default handler
     logger.add(sys.stderr, format=fmt, colorize=colorize, level="ERROR", enqueue=True)
     logger.add(sys.stdout, format=fmt, colorize=colorize, level=level, enqueue=True)

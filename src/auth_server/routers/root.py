@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from jwcrypto.jwk import JWK, JWKSet
+from loguru import logger
 from starlette.responses import Response
 
 from auth_server.config import AuthServerConfig, load_config
@@ -16,8 +16,6 @@ from auth_server.utils import get_signing_key, load_jwks
 
 __author__ = "lundberg"
 
-
-logger = logging.getLogger(__name__)
 
 root_router = APIRouter(route_class=ContextRequestRoute, prefix="")
 

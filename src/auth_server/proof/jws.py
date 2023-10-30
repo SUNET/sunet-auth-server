@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import logging
 from base64 import urlsafe_b64encode
 from typing import Optional, Union
 
@@ -7,6 +6,7 @@ from cryptography.hazmat.primitives.hashes import SHA256, SHA384, SHA512
 from fastapi import HTTPException
 from jwcrypto import jwk, jws
 from jwcrypto.common import base64url_encode
+from loguru import logger
 from pydantic import ValidationError
 
 from auth_server.config import load_config
@@ -17,9 +17,6 @@ from auth_server.time_utils import utc_now
 from auth_server.utils import hash_with
 
 __author__ = "lundberg"
-
-
-logger = logging.getLogger(__name__)
 
 
 async def choose_hash_alg(alg: SupportedAlgorithms):

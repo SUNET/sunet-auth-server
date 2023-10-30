@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import logging
 from base64 import b64encode
 from collections import OrderedDict as _OrderedDict
 from enum import Enum
@@ -9,6 +8,7 @@ import aiohttp
 import xmltodict
 from cryptography.hazmat.primitives.hashes import SHA1, SHA256
 from cryptography.x509 import Certificate
+from loguru import logger
 from pydantic import BaseModel, Field, validator
 from pyexpat import ExpatError
 
@@ -19,9 +19,6 @@ from auth_server.models.gnap import Key, Proof, ProofMethod
 from auth_server.utils import get_values, hash_with, load_cert_from_str, serialize_certificate
 
 __author__ = "lundberg"
-
-
-logger = logging.getLogger(__name__)
 
 
 class KeyUse(str, Enum):

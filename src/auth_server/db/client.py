@@ -1,16 +1,14 @@
 # -*- coding: utf-8 -*-
-import logging
 from typing import Any, AsyncGenerator, Dict, List, Mapping, Optional, Union
 
 from bson import ObjectId
+from loguru import logger
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import MongoClient, WriteConcern
 
 from auth_server.config import load_config
 
 __author__ = "lundberg"
-
-logger = logging.getLogger(__name__)
 
 
 async def get_motor_client() -> Optional[AsyncIOMotorClient]:

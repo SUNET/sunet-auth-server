@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import base64
 import json
-import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Mapping, Optional
@@ -12,6 +11,7 @@ from async_lru import alru_cache
 from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.x509 import load_pem_x509_certificate
 from jwcrypto import jwk, jws
+from loguru import logger
 from pydantic import BaseModel, ValidationError
 
 from auth_server.config import load_config
@@ -22,8 +22,6 @@ from auth_server.models.tls_fed_metadata import TLSFEDJOSEHeader
 from auth_server.time_utils import utc_now
 
 __author__ = "lundberg"
-
-logger = logging.getLogger(__name__)
 
 
 class MetadataSource(BaseModel):

@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
-import logging
-
 from jwcrypto import jws
 from jwcrypto.common import JWException
+from loguru import logger
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
@@ -11,9 +10,6 @@ from starlette.types import Message
 from auth_server.context import ContextRequestMixin
 
 __author__ = "lundberg"
-
-
-logger = logging.getLogger(__name__)
 
 
 # middleware needs to return a reponse

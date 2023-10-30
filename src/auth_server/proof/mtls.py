@@ -1,17 +1,14 @@
 # -*- coding: utf-8 -*-
 
-import logging
 from base64 import b64encode
 
 from cryptography.hazmat.primitives.hashes import SHA256
+from loguru import logger
 
 from auth_server.models.gnap import Key
 from auth_server.utils import load_cert_from_str
 
 __author__ = "lundberg"
-
-
-logger = logging.getLogger(__name__)
 
 
 async def check_mtls_proof(gnap_key: Key, cert: str) -> bool:

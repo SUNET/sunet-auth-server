@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 __author__ = "lundberg"
 
-import logging
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Form, HTTPException
+from loguru import logger
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
 from auth_server.config import load_config
@@ -14,8 +14,6 @@ from auth_server.db.transaction_state import FlowState, TransactionState, get_tr
 from auth_server.models.gnap import FinishInteractionMethod
 from auth_server.templating import TestableJinja2Templates
 from auth_server.utils import get_interaction_hash, push_interaction_finish
-
-logger = logging.getLogger(__name__)
 
 interaction_router = APIRouter(route_class=ContextRequestRoute, prefix="/interaction")
 templates = TestableJinja2Templates(directory=str(Path(__file__).with_name("templates")))

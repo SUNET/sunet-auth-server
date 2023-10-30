@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 import asyncio
-import logging
 
 from fastapi import APIRouter
+from loguru import logger
 from pymongo.errors import ConnectionFailure
 
 from auth_server.config import load_config
@@ -11,8 +11,6 @@ from auth_server.models.status import Status, StatusResponse
 
 __author__ = "lundberg"
 
-
-logger = logging.getLogger(__name__)
 
 status_router = APIRouter(prefix="/status")
 

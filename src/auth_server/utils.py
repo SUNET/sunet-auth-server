@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import importlib
 import json
-import logging
 from base64 import urlsafe_b64encode
 from functools import lru_cache
 from typing import Any, Callable, Generator, Mapping, Sequence, Union
@@ -13,14 +12,14 @@ from cryptography.hazmat.primitives.hashes import SHA3_512, SHA512, HashAlgorith
 from cryptography.hazmat.primitives.serialization import Encoding
 from cryptography.x509 import Certificate, load_pem_x509_certificate
 from jwcrypto import jwk
+from loguru import logger
 
 from auth_server.config import ConfigurationError, load_config
 
 __author__ = "lundberg"
 
-from auth_server.models.gnap import HashMethod
 
-logger = logging.getLogger(__name__)
+from auth_server.models.gnap import HashMethod
 
 
 @lru_cache()

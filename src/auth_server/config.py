@@ -56,6 +56,8 @@ class AuthServerConfig(BaseSettings):
     environment: Environment = Field(default=Environment.PROD)
     testing: bool = False
     log_level: str = Field(default="INFO")
+    log_color: bool = True
+    log_format: Optional[str] = None
     host: str = Field(default="0.0.0.0")
     port: int = Field(default=8080)
     application_root: str = Field(default="")
