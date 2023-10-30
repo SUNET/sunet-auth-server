@@ -67,6 +67,7 @@ class SAMLAttributes(BaseModel):
     country_name: Optional[str] = Field(default=None, alias="co")
     date_of_birth: Optional[str] = Field(default=None, alias="schacDateOfBirth")
     display_name: Optional[str] = Field(default=None, alias="displayName")
+    entitlement: List[str] = Field(default_factory=list, alias="eduPersonEntitlement")
     eppn: Optional[str] = Field(default=None, alias="eduPersonPrincipalName")
     given_name: Optional[str] = Field(default=None, alias="givenName")
     home_organization: Optional[str] = Field(default=None, alias="schacHomeOrganization")

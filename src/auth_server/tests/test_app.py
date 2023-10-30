@@ -32,7 +32,7 @@ from auth_server.models.gnap import (
 )
 from auth_server.models.jose import ECJWK, SupportedAlgorithms, SupportedHTTPMethods, SupportedJWSType
 from auth_server.models.status import Status
-from auth_server.saml2 import NameID, SAMLAttributes, SessionInfo
+from auth_server.saml2 import AuthnInfo, NameID, SAMLAttributes, SessionInfo
 from auth_server.testing import MongoTemporaryInstance
 from auth_server.tests.utils import create_tls_fed_metadata, tls_fed_metadata_to_jws
 from auth_server.time_utils import utc_now
@@ -135,7 +135,21 @@ class TestAuthServer(TestCase):
     def _fake_saml_authentication(self, transaction_id: str):
         transaction_state = self._get_transaction_state_by_id(transaction_id)
         # seems like mypy no longer understands allow_population_by_field_name
-        attributes = SAMLAttributes(eppn="test@example.com", unique_id="test@example.com", targeted_id="idp!sp!unique")  # type: ignore[call-arg]
+        attributes = SAMLAttributes(
+            eppn="test@example.com",
+            unique_id="test@example.com",
+            targeted_id="idp!sp!unique",
+            assurance=[
+                "http://www.swamid.se/policy/assurance/al1",
+                "http://www.swamid.se/policy/assurance/al2",
+                "https://refeds.org/assurance",
+                "https://refeds.org/assurance/ID/unique",
+                "https://refeds.org/assurance/ID/eppn-unique-no-reassign",
+                "https://refeds.org/assurance/IAP/low",
+                "https://refeds.org/assurance/IAP/medium",
+            ],
+            entitlement=["some-entitlement"],
+        )  # type: ignore[call-arg]
         name_id = NameID(
             format="urn:oasis:names:tc:SAML:2.0:nameid-format:transient",
             sp_name_qualifier="http://test.localhost/saml2-metadata",
@@ -143,8 +157,11 @@ class TestAuthServer(TestCase):
             name_qualifier="some_name_qualifer",
             sp_provided_id="some_other_id",
         )
+        authn_info = [
+            AuthnInfo(authn_class="https://refeds.org/profile/mfa", authn_authority=[], authn_instant=utc_now())
+        ]
         transaction_state.saml_assertion = SessionInfo(
-            issuer="https://idp.example.com", attributes=attributes, name_id=name_id
+            issuer="https://idp.example.com", attributes=attributes, name_id=name_id, authn_info=authn_info
         )
         self._save_transaction_state(transaction_state)
 
