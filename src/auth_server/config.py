@@ -67,7 +67,7 @@ class AuthServerConfig(BaseSettings):
     signing_key_id: str = Field(default="default")
     auth_token_issuer: str
     auth_token_audience: Optional[str] = Field(default=None)
-    auth_token_expires_in: timedelta = Field(default="P10D")
+    auth_token_expires_in: timedelta = Field(default="PT10H")
     proof_jws_max_age: timedelta = Field(default="PT5M")
     client_keys: Dict[str, ClientKey] = Field(default_factory=dict)
     mongo_uri: Optional[str] = None
