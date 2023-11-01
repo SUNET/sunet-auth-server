@@ -170,7 +170,10 @@ class FinishInteractionMethod(str, Enum):
 
 class HashMethod(str, Enum):
     # Hash names has to match https://www.iana.org/assignments/named-information/named-information.xhtml#hash-alg
+    SHA_256 = "sha-256"
     SHA_512 = "sha-512"
+    SHA3_256 = "sha3-256"
+    SHA3_384 = "sha3-384"
     SHA3_512 = "sha3-512"
 
 

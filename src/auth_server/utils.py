@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import aiohttp
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.hashes import SHA3_512, SHA512, HashAlgorithm
+from cryptography.hazmat.primitives.hashes import SHA3_256, SHA3_384, SHA3_512, SHA256, SHA512, HashAlgorithm
 from cryptography.hazmat.primitives.serialization import Encoding
 from cryptography.x509 import Certificate, load_pem_x509_certificate
 from jwcrypto import jwk
@@ -96,7 +96,7 @@ def get_hex_uuid4(length=32) -> str:
 
 
 def get_hash_by_name(hash_name: str) -> HashAlgorithm:
-    supported_hash_algs = [SHA512(), SHA3_512()]
+    supported_hash_algs = [SHA256(), SHA512(), SHA3_256(), SHA3_384(), SHA3_512()]
     for alg in supported_hash_algs:
         if alg.name == hash_name:
             return alg
@@ -114,7 +114,7 @@ def get_interaction_hash(
     as_nonce: str,
     interact_ref: str,
     transaction_url: str,
-    hash_method: HashMethod = HashMethod.SHA3_512,
+    hash_method: HashMethod = HashMethod.SHA_256,
 ) -> str:
     """
     To calculate the "hash" value, the party doing the calculation
@@ -145,9 +145,9 @@ def get_interaction_hash(
     The party then hashes this string with the appropriate algorithm
     based on the "hash_method" parameter of the "callback".  If the
     "hash_method" value is not present in the client instance's request,
-    the algorithm defaults to "sha3".
+    the algorithm defaults to "sha-256".
 
-    https://datatracker.ietf.org/doc/html/draft-ietf-gnap-core-protocol-07#section-4.2.3
+    https://datatracker.ietf.org/doc/html/draft-ietf-gnap-core-protocol-16#section-4.2.3
     """
     hash_alg = get_hash_by_name(hash_name=hash_method.value)
     plaintext = f"{client_nonce}\n{as_nonce}\n{interact_ref}\n{transaction_url}".encode()
