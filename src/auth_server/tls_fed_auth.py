@@ -102,7 +102,7 @@ async def load_metadata_source(
         # deserialize jws
         _jws.deserialize(raw_jws=raw_jws)
     except (jws.InvalidJWSObject, IndexError):
-        logger.exception(f"metadata could not be deserialized")
+        logger.exception("metadata could not be deserialized")
         return None
 
     # load JOSE headers
@@ -148,8 +148,8 @@ async def load_metadata_source(
         return MetadataSource(
             issued_at=jose_header.iat, expires_at=jose_header.exp, issuer=jose_header.iss, metadata=metadata
         )
-    except ValidationError as e:
-        logger.exception(f"metadata could not be validated")
+    except ValidationError:
+        logger.exception("metadata could not be validated")
         # if strict we do not try to load partial metadata
         if strict:
             return None
@@ -162,7 +162,7 @@ async def load_metadata_source(
     try:
         metadata = TLSFEDMetadataModel.parse_obj(payload)
     except ValidationError:
-        logger.exception(f"partial metadata could not be validated")
+        logger.exception("partial metadata could not be validated")
         # if there is something wrong with the base structure of the metadata, give up
         return None
 
@@ -218,7 +218,7 @@ async def get_tls_fed_metadata() -> Metadata:
             raw_jws = await get_local_metadata(source.local)
             logger.debug(f"{source.local} returned jws: {raw_jws}")
         # if local source didn't return any metadata try remote source if it exists
-        elif source.remote is not None and raw_jws is None:
+        elif source.remote is not None:
             raw_jws = await get_remote_metadata(source.remote)
             logger.debug(f"{source.remote} returned jws: {raw_jws}")
         metadata_source = await load_metadata_source(raw_jws=raw_jws, jwks=jwks, strict=source.strict)
@@ -263,7 +263,7 @@ async def entity_to_key(entity: Optional[MetadataEntity]) -> Optional[Key]:
     ]
     if certs:
         # TODO: how do we handle multiple certs?
-        logger.info(f"Found cert in metadata")
+        logger.info("Found cert in metadata")
         return Key(  # type: ignore[call-arg]
             proof=Proof(method=ProofMethod.MTLS),
             cert_S256=base64.b64encode(certs[0].fingerprint(algorithm=SHA256())).decode("utf-8"),

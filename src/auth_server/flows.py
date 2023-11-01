@@ -573,7 +573,7 @@ class TLSFEDFlow(OnlyMTLSProofFlow):
             raise StopTransactionException(status_code=500, detail="bad configuration")
 
         # Look for a key in the TLS fed metadata
-        logger.info(f"Trying to load key from TLS fed auth")
+        logger.info("Trying to load key from TLS fed auth")
         self.state.entity = await get_entity(entity_id=key_id)
         client_key = await entity_to_key(self.state.entity)
 
