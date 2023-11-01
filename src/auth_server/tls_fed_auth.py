@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import asyncio
 import base64
 import json
 from datetime import datetime, timedelta
@@ -63,8 +64,8 @@ async def get_remote_metadata(url: str) -> Optional[str]:
     logger.debug(f"Trying {url}")
     try:
         response = await session.get(url=url)
-    except aiohttp.ClientError as e:
-        logger.error(f"{url} failed: {e}")
+    except (aiohttp.ClientError, asyncio.TimeoutError):
+        logger.exception(f"Failed to get remote metadata from {url}")
         return None
     if response.status != 200:
         logger.error(f"{url} returned {response.status}")
@@ -231,15 +232,11 @@ async def get_entity(entity_id: str) -> Optional[MetadataEntity]:
     metadata = await get_tls_fed_metadata()
     now = utc_now()
 
-    # Check if metadata should be refreshed
-    if now > metadata.renew_at:
+    # Check if metadata should be refreshed or if it wasn't initialized correct
+    if now > metadata.renew_at or not metadata.entities:
         # clear lru_cache and reload metadata
         get_tls_fed_metadata.cache_clear()
         metadata = await get_tls_fed_metadata()
-
-    if not metadata.entities:
-        logger.error("no metadata entities loaded")
-        return None
 
     # Get entity from metadata
     entity = metadata.entities.get(entity_id)
