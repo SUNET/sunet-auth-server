@@ -97,6 +97,9 @@ def get_hex_uuid4(length=32) -> str:
 
 def get_hash_by_name(hash_name: str) -> HashAlgorithm:
     supported_hash_algs = [SHA256(), SHA512(), SHA3_256(), SHA3_384(), SHA3_512()]
+    if hash_name in {"sha-256", "sha-512"}:
+        # IANA says sha-256, cryptography says sha256...
+        hash_name = hash_name.replace("-", "")
     for alg in supported_hash_algs:
         if alg.name == hash_name:
             return alg
