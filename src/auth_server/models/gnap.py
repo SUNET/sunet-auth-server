@@ -181,7 +181,7 @@ class FinishInteraction(GnapBaseModel):
     method: FinishInteractionMethod
     uri: str
     nonce: str
-    hash_method: HashMethod = Field(default=HashMethod.SHA3_512)
+    hash_method: HashMethod = Field(default=HashMethod.SHA_256)
 
 
 class Hints(GnapBaseModel):
