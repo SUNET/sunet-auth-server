@@ -140,10 +140,12 @@ def get_interaction_hash(
     There is no padding or whitespace before or after any of the lines,
     and no trailing newline character.
 
-    VJLO6A4CAYLBXHTR0KRO
+    VJLO6A4CATR0KRO
     MBDOFXG4Y5CVJCX821LH
-    4IFWWIKYBC2PQ6U56NL1
+    4IFWWIKYB2PQ6U56NL1
     https://server.example.com/tx
+
+    results in: x-gguKWTj8rQf7d7i3w3UhzvuJ5bpOlKyAlVpLxBffY
 
     The party then hashes this string with the appropriate algorithm
     based on the "hash_method" parameter of the "callback".  If the
