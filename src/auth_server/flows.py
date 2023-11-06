@@ -21,7 +21,7 @@ from auth_server.db.transaction_state import (
     get_transaction_state_db,
 )
 from auth_server.mdq import mdq_data_to_key, xml_mdq_get
-from auth_server.models.claims import Claims, ConfigClaims, MDQClaims, TLSFEDClaims
+from auth_server.models.claims import Claims, ConfigClaims, MDQClaims, SAMLAssertionClaims, TLSFEDClaims
 from auth_server.models.gnap import (
     AccessTokenFlags,
     AccessTokenResponse,
@@ -178,6 +178,7 @@ class BaseAuthFlow(ABC):
             requested_access=self.state.requested_access,
         )
         if self.state.saml_assertion is not None:
+            claims = SAMLAssertionClaims(**claims.dict())
             claims.saml_issuer = self.state.saml_assertion.issuer
             claims.saml_assurance = self.state.saml_assertion.attributes.assurance
             claims.saml_entitlement = self.state.saml_assertion.attributes.entitlement
