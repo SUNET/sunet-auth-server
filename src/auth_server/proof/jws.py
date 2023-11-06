@@ -65,7 +65,7 @@ async def verify_gnap_jws(
     # associated access token's value.
     if access_token is not None:
         access_token_hash = hash_with(SHA256(), access_token.encode())
-        b64_access_token_hash = urlsafe_b64encode(access_token_hash).decode("utf-8")
+        b64_access_token_hash = urlsafe_b64encode(access_token_hash).decode("utf-8").rstrip("=")
         if b64_access_token_hash != jws_header.ath:
             logger.error(f"ath mismatch. calculated ath: {b64_access_token_hash} != header: {jws_header.ath}")
             raise HTTPException(status_code=400, detail="ath does not match")

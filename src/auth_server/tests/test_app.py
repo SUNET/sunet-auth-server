@@ -1016,7 +1016,7 @@ class TestAuthServer(TestCase):
         jws_header["created"] = int(utc_now().timestamp())
         # calculate ath header value
         access_token_hash = hash_with(SHA256(), continue_response["access_token"]["value"].encode())
-        jws_header["ath"] = base64.urlsafe_b64encode(access_token_hash).decode("utf-8")
+        jws_header["ath"] = base64.urlsafe_b64encode(access_token_hash).decode("utf-8").rstrip("=")
         _jws = jws.JWS(payload="{}")
         _jws.add_signature(
             key=self.client_jwk,
@@ -1119,7 +1119,7 @@ class TestAuthServer(TestCase):
         jws_header["created"] = int(utc_now().timestamp())
         # calculate ath header value
         access_token_hash = hash_with(SHA256(), continue_response["access_token"]["value"].encode())
-        jws_header["ath"] = base64.urlsafe_b64encode(access_token_hash).decode("utf-8")
+        jws_header["ath"] = base64.urlsafe_b64encode(access_token_hash).decode("utf-8").rstrip("=")
         # create jws from continue request
         _jws = jws.JWS(payload=ContinueRequest(interact_ref=interact_ref).json(exclude_unset=True))
         _jws.add_signature(
@@ -1205,7 +1205,7 @@ class TestAuthServer(TestCase):
         jws_header["created"] = int(utc_now().timestamp())
         # calculate ath header value
         access_token_hash = hash_with(SHA256(), continue_response["access_token"]["value"].encode())
-        jws_header["ath"] = base64.urlsafe_b64encode(access_token_hash).decode("utf-8")
+        jws_header["ath"] = base64.urlsafe_b64encode(access_token_hash).decode("utf-8").rstrip("=")
         _jws = jws.JWS(payload="{}")
         _jws.add_signature(
             key=self.client_jwk,
