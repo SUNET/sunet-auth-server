@@ -396,7 +396,7 @@ class CommonFlow(BaseAuthFlow):
     async def finalize_transaction(self) -> Optional[GrantResponse]:
         logger.debug(f"finalizing transaction: {self.state.transaction_id}")
         if self.state.flow_state is not FlowState.APPROVED:
-            logger.error(f"transaction flow state {self.state.flow_state} != {FlowState.APPROVED}")
+            logger.error(f"transaction flow state is {self.state.flow_state}, should be {FlowState.APPROVED}")
             raise NextFlowException(status_code=400, detail="transaction not approved, can not finalize it")
 
         self.state.flow_state = FlowState.FINALIZED

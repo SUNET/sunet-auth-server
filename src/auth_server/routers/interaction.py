@@ -33,7 +33,7 @@ async def redirect(request: ContextRequest, transaction_id: str, background_task
     assert isinstance(transaction_state, TransactionState)  # please mypy
 
     if transaction_state.flow_state is not FlowState.PENDING:
-        logger.error(f"transaction flow_state {transaction_state.flow_state} != {FlowState.PENDING}")
+        logger.error(f"transaction flow state is {transaction_state.flow_state}, should be {FlowState.PENDING}")
         raise HTTPException(status_code=400, detail="transaction is in the wrong state")
 
     # we only support saml2 for user authentication for now
