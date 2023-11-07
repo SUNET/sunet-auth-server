@@ -150,14 +150,15 @@ def get_interaction_hash(
     The party then hashes this string with the appropriate algorithm
     based on the "hash_method" parameter of the "callback".  If the
     "hash_method" value is not present in the client instance's request,
-    the algorithm defaults to "sha-256".
+    the algorithm defaults to "sha-256". The resulting byte array from
+    the hash function is then encoded using URL-Safe Base64 with no padding.
 
     https://datatracker.ietf.org/doc/html/draft-ietf-gnap-core-protocol-16#section-4.2.3
     """
     hash_alg = get_hash_by_name(hash_name=hash_method.value)
     plaintext = f"{client_nonce}\n{as_nonce}\n{interact_ref}\n{transaction_url}".encode()
     hash_res = hash_with(hash_alg, plaintext)
-    return urlsafe_b64encode(hash_res).decode(encoding="utf-8")
+    return urlsafe_b64encode(hash_res).decode(encoding="utf-8").rstrip("=")
 
 
 async def push_interaction_finish(url: str, interaction_hash: str, interaction_reference: str) -> None:

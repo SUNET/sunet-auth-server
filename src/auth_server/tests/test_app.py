@@ -1016,7 +1016,7 @@ class TestAuthServer(TestCase):
         jws_header["created"] = int(utc_now().timestamp())
         # calculate ath header value
         access_token_hash = hash_with(SHA256(), continue_response["access_token"]["value"].encode())
-        jws_header["ath"] = base64.urlsafe_b64encode(access_token_hash).decode("utf-8").rstrip("=")
+        jws_header["ath"] = base64.urlsafe_b64encode(access_token_hash).decode("ascii").rstrip("=")
         _jws = jws.JWS(payload="{}")
         _jws.add_signature(
             key=self.client_jwk,
@@ -1112,14 +1112,14 @@ class TestAuthServer(TestCase):
         hash_alg = get_hash_by_name(hash_name=HashMethod.SHA_256.value)  # defaults to SHA256
         plaintext = f"{client_nonce}\n{as_nonce}\n{interact_ref}\n{transaction_url}".encode(encoding="ascii")
         hash_res = hash_with(hash_alg, plaintext)
-        assert base64.urlsafe_b64encode(hash_res).decode(encoding="ascii") == interact_hash
+        assert base64.urlsafe_b64encode(hash_res).decode(encoding="ascii").rstrip("=") == interact_hash
 
         # continue request after interaction is completed
         jws_header["uri"] = continue_response["uri"]
         jws_header["created"] = int(utc_now().timestamp())
         # calculate ath header value
         access_token_hash = hash_with(SHA256(), continue_response["access_token"]["value"].encode())
-        jws_header["ath"] = base64.urlsafe_b64encode(access_token_hash).decode("utf-8").rstrip("=")
+        jws_header["ath"] = base64.urlsafe_b64encode(access_token_hash).decode("ascii").rstrip("=")
         # create jws from continue request
         _jws = jws.JWS(payload=ContinueRequest(interact_ref=interact_ref).json(exclude_unset=True))
         _jws.add_signature(
@@ -1205,7 +1205,7 @@ class TestAuthServer(TestCase):
         jws_header["created"] = int(utc_now().timestamp())
         # calculate ath header value
         access_token_hash = hash_with(SHA256(), continue_response["access_token"]["value"].encode())
-        jws_header["ath"] = base64.urlsafe_b64encode(access_token_hash).decode("utf-8").rstrip("=")
+        jws_header["ath"] = base64.urlsafe_b64encode(access_token_hash).decode("ascii").rstrip("=")
         _jws = jws.JWS(payload="{}")
         _jws.add_signature(
             key=self.client_jwk,
