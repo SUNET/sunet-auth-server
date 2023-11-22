@@ -10,7 +10,7 @@ from logging import getLogger
 from typing import Any, Dict, List, NewType, Optional, Tuple, Union
 from xml.etree.ElementTree import ParseError
 
-from pydantic import AnyUrl, BaseModel, Extra, Field
+from pydantic import AnyUrl, BaseModel, ConfigDict, Field
 from pymongo import MongoClient
 from saml2 import BINDING_HTTP_POST, BINDING_HTTP_REDIRECT
 from saml2.cache import Cache
@@ -54,9 +54,9 @@ class AuthnInfo(BaseModel):
 
 class NameID(BaseModel):
     format: str
-    name_qualifier: Optional[str]
-    sp_name_qualifier: Optional[str]
-    sp_provided_id: Optional[str]
+    name_qualifier: Optional[str] = None
+    sp_name_qualifier: Optional[str] = None
+    sp_provided_id: Optional[str] = None
     id: str
 
 
@@ -72,7 +72,7 @@ class SAMLAttributes(BaseModel):
     given_name: Optional[str] = Field(default=None, alias="givenName")
     home_organization: Optional[str] = Field(default=None, alias="schacHomeOrganization")
     home_organization_type: Optional[str] = Field(default=None, alias="schacHomeOrganizationType")
-    mail: Optional[str]
+    mail: Optional[str] = None
     nin: Optional[str] = Field(default=None, alias="norEduPersonNIN")
     organization_acronym: Optional[str] = Field(default=None, alias="norEduOrgAcronym")
     organization_name: Optional[str] = Field(default=None, alias="o")
@@ -81,10 +81,7 @@ class SAMLAttributes(BaseModel):
     surname: Optional[str] = Field(default=None, alias="sn")
     targeted_id: Optional[str] = Field(default=None, alias="eduPersonTargetedID")
     unique_id: Optional[str] = Field(default=None, alias="eduPersonUniqueId")
-
-    class Config:
-        extra = Extra.allow  # allow unspecified attributes
-        allow_population_by_field_name = True
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
     @classmethod
     def from_pysaml2(cls, ava: Dict[str, List[str]]) -> SAMLAttributes:

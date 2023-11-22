@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from typing import Optional
+from typing import Optional, Union
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from jwcrypto.jwk import JWK, JWKSet
@@ -11,7 +11,7 @@ from auth_server.context import ContextRequest, ContextRequestRoute
 from auth_server.db.transaction_state import FlowState, TransactionState, get_transaction_state_db
 from auth_server.flows import NextFlowException, StopTransactionException
 from auth_server.models.gnap import ContinueRequest, GrantRequest, GrantResponse
-from auth_server.models.jose import JWKS, JWKTypes
+from auth_server.models.jose import ECJWK, JWKS, RSAJWK, SymmetricJWK
 from auth_server.utils import get_signing_key, load_jwks
 
 __author__ = "lundberg"
@@ -26,7 +26,9 @@ async def get_jwks(jwks: JWKSet = Depends(load_jwks)):
     return jwks
 
 
-@root_router.get("/.well-known/jwk.json", response_model=JWKTypes, response_model_exclude_unset=True)
+@root_router.get(
+    "/.well-known/jwk.json", response_model=Union[ECJWK, RSAJWK, SymmetricJWK], response_model_exclude_unset=True
+)
 async def get_jwk(signing_key: JWK = Depends(get_signing_key)):
     return signing_key.export(private_key=False, as_dict=True)
 

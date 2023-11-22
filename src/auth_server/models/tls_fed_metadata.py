@@ -8,7 +8,7 @@ from datetime import datetime
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import AnyUrl, BaseModel, Extra, Field, conint, constr
+from pydantic import AnyUrl, BaseModel, ConfigDict, Field, PositiveInt
 
 from auth_server.models.jose import JOSEHeader
 
@@ -28,9 +28,7 @@ class SAMLScopeExtension(BaseModel):
 
 
 class Extensions(BaseModel):
-    class Config:
-        extra = Extra.allow
-        allow_population_by_field_name = True  # allow registered extension to also be set by name, not only by alias
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
     saml_scope: Optional[SAMLScopeExtension] = Field(default=None, alias=RegisteredExtensions.SAML_SCOPE.value)  # type: ignore[literal-required]
 
@@ -44,42 +42,42 @@ class Alg(str, Enum):
 
 
 class PinDirective(BaseModel):
-    alg: Alg = Field(..., example="sha256", title="Directive name")
-    digest: constr(regex=r"^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$") = Field(  # type: ignore
+    alg: Alg = Field(..., examples=["sha256"], title="Directive name")
+    digest: str = Field(
         ...,
-        example="HiMkrb4phPSP+OvGqmZd6sGvy7AUn4k3XEe8OMBrzt8=",
+        examples=["HiMkrb4phPSP+OvGqmZd6sGvy7AUn4k3XEe8OMBrzt8="],
         title="Directive value (Base64)",
+        pattern=r"^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
     )
 
 
 class Endpoint(BaseModel):
-    class Config:
-        extra = Extra.allow
+    model_config = ConfigDict(extra="allow")
 
-    description: Optional[str] = Field(None, example="SCIM Server 1", title="Endpoint description")
-    tags: Optional[List[constr(regex=r"^[a-z0-9]{1,64}$")]] = Field(  # type: ignore
+    description: Optional[str] = Field(None, examples=["SCIM Server 1"], title="Endpoint description")
+    tags: Optional[List[str]] = Field(
         None,
         description="A list of strings that describe the endpoint's capabilities.\n",
         title="Endpoint tags",
+        pattern=r"^[a-z0-9]{1,64}$",
     )
-    base_uri: Optional[AnyUrl] = Field(None, example="https://scim.example.com", title="Endpoint base URI")
+    base_uri: Optional[AnyUrl] = Field(None, examples=["https://scim.example.com"], title="Endpoint base URI")
     pins: List[PinDirective] = Field(..., title="Certificate pin set")
 
 
 class Entity(BaseModel):
-    class Config:
-        extra = Extra.allow
+    model_config = ConfigDict(extra="allow")
 
-    entity_id: AnyUrl = Field(
+    entity_id: str = Field(
         ...,
         description="Globally unique identifier for the entity.",
-        example="https://example.com",
+        examples=["https://example.com"],
         title="Entity identifier",
     )
     organization: Optional[str] = Field(
         None,
         description="Name identifying the organization that the entity’s\nmetadata represents.\n",
-        example="Example Org",
+        examples=["Example Org"],
         title="Name of entity organization",
     )
     issuers: List[CertIssuers] = Field(
@@ -95,14 +93,18 @@ class Entity(BaseModel):
 
 
 class Model(BaseModel):
-    class Config:
-        extra = Extra.allow
+    model_config = ConfigDict(extra="allow")
 
-    version: constr(regex=r"^\d+\.\d+\.\d+$") = Field(..., example="1.0.0", title="Metadata schema version")  # type: ignore
-    cache_ttl: Optional[conint(ge=0)] = Field(  # type: ignore
+    version: str = Field(
+        ...,
+        examples=["1.0.0"],
+        title="Metadata schema version",
+        pattern=r"^\d+\.\d+\.\d+$",
+    )
+    cache_ttl: Optional[PositiveInt] = Field(
         None,
         description="How long (in seconds) to cache metadata.\nEffective maximum TTL is the minimum of HTTP Expire and TTL\n",
-        example=3600,
+        examples=[3600],
         title="Metadata cache TTL",
     )
     entities: List[Entity]

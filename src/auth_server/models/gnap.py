@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Extra, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from auth_server.models.jose import (
     ECJWK,
@@ -23,8 +23,7 @@ __author__ = "lundberg"
 
 
 class GnapBaseModel(BaseModel):
-    class Config:
-        allow_population_by_field_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class ProofMethod(str, Enum):
@@ -47,7 +46,8 @@ class Key(GnapBaseModel):
     cert: Optional[str] = None
     cert_S256: Optional[str] = Field(default=None, alias="cert#S256")
 
-    @validator("proof", pre=True)
+    @field_validator("proof", mode="before")
+    @classmethod
     def expand_proof(cls, v: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
         # If additional parameters are not required or used for a specific method,
         # the method MAY be passed as a string instead of an object.
@@ -139,9 +139,7 @@ class SubjectIdentifier(GnapBaseModel):
     # {"format": "email", "email": "user@example.com"}
     # see ietf-secevent-subject-identifiers
     format: SubjectIdentifierFormat
-
-    class Config:
-        extra = Extra.allow
+    model_config = ConfigDict(extra="allow")
 
 
 class SubjectAssertion(GnapBaseModel):
@@ -190,8 +188,8 @@ class Hints(GnapBaseModel):
 
 class InteractionRequest(GnapBaseModel):
     start: List[StartInteractionMethod]
-    finish: Optional[FinishInteraction]
-    hints: Optional[Hints]
+    finish: Optional[FinishInteraction] = None
+    hints: Optional[Hints] = None
 
 
 class GrantRequest(GnapBaseModel):

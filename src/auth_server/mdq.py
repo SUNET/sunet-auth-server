@@ -2,18 +2,15 @@
 from base64 import b64encode
 from collections import OrderedDict as _OrderedDict
 from enum import Enum
-from typing import TYPE_CHECKING, List, Optional, OrderedDict, Union
+from typing import Any, List, Optional, OrderedDict
 
 import aiohttp
 import xmltodict
 from cryptography.hazmat.primitives.hashes import SHA1, SHA256
 from cryptography.x509 import Certificate
 from loguru import logger
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 from pyexpat import ExpatError
-
-if TYPE_CHECKING:
-    from pydantic.typing import AbstractSetIntStr, MappingIntStrAny, DictStrAny
 
 from auth_server.models.gnap import Key, Proof, ProofMethod
 from auth_server.utils import get_values, hash_with, load_cert_from_str, serialize_certificate
@@ -27,45 +24,26 @@ class KeyUse(str, Enum):
 
 
 class MDQBase(BaseModel):
-    class Config:
-        allow_mutation = False  # should not change after load
-        arbitrary_types_allowed = True  # needed for x509.Certificate
-        json_encoders = {Certificate: serialize_certificate}
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
 
 class MDQCert(MDQBase):
     use: KeyUse
     cert: Certificate
 
-    @validator("cert", pre=True)
+    @field_validator("cert", mode="before")
+    @classmethod
     def deserialize_cert(cls, v: str) -> Certificate:
         if isinstance(v, Certificate):
             return v
         return load_cert_from_str(v)
 
-    def dict(
-        self,
-        *,
-        include: Optional[Union["AbstractSetIntStr", "MappingIntStrAny"]] = None,
-        exclude: Optional[Union["AbstractSetIntStr", "MappingIntStrAny"]] = None,
-        by_alias: bool = False,
-        skip_defaults: Optional[bool] = None,
-        exclude_unset: bool = False,
-        exclude_defaults: bool = False,
-        exclude_none: bool = False,
-    ) -> "DictStrAny":
-        # serialize Certificate on dict use
-        d = super().dict(
-            include=include,
-            exclude=exclude,
-            by_alias=by_alias,
-            skip_defaults=skip_defaults,
-            exclude_unset=exclude_unset,
-            exclude_defaults=exclude_defaults,
-            exclude_none=exclude_none,
-        )
-        d["cert"] = serialize_certificate(d["cert"])
-        return d
+    @model_serializer
+    def serialize_mdq_cert(self) -> dict[str, Any]:
+        """
+        serialize Certificate on model_dump
+        """
+        return {"use": self.use.value, "cert": serialize_certificate(self.cert)}
 
 
 class MDQData(MDQBase):

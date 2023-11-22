@@ -56,8 +56,7 @@ def create_tls_fed_metadata(
 
     entities = [
         Entity(
-            # catch 22, mypy says AnyUrl and pydantic expects a str
-            entity_id=entity_id,  # type: ignore
+            entity_id=entity_id,
             organization="Test Org",
             organization_id=organization_id,
             issuers=[
