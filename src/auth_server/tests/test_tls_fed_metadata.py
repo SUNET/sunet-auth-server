@@ -115,7 +115,7 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
             cache_ttl=self.cache_ttl.seconds,
             scopes=self.scopes,
             client_cert=self.client_cert_str,
-        ).json(by_alias=True)
+        ).model_dump_json(by_alias=True)
         deserialized_metadata = json.loads(serialized_metadata)
 
         entity = deserialized_metadata["entities"][0]
@@ -132,4 +132,4 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
         # but the unregistered extension should be removed
         entity = metadata.entities["https://unknown_extension_entity"]
         assert entity.extensions.saml_scope.scope == self.scopes
-        assert entity.extensions.dict()["not_a_registered_extension"] == {"some_key": "some_value"}
+        assert entity.extensions.model_dump()["not_a_registered_extension"] == {"some_key": "some_value"}

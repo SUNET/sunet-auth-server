@@ -13,7 +13,6 @@ from starlette.responses import HTMLResponse, RedirectResponse
 from auth_server.config import load_config
 from auth_server.context import ContextRequest, ContextRequestRoute
 from auth_server.db.transaction_state import get_transaction_state_db
-from auth_server.routers.interaction import interaction_router
 from auth_server.saml2 import (
     SAML2SP,
     AuthnRequestRef,
@@ -55,7 +54,7 @@ async def authenticate(
         return_url = f'{request.url_for("discovery_service_response")}/?target={authn_id}'
         logger.debug(f"discovery service return_url: {return_url}")
         discovery_service_redirect_url = saml2_sp.client.create_discovery_service_request(
-            url=saml2_sp.discovery_service_url, entity_id=saml2_sp.client.config.entityid, return_url=return_url
+            url=str(saml2_sp.discovery_service_url), entity_id=saml2_sp.client.config.entityid, return_url=return_url
         )
         logger.debug(f"discovery service redirect url: {discovery_service_redirect_url}")
         return RedirectResponse(discovery_service_redirect_url, status_code=303)

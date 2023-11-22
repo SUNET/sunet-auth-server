@@ -5,19 +5,17 @@ from typing import Callable, Optional, Union
 from fastapi import Request, Response
 from fastapi.routing import APIRoute
 from jwcrypto import jws
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 __author__ = "lundberg"
 
 
 class Context(BaseModel):
     jws_verified: bool = False
-    client_cert: Optional[str]
-    jws_obj: Optional[jws.JWS]
-    detached_jws: Optional[str]
-
-    class Config:
-        arbitrary_types_allowed = True
+    client_cert: Optional[str] = None
+    jws_obj: Optional[jws.JWS] = None
+    detached_jws: Optional[str] = None
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def to_dict(self):
         return self.dict()

@@ -11,6 +11,8 @@ xmltodict
 loguru
 motor
 pysaml2
+pki-tools
+pydantic-settings
 uvicorn[standard]
 gunicorn
 # jwcrypto needs six

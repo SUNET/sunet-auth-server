@@ -51,7 +51,7 @@ class RegisteredClaims(BaseModel):
     iss: Optional[str] = None  # Issuer
     sub: Optional[str] = None  # Subject
     aud: Optional[str] = None  # Audience
-    exp: Optional[timedelta]  # Expiration Time
+    exp: Optional[timedelta] = None  # Expiration Time
     nbf: Optional[datetime] = Field(default_factory=utc_now)  # Not Before
     iat: Optional[datetime] = Field(default_factory=utc_now)  # Issued At
     jti: Optional[str] = None  # JWT ID
@@ -106,12 +106,6 @@ class SymmetricJWK(JWK):
     k: Optional[str] = None
 
 
-# Workaround for mypy not liking Union[ECJWK, RSAJWK, SymmetricJWK] as response_model. It should work.
-# https://github.com/tiangolo/fastapi/issues/2279
-class JWKTypes(BaseModel):
-    __root__: Union[ECJWK, RSAJWK, SymmetricJWK]
-
-
 class JWKS(BaseModel):
     keys: List[Union[ECJWK, RSAJWK, SymmetricJWK]]
 
@@ -129,7 +123,7 @@ class JOSEHeader(BaseModel):
     x5u: Optional[str] = None
     x5c: Optional[str] = None
     x5t: Optional[str] = None
-    x5tS256: Optional[str] = Field(alias="x5t#S256")
+    x5tS256: Optional[str] = Field(default=None, alias="x5t#S256")
     typ: Optional[str] = None
     cty: Optional[str] = None
     crit: Optional[List] = None

@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
-from typing import Any, List, Optional, Union
+from typing import List, Optional, Union
 
-from pydantic import Extra
+from pydantic import ConfigDict
 
-from auth_server.config import FlowName
 from auth_server.models.gnap import Access
 from auth_server.models.jose import RegisteredClaims
-from auth_server.saml2 import AuthnInfo
 
 __author__ = "lundberg"
 
@@ -20,8 +18,8 @@ class Claims(RegisteredClaims):
 
 
 class ConfigClaims(Claims):
-    class Config:
-        extra = Extra.allow
+    model_config = ConfigDict(extra="allow")
+
 
 
 class MDQClaims(Claims):

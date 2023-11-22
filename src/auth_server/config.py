@@ -11,7 +11,8 @@ from sys import stderr
 from typing import Any, Dict, List, Optional, Union
 
 import yaml
-from pydantic import AnyUrl, BaseModel, BaseSettings, Field, ValidationError, validator
+from pydantic import AnyUrl, BaseModel, Field, ValidationError, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from auth_server.models.gnap import Proof
 from auth_server.models.jose import ECJWK, RSAJWK, SymmetricJWK
@@ -78,15 +79,16 @@ class AuthServerConfig(BaseSettings):
     pysaml2_config_name: str = "SAML_CONFIG"
     saml2_discovery_service_url: Optional[AnyUrl] = None
     saml2_single_idp: Optional[str] = None
+    ca_certs_path: Optional[Path] = None  # all files ending with .crt will be loaded recursively. PEM and DER supported
 
-    @validator("application_root")
+    @field_validator("application_root")
+    @classmethod
     def application_root_must_not_end_with_slash(cls, v: str):
         if v.endswith("/"):
             v = v.removesuffix("/")
         return v
 
-    class Config:
-        frozen = True  # make hashable
+    model_config = SettingsConfigDict(frozen=True)
 
 
 def read_config_file(config_file: str, config_ns: str = "") -> Dict:

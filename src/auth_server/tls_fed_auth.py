@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.x509 import load_pem_x509_certificate
 from jwcrypto import jwk, jws
 from loguru import logger
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from auth_server.config import load_config
 from auth_server.models.gnap import Key, Proof, ProofMethod
@@ -42,9 +42,7 @@ class MetadataEntity(Entity):
 class Metadata(BaseModel):
     renew_at: datetime
     entities: Mapping[str, MetadataEntity]
-
-    class Config:
-        frozen = True
+    model_config = ConfigDict(frozen=True)
 
 
 async def load_jwks(path: Path) -> Optional[jwk.JWKSet]:
@@ -219,7 +217,7 @@ async def get_tls_fed_metadata() -> Metadata:
             logger.debug(f"{source.local} returned jws: {raw_jws}")
         # if local source didn't return any metadata try remote source if it exists
         elif source.remote is not None:
-            raw_jws = await get_remote_metadata(source.remote)
+            raw_jws = await get_remote_metadata(str(source.remote))
             logger.debug(f"{source.remote} returned jws: {raw_jws}")
         metadata_source = await load_metadata_source(raw_jws=raw_jws, jwks=jwks, strict=source.strict)
         if metadata_source is not None:

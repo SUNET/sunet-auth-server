@@ -70,30 +70,30 @@ class TransactionState(BaseModel, ABC):
         return cls(**state)
 
     def to_dict(self) -> Dict[str, Any]:
-        return self.dict(exclude_none=True)
+        return self.model_dump(exclude_none=True)
 
 
 class TestState(TransactionState):
-    auth_source = AuthSource.TEST
+    auth_source: AuthSource = AuthSource.TEST
 
 
 class InteractionState(TransactionState):
-    auth_source = AuthSource.INTERACTION
+    auth_source: AuthSource = AuthSource.INTERACTION
 
 
 class ConfigState(TransactionState):
-    auth_source = AuthSource.CONFIG
+    auth_source: AuthSource = AuthSource.CONFIG
     config_claims: Dict[str, Any] = Field(default_factory=dict)
 
 
 class MDQState(TransactionState):
-    auth_source = AuthSource.MDQ
-    mdq_data: Optional[MDQData]
+    auth_source: AuthSource = AuthSource.MDQ
+    mdq_data: Optional[MDQData] = None
 
 
 class TLSFEDState(TransactionState):
-    auth_source = AuthSource.TLSFED
-    entity: Optional[MetadataEntity]
+    auth_source: AuthSource = AuthSource.TLSFED
+    entity: Optional[MetadataEntity] = None
 
 
 class TransactionStateDB(BaseDB):
