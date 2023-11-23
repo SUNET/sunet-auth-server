@@ -5,8 +5,8 @@ from base64 import b64encode
 from cryptography.hazmat.primitives.hashes import SHA256
 from loguru import logger
 
+from auth_server.cert_utils import load_cert_from_str
 from auth_server.models.gnap import Key
-from auth_server.utils import load_cert_from_str
 
 __author__ = "lundberg"
 

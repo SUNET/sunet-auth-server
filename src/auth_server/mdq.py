@@ -12,8 +12,9 @@ from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 from pyexpat import ExpatError
 
+from auth_server.cert_utils import load_cert_from_str, serialize_certificate
 from auth_server.models.gnap import Key, Proof, ProofMethod
-from auth_server.utils import get_values, hash_with, load_cert_from_str, serialize_certificate
+from auth_server.utils import get_values, hash_with
 
 __author__ = "lundberg"
 

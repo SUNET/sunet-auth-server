@@ -9,17 +9,13 @@ from uuid import uuid4
 import aiohttp
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.hashes import SHA3_256, SHA3_384, SHA3_512, SHA256, SHA512, HashAlgorithm
-from cryptography.hazmat.primitives.serialization import Encoding
-from cryptography.x509 import Certificate, load_pem_x509_certificate
 from jwcrypto import jwk
 from loguru import logger
 
 from auth_server.config import ConfigurationError, load_config
+from auth_server.models.gnap import HashMethod
 
 __author__ = "lundberg"
-
-
-from auth_server.models.gnap import HashMethod
 
 
 @lru_cache()
@@ -48,16 +44,6 @@ def get_signing_key() -> jwk.JWK:
     if signing_key is None:
         raise ConfigurationError(f"no JWK with id {config.signing_key_id} found in JWKS")
     return signing_key
-
-
-def load_cert_from_str(cert: str) -> Certificate:
-    if not cert.startswith("-----BEGIN CERTIFICATE-----"):
-        cert = f"-----BEGIN CERTIFICATE-----\n{cert}\n-----END CERTIFICATE-----"
-    return load_pem_x509_certificate(cert.encode())
-
-
-def serialize_certificate(cert: Certificate) -> str:
-    return cert.public_bytes(encoding=Encoding.PEM).decode("utf-8")
 
 
 def import_class(class_path: str) -> Callable:
