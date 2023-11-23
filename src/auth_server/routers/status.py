@@ -2,7 +2,6 @@
 import asyncio
 
 from fastapi import APIRouter
-from loguru import logger
 from pymongo.errors import ConnectionFailure
 
 from auth_server.config import load_config
