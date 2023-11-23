@@ -41,6 +41,7 @@ class AuthSource(str, Enum):
     CONFIG = "config"
     MDQ = "mdq"
     TLSFED = "tlsfed"
+    CA = "ca"
     TEST = "test"
 
 
@@ -94,6 +95,12 @@ class MDQState(TransactionState):
 class TLSFEDState(TransactionState):
     auth_source: AuthSource = AuthSource.TLSFED
     entity: Optional[MetadataEntity] = None
+
+
+class CAState(TransactionState):
+    auth_source: AuthSource = AuthSource.CA
+    organization_id: Optional[str] = None
+    ca: Optional[str] = None
 
 
 class TransactionStateDB(BaseDB):

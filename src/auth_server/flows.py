@@ -9,9 +9,11 @@ from jwcrypto import jwt
 from jwcrypto.jwk import JWK
 from loguru import logger
 
+from auth_server.cert_utils import cert_signed_by_ca, cert_within_validity_period, is_cert_revoked
 from auth_server.config import AuthServerConfig
 from auth_server.context import ContextRequest
 from auth_server.db.transaction_state import (
+    CAState,
     ConfigState,
     FlowState,
     InteractionState,
@@ -21,7 +23,7 @@ from auth_server.db.transaction_state import (
     get_transaction_state_db,
 )
 from auth_server.mdq import mdq_data_to_key, xml_mdq_get
-from auth_server.models.claims import Claims, ConfigClaims, MDQClaims, SAMLAssertionClaims, TLSFEDClaims
+from auth_server.models.claims import CAClaims, Claims, ConfigClaims, MDQClaims, SAMLAssertionClaims, TLSFEDClaims
 from auth_server.models.gnap import (
     AccessTokenFlags,
     AccessTokenResponse,
@@ -594,9 +596,43 @@ class TLSFEDFlow(OnlyMTLSProofFlow):
 
         base_claims = await super().create_claims()
         return TLSFEDClaims(
-            **base_claims.dict(exclude_none=True),
+            **base_claims.model_dump(exclude_none=True),
             entity_id=self.state.entity.entity_id,
             scopes=scopes,
             organization_id=self.state.entity.organization_id,
             source=self.state.entity.issuer,
+        )
+
+
+class CAFlow(OnlyMTLSProofFlow):
+    @classmethod
+    def load_state(cls, state: Mapping[str, Any]) -> CAState:
+        return CAState.from_dict(state=state)
+
+    async def validate_proof(self) -> Optional[GrantResponse]:
+        await super().validate_proof()
+        if not self.state.proof_ok:
+            raise NextFlowException(status_code=401, detail="client certificate does not match grant request")
+
+        if not cert_within_validity_period(cert=self.request.context.client_cert):
+            raise NextFlowException(status_code=401, detail="client certificate expired")
+
+        ca_cert = cert_signed_by_ca(cert=self.request.context.client_cert)
+        if ca_cert is None:
+            raise NextFlowException(status_code=401, detail="client certificate not signed by CA")
+
+        if await is_cert_revoked(cert=self.request.context.client_cert, ca_cert=ca_cert) is True:
+            raise NextFlowException(status_code=401, detail="client certificate revoked")
+
+        return None
+
+    async def create_claims(self) -> CAClaims:
+        if not self.state.organization_id:
+            raise NextFlowException(status_code=400, detail="missing organization id")
+
+        base_claims = await super().create_claims()
+        return CAClaims(
+            **base_claims.model_dump(exclude_none=True),
+            organization_id=self.state.organization_id,
+            source=self.state.ca,
         )

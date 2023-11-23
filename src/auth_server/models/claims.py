@@ -21,6 +21,9 @@ class ConfigClaims(Claims):
     model_config = ConfigDict(extra="allow")
 
 
+class CAClaims(Claims):
+    organization_id: Optional[str] = None
+
 
 class MDQClaims(Claims):
     entity_id: str
