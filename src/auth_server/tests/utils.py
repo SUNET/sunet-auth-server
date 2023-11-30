@@ -59,9 +59,7 @@ def create_tls_fed_metadata(
             entity_id=entity_id,
             organization="Test Org",
             organization_id=organization_id,
-            issuers=[
-                CertIssuers(x509certificate=f"-----BEGIN CERTIFICATE-----\n{client_cert}\n-----END CERTIFICATE-----")
-            ],
+            issuers=[CertIssuers(x509certificate=client_cert)],
             extensions=Extensions(saml_scope=SAMLScopeExtension(scope=scopes)),
         )
     ]

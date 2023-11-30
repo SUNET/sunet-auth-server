@@ -95,7 +95,7 @@ class SAMLAttributes(BaseModel):
         result.update(ava)
         result.update(single_values)
         # what's up with pydantic typing, hopefully an upgrade to 2 will solve this
-        return cls(**result)  # type: ignore[arg-type]
+        return cls(**result)
 
 
 class SessionInfo(BaseModel):

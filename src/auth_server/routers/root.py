@@ -67,7 +67,7 @@ async def transaction(
         # init a new transaction state
         state = TransactionState(
             flow_name=auth_flow_name,
-            grant_request=grant_req.copy(deep=True),  # let every flow have their own copy of the grant request,
+            grant_request=grant_req.model_copy(deep=True),  # let every flow have their own copy of the grant request,
         )
 
         flow = auth_flow(request=request, config=config, signing_key=signing_key, state=state.to_dict())

@@ -8,7 +8,7 @@ from starlette.staticfiles import StaticFiles
 
 from auth_server.config import AuthServerConfig, ConfigurationError, FlowName, load_config
 from auth_server.context import ContextRequestRoute
-from auth_server.flows import BaseAuthFlow, ConfigFlow, InteractionFlow, MDQFlow, TestFlow, TLSFEDFlow
+from auth_server.flows import BaseAuthFlow, CAFlow, ConfigFlow, InteractionFlow, MDQFlow, TestFlow, TLSFEDFlow
 from auth_server.log import init_logging
 from auth_server.middleware import JOSEMiddleware
 from auth_server.routers.interaction import interaction_router
@@ -28,10 +28,11 @@ class AuthServer(FastAPI):
 
         # Load flows
         self.builtin_flow: Dict[FlowName, Type[BaseAuthFlow]] = {
-            FlowName.TESTFLOW: TestFlow,
-            FlowName.INTERACTIONFLOW: InteractionFlow,
+            FlowName.CAFLOW: CAFlow,
             FlowName.CONFIGFLOW: ConfigFlow,
+            FlowName.INTERACTIONFLOW: InteractionFlow,
             FlowName.MDQFLOW: MDQFlow,
+            FlowName.TESTFLOW: TestFlow,
             FlowName.TLSFEDFLOW: TLSFEDFlow,
         }
         self.auth_flows = self.load_flows(config=config)

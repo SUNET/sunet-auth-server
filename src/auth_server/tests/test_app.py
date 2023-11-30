@@ -13,11 +13,11 @@ from urllib.parse import parse_qs, urlparse
 import yaml
 from cryptography import x509
 from cryptography.hazmat.primitives.hashes import SHA256
-from cryptography.hazmat.primitives.serialization import Encoding
 from jwcrypto import jwk, jws, jwt
 from starlette.testclient import TestClient
 
 from auth_server.api import init_auth_server_api
+from auth_server.cert_utils import serialize_certificate
 from auth_server.config import ClientKey, load_config
 from auth_server.db.transaction_state import AuthSource, TransactionState
 from auth_server.models.gnap import (
@@ -88,7 +88,7 @@ class TestAuthServer(TestCase):
 
         with open(f"{self.datadir}/test.cert", "rb") as f:
             self.client_cert = x509.load_pem_x509_certificate(data=f.read())
-        self.client_cert_str = base64.b64encode(self.client_cert.public_bytes(encoding=Encoding.DER)).decode("utf-8")
+        self.client_cert_str = serialize_certificate(cert=self.client_cert)
         with open(f"{self.datadir}/test_mdq.xml", "rb") as f:
             self.mdq_response = f.read()
         self.client_jwk = jwk.JWK.generate(kid="default", kty="EC", crv="P-256")
@@ -154,7 +154,7 @@ class TestAuthServer(TestCase):
                 "https://refeds.org/assurance/IAP/medium",
             ],
             entitlement=["some-entitlement"],
-        )  # type: ignore[call-arg]
+        )
         name_id = NameID(
             format="urn:oasis:names:tc:SAML:2.0:nameid-format:transient",
             sp_name_qualifier="http://test.localhost/saml2-metadata",

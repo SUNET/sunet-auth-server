@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import asyncio
-import base64
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -9,12 +8,12 @@ from typing import List, Mapping, Optional
 import aiohttp
 from aiofiles import open as async_open
 from async_lru import alru_cache
-from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.x509 import load_pem_x509_certificate
 from jwcrypto import jwk, jws
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from auth_server.cert_utils import rfc8705_fingerprint
 from auth_server.config import load_config
 from auth_server.models.gnap import Key, Proof, ProofMethod
 from auth_server.models.tls_fed_metadata import Entity
@@ -262,8 +261,8 @@ async def entity_to_key(entity: Optional[MetadataEntity]) -> Optional[Key]:
     if certs:
         # TODO: how do we handle multiple certs?
         logger.info("Found cert in metadata")
-        return Key(  # type: ignore[call-arg]
+        return Key(
             proof=Proof(method=ProofMethod.MTLS),
-            cert_S256=base64.b64encode(certs[0].fingerprint(algorithm=SHA256())).decode("utf-8"),
+            cert_S256=rfc8705_fingerprint(certs[0]),
         )
     return None

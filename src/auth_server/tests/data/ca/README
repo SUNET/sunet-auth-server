@@ -1,0 +1,12 @@
+Test certs:
+https://eid.expisoft.se/expitrust-test-certifikat/
+
+Convert p12 to x509 PEM certificate AND key format, use these commands:
+
+  openssl pkcs12 -in path.p12 -out newfile.crt.pem -clcerts -nokeys
+  openssl pkcs12 -in path.p12 -out newfile.key.pem -nocerts -nodes
+
+Test CA certs:
+https://eid.expisoft.se/expitrust-test-certifikat/
+https://inera.atlassian.net/wiki/spaces/IAM/pages/289082989/PKI-struktur+och+rotcertifikat
+https://repository.efos.se/

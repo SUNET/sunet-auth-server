@@ -9,9 +9,19 @@ from jwcrypto import jwt
 from jwcrypto.jwk import JWK
 from loguru import logger
 
+from auth_server.cert_utils import (
+    cert_signed_by_ca,
+    cert_within_validity_period,
+    get_issuer_cn,
+    get_org_id_from_cert,
+    get_subject_cn,
+    is_cert_revoked,
+    load_pem_from_str,
+)
 from auth_server.config import AuthServerConfig
 from auth_server.context import ContextRequest
 from auth_server.db.transaction_state import (
+    CAState,
     ConfigState,
     FlowState,
     InteractionState,
@@ -21,7 +31,7 @@ from auth_server.db.transaction_state import (
     get_transaction_state_db,
 )
 from auth_server.mdq import mdq_data_to_key, xml_mdq_get
-from auth_server.models.claims import Claims, ConfigClaims, MDQClaims, SAMLAssertionClaims, TLSFEDClaims
+from auth_server.models.claims import CAClaims, Claims, ConfigClaims, MDQClaims, SAMLAssertionClaims, TLSFEDClaims
 from auth_server.models.gnap import (
     AccessTokenFlags,
     AccessTokenResponse,
@@ -551,7 +561,7 @@ class MDQFlow(OnlyMTLSProofFlow):
             source = self.config.mdq_server  # Default source to mdq server if registrationAuthority is not set
 
         base_claims = await super().create_claims()
-        return MDQClaims(**base_claims.dict(exclude_none=True), entity_id=entity_id, scopes=scopes, source=source)
+        return MDQClaims(**base_claims.model_dump(exclude_none=True), entity_id=entity_id, scopes=scopes, source=source)
 
 
 class TLSFEDFlow(OnlyMTLSProofFlow):
@@ -594,9 +604,51 @@ class TLSFEDFlow(OnlyMTLSProofFlow):
 
         base_claims = await super().create_claims()
         return TLSFEDClaims(
-            **base_claims.dict(exclude_none=True),
+            **base_claims.model_dump(exclude_none=True),
             entity_id=self.state.entity.entity_id,
             scopes=scopes,
             organization_id=self.state.entity.organization_id,
             source=self.state.entity.issuer,
+        )
+
+
+class CAFlow(OnlyMTLSProofFlow):
+    @classmethod
+    def load_state(cls, state: Mapping[str, Any]) -> CAState:
+        return CAState.from_dict(state=state)
+
+    async def validate_proof(self) -> Optional[GrantResponse]:
+        await super().validate_proof()
+        if not self.state.proof_ok:
+            raise NextFlowException(status_code=401, detail="client certificate does not match grant request")
+
+        client_cert = load_pem_from_str(self.request.context.client_cert)
+        if not cert_within_validity_period(cert=client_cert):
+            raise StopTransactionException(status_code=401, detail="client certificate expired or not yet valid")
+
+        ca_name = cert_signed_by_ca(cert=client_cert)
+        if ca_name is None:
+            raise StopTransactionException(status_code=401, detail="client certificate not signed by CA")
+
+        if await is_cert_revoked(cert=client_cert, ca_name=ca_name) is True:
+            raise StopTransactionException(status_code=401, detail="client certificate revoked")
+
+        # set client CN and issuer CN in state for use in claims
+        self.state.client_common_name = get_subject_cn(cert=client_cert)
+        self.state.issuer_common_name = get_issuer_cn(ca_name=ca_name)
+        # try to get an organization id from the client certificate
+        self.state.organization_id = get_org_id_from_cert(cert=client_cert, ca_name=ca_name)
+
+        return None
+
+    async def create_claims(self) -> CAClaims:
+        if self.config.ca_certs_mandatory_org_id and self.state.organization_id is None:
+            raise StopTransactionException(status_code=401, detail="missing organization id in client certificate")
+
+        base_claims = await super().create_claims()
+        return CAClaims(
+            **base_claims.model_dump(exclude_none=True),
+            organization_id=self.state.organization_id,
+            common_name=self.state.client_common_name,
+            source=self.state.issuer_common_name,
         )
