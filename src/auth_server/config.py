@@ -66,21 +66,22 @@ class AuthServerConfig(BaseSettings):
     auth_flows: List[str] = Field(default_factory=list)
     mdq_server: Optional[str] = Field(default=None)
     tls_fed_metadata: List[TLSFEDMetadata] = Field(default_factory=list)
-    tls_fed_metadata_max_age: timedelta = Field(default="PT1H")
-    keystore_path: Path = Field(default="keystore.jwks")
+    tls_fed_metadata_max_age: timedelta = Field(default=timedelta(hours=1))
+    keystore_path: Path = Field(default=Path("keystore.jwks"))
     signing_key_id: str = Field(default="default")
     auth_token_issuer: str
     auth_token_audience: Optional[str] = Field(default=None)
-    auth_token_expires_in: timedelta = Field(default="PT10H")
-    proof_jws_max_age: timedelta = Field(default="PT5M")
+    auth_token_expires_in: timedelta = Field(default=timedelta(hours=10))
+    proof_jws_max_age: timedelta = Field(default=timedelta(minutes=5))
     client_keys: Dict[str, ClientKey] = Field(default_factory=dict)
     mongo_uri: Optional[str] = None
-    transaction_state_expires_in: timedelta = Field(default="PT10M")
+    transaction_state_expires_in: timedelta = Field(default=timedelta(minutes=10))
     pysaml2_config_path: Optional[Path] = Field(default=None)
     pysaml2_config_name: str = "SAML_CONFIG"
     saml2_discovery_service_url: Optional[AnyUrl] = None
     saml2_single_idp: Optional[str] = None
-    ca_certs_path: Optional[Path] = None  # all files ending with .crt will be loaded recursively. PEM and DER supported
+    ca_certs_path: Optional[Path] = None  # all files ending with .c* will be loaded recursively. PEM and DER supported
+    ca_certs_mandatory_org_id: bool = False  # fail grant requests where no org id is found in the certificate
 
     @field_validator("application_root")
     @classmethod
@@ -113,7 +114,7 @@ def load_config() -> AuthServerConfig:
             config = AuthServerConfig.parse_obj(data)
         else:
             # config will be instantiated with env vars if there is no config file
-            config = AuthServerConfig()  # type: ignore[call-arg]
+            config = AuthServerConfig()
         # Save config to a file in /dev/shm for introspection
         fd_int = os.open(f"/dev/shm/{config.app_name}_config.yaml", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with open(fd_int, "w") as fd:

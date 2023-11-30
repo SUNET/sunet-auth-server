@@ -154,7 +154,7 @@ class TestAuthServer(TestCase):
                 "https://refeds.org/assurance/IAP/medium",
             ],
             entitlement=["some-entitlement"],
-        )  # type: ignore[call-arg]
+        )
         name_id = NameID(
             format="urn:oasis:names:tc:SAML:2.0:nameid-format:transient",
             sp_name_qualifier="http://test.localhost/saml2-metadata",

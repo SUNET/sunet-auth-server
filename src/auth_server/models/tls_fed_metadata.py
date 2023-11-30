@@ -30,7 +30,7 @@ class SAMLScopeExtension(BaseModel):
 class Extensions(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
-    saml_scope: Optional[SAMLScopeExtension] = Field(default=None, alias=RegisteredExtensions.SAML_SCOPE.value)  # type: ignore[literal-required]
+    saml_scope: Optional[SAMLScopeExtension] = Field(default=None, alias=RegisteredExtensions.SAML_SCOPE.value)
 
 
 class CertIssuers(BaseModel):

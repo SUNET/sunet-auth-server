@@ -37,7 +37,7 @@ async def load_config_key(client_key: ClientKey) -> Key:
     elif client_key.cert_S256:
         logger.info("Loading cert_S256 from config")
         logger.debug(f"client_key.cert_S256: {client_key.cert_S256}")
-        return Key(proof=client_key.proof, cert_S256=client_key.cert_S256)  # type: ignore[call-arg]
+        return Key(proof=client_key.proof, cert_S256=client_key.cert_S256)
 
     raise ConfigurationError(f"malformed client key in config")
 
