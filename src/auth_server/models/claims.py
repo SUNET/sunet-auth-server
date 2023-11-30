@@ -22,6 +22,7 @@ class ConfigClaims(Claims):
 
 
 class CAClaims(Claims):
+    common_name: str
     organization_id: Optional[str] = None
 
 

@@ -99,8 +99,9 @@ class TLSFEDState(TransactionState):
 
 class CAState(TransactionState):
     auth_source: AuthSource = AuthSource.CA
+    issuer_common_name: Optional[str] = None
+    client_common_name: Optional[str] = None
     organization_id: Optional[str] = None
-    ca: Optional[str] = None
 
 
 class TransactionStateDB(BaseDB):
