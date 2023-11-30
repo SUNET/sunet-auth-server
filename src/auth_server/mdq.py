@@ -12,7 +12,7 @@ from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 from pyexpat import ExpatError
 
-from auth_server.cert_utils import load_cert_from_str, serialize_certificate
+from auth_server.cert_utils import load_pem_from_str, serialize_certificate
 from auth_server.models.gnap import Key, Proof, ProofMethod
 from auth_server.utils import get_values, hash_with
 
@@ -37,7 +37,7 @@ class MDQCert(MDQBase):
     def deserialize_cert(cls, v: str) -> Certificate:
         if isinstance(v, Certificate):
             return v
-        return load_cert_from_str(v)
+        return load_pem_from_str(v)
 
     @model_serializer
     def serialize_mdq_cert(self) -> dict[str, Any]:
@@ -84,7 +84,7 @@ async def xml_mdq_get(entity_id: str, mdq_url: str) -> MDQData:
         for key_descriptor in get_values(key="urn:oasis:names:tc:SAML:2.0:metadata:KeyDescriptor", obj=entity):
             use = list(get_values(key="@use", obj=key_descriptor))[0]
             raw_cert = list(get_values(key="http://www.w3.org/2000/09/xmldsig#:X509Certificate", obj=key_descriptor))[0]
-            cert = load_cert_from_str(raw_cert)
+            cert = load_pem_from_str(raw_cert)
             certs.append(MDQCert(use=KeyUse(use), cert=cert))
         return MDQData(certs=certs, metadata=entity)
     except (ExpatError, ValueError):  # TODO: handle exceptions properly
@@ -97,7 +97,7 @@ async def mdq_data_to_key(mdq_data: MDQData) -> Optional[Key]:
     # There should only be one or zero signing certs
     if signing_cert:
         logger.info("Found cert in metadata")
-        return Key(  # type: ignore[call-arg]
+        return Key(
             proof=Proof(method=ProofMethod.MTLS),
             cert_S256=b64encode(signing_cert[0].fingerprint(algorithm=SHA256())).decode("utf-8"),
         )
