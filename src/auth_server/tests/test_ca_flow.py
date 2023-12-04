@@ -15,7 +15,9 @@ from auth_server.api import init_auth_server_api
 from auth_server.cert_utils import (
     cert_signed_by_ca,
     cert_within_validity_period,
+    get_subject_c,
     get_subject_cn,
+    get_subject_o,
     is_cert_revoked,
     load_ca_certs,
     rfc8705_fingerprint,
@@ -142,7 +144,7 @@ class TestAuthServer(TestCase):
 
     def test_mtls_transaction(self):
         parameters = [
-            ("bolag_a.crt", True, "165560000167"),
+            ("bolag_a.crt", True, "SE165560000167"),
             ("bolag_b.crt", False, "client certificate revoked"),
             ("bolag_c.crt", False, "client certificate expired or not yet valid"),
             ("bolag_e.crt", False, "client certificate expired or not yet valid"),
@@ -163,6 +165,8 @@ class TestAuthServer(TestCase):
                 assert claims is not None
                 assert claims["organization_id"] == expected_result, f"{cert_name} has wrong org id"
                 assert claims["common_name"] == get_subject_cn(cert=cert), f"{cert_name} has wrong common name"
+                assert claims["organization_name"] == get_subject_o(cert=cert), f"{cert_name} has wrong common name"
+                assert claims["country_code"] == get_subject_c(cert=cert), f"{cert_name} has wrong common name"
                 assert claims["source"] is not None
             else:
                 assert response.status_code == 401

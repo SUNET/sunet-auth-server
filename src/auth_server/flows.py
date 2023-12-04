@@ -14,7 +14,9 @@ from auth_server.cert_utils import (
     cert_within_validity_period,
     get_issuer_cn,
     get_org_id_from_cert,
+    get_subject_c,
     get_subject_cn,
+    get_subject_o,
     is_cert_revoked,
     load_pem_from_str,
 )
@@ -638,7 +640,9 @@ class CAFlow(OnlyMTLSProofFlow):
         self.state.issuer_common_name = get_issuer_cn(ca_name=ca_name)
         # try to get an organization id from the client certificate
         self.state.organization_id = get_org_id_from_cert(cert=client_cert, ca_name=ca_name)
-
+        # add extra claims from client certificate
+        self.state.client_organization_name = get_subject_o(cert=client_cert)
+        self.state.client_country_code = get_subject_c(cert=client_cert)
         return None
 
     async def create_claims(self) -> CAClaims:
@@ -650,5 +654,7 @@ class CAFlow(OnlyMTLSProofFlow):
             **base_claims.model_dump(exclude_none=True),
             organization_id=self.state.organization_id,
             common_name=self.state.client_common_name,
+            organization_name=self.state.client_organization_name,
+            country_code=self.state.client_country_code,
             source=self.state.issuer_common_name,
         )

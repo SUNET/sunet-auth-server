@@ -23,6 +23,8 @@ class ConfigClaims(Claims):
 
 class CAClaims(Claims):
     common_name: str
+    organization_name: Optional[str] = None
+    country_code: Optional[str] = None
     organization_id: Optional[str] = None
 
 

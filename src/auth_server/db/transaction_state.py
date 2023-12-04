@@ -101,6 +101,8 @@ class CAState(TransactionState):
     auth_source: AuthSource = AuthSource.CA
     issuer_common_name: Optional[str] = None
     client_common_name: Optional[str] = None
+    client_organization_name: Optional[str] = None
+    client_country_code: Optional[str] = None
     organization_id: Optional[str] = None
 
 
