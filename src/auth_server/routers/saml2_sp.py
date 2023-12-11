@@ -155,6 +155,16 @@ async def assertion_consumer_service(request: ContextRequest, saml_response: str
         logger.debug(f"transaction_id: {transaction_id}")
         raise HTTPException(status_code=404, detail="transaction not found")
 
+    if transaction_state.requested_subject.authentication_context is not None:
+        for authn_info in assertion_data.session_info.authn_info:
+            if authn_info.authn_class in transaction_state.requested_subject.authentication_context:
+                break
+        else:
+            logger.error("authentication context mismatch: IdP did not assert any acceptable authentication context")
+            logger.error(f"Requested: {transaction_state.requested_subject.authentication_context}")
+            logger.error(f"Asserted: {assertion_data.session_info.authn_info}")
+            raise HTTPException(status_code=401, detail="authentication context mismatch")
+
     # TODO: do we want this? shouldn't scope from the user identifier be used anyway?
     ## get the scopes from metadata
     # scopes = []
