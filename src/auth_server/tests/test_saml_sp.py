@@ -99,6 +99,9 @@ class TestSAMLSP(TestCase):
                 surname="Testsson",
                 targeted_id="https://idp.example.com/simplesaml/saml2/idp/metadata.php!http://test.localhost/saml2-metadata!398f4967ef4ec07985d93a9200d3891184b9c0f6c79db53280894ae75673eab8",
                 unique_id="eppn@idp.example.com",
+                entitlement=[
+                    "urn:mace:swamid.se:example.com:role:member",
+                ],
             ),
         )
 
@@ -171,11 +174,14 @@ class TestSAMLSP(TestCase):
               </saml:Attribute>
               <saml:Attribute Name="urn:oid:0.9.2342.19200300.100.1.3" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="mail">
                 <saml:AttributeValue xsi:type="xs:string">testsson@example.com</saml:AttributeValue>
-              </saml:Attribute>              
+              </saml:Attribute>
               <saml:Attribute Name="urn:oid:1.3.6.1.4.1.5923.1.1.1.10" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="eduPersonTargetedID">
                 <saml:AttributeValue>
                   <saml:NameID Format="urn:oasis:names:tc:SAML:2.0:nameid-format:persistent" NameQualifier="https://idp.example.com/simplesaml/saml2/idp/metadata.php" SPNameQualifier="http://test.localhost/saml2-metadata">398f4967ef4ec07985d93a9200d3891184b9c0f6c79db53280894ae75673eab8</saml:NameID>
                 </saml:AttributeValue>
+              </saml:Attribute>
+              <saml:Attribute Name="urn:oid:1.3.6.1.4.1.5923.1.1.1.7" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="eduPersonEntitlement">
+                <saml:AttributeValue xsi:type="xs:string">urn:mace:swamid.se:example.com:role:member</saml:AttributeValue>
               </saml:Attribute>
             </saml:AttributeStatement>
           </saml:Assertion>
