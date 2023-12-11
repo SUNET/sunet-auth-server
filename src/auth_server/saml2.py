@@ -7,10 +7,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import lru_cache
 from logging import getLogger
-from typing import Any, Dict, List, NewType, Optional, Tuple, Union
+from typing import Annotated, Any, Dict, List, NewType, Optional, Tuple, Union
 from xml.etree.ElementTree import ParseError
 
-from pydantic import AnyUrl, BaseModel, ConfigDict, Field
+from pydantic import AnyUrl, BaseModel, BeforeValidator, ConfigDict, Field
 from pymongo import MongoClient
 from saml2 import BINDING_HTTP_POST, BINDING_HTTP_REDIRECT
 from saml2.cache import Cache
@@ -60,42 +60,38 @@ class NameID(BaseModel):
     id: str
 
 
+# pysaml returns attributes in lists, lets unwind all string attributes
+def unwind_pysaml_str(v: list | str) -> str:
+    if isinstance(v, list):
+        return v[0]
+    return v
+
+
+PySAMLStr = Annotated[str, BeforeValidator(unwind_pysaml_str)]
+
+
 class SAMLAttributes(BaseModel):
     assurance: List[str] = Field(default_factory=list, alias="eduPersonAssurance")
-    common_name: Optional[str] = Field(default=None, alias="cn")
-    country_code: Optional[str] = Field(default=None, alias="c")
-    country_name: Optional[str] = Field(default=None, alias="co")
-    date_of_birth: Optional[str] = Field(default=None, alias="schacDateOfBirth")
-    display_name: Optional[str] = Field(default=None, alias="displayName")
+    common_name: Optional[PySAMLStr] = Field(default=None, alias="cn")
+    country_code: Optional[PySAMLStr] = Field(default=None, alias="c")
+    country_name: Optional[PySAMLStr] = Field(default=None, alias="co")
+    date_of_birth: Optional[PySAMLStr] = Field(default=None, alias="schacDateOfBirth")
+    display_name: Optional[PySAMLStr] = Field(default=None, alias="displayName")
     entitlement: List[str] = Field(default_factory=list, alias="eduPersonEntitlement")
-    eppn: Optional[str] = Field(default=None, alias="eduPersonPrincipalName")
-    given_name: Optional[str] = Field(default=None, alias="givenName")
-    home_organization: Optional[str] = Field(default=None, alias="schacHomeOrganization")
-    home_organization_type: Optional[str] = Field(default=None, alias="schacHomeOrganizationType")
-    mail: Optional[str] = None
-    nin: Optional[str] = Field(default=None, alias="norEduPersonNIN")
-    organization_acronym: Optional[str] = Field(default=None, alias="norEduOrgAcronym")
-    organization_name: Optional[str] = Field(default=None, alias="o")
-    personal_identity_number: Optional[str] = Field(default=None, alias="personalIdentityNumber")
-    scoped_affiliation: Optional[str] = Field(default=None, alias="eduPersonScopedAffiliation")
-    surname: Optional[str] = Field(default=None, alias="sn")
-    targeted_id: Optional[str] = Field(default=None, alias="eduPersonTargetedID")
-    unique_id: Optional[str] = Field(default=None, alias="eduPersonUniqueId")
+    eppn: Optional[PySAMLStr] = Field(default=None, alias="eduPersonPrincipalName")
+    given_name: Optional[PySAMLStr] = Field(default=None, alias="givenName")
+    home_organization: Optional[PySAMLStr] = Field(default=None, alias="schacHomeOrganization")
+    home_organization_type: Optional[PySAMLStr] = Field(default=None, alias="schacHomeOrganizationType")
+    mail: Optional[PySAMLStr] = None
+    nin: Optional[PySAMLStr] = Field(default=None, alias="norEduPersonNIN")
+    organization_acronym: Optional[PySAMLStr] = Field(default=None, alias="norEduOrgAcronym")
+    organization_name: Optional[PySAMLStr] = Field(default=None, alias="o")
+    personal_identity_number: Optional[PySAMLStr] = Field(default=None, alias="personalIdentityNumber")
+    scoped_affiliation: Optional[PySAMLStr] = Field(default=None, alias="eduPersonScopedAffiliation")
+    surname: Optional[PySAMLStr] = Field(default=None, alias="sn")
+    targeted_id: Optional[PySAMLStr] = Field(default=None, alias="eduPersonTargetedID")
+    unique_id: Optional[PySAMLStr] = Field(default=None, alias="eduPersonUniqueId")
     model_config = ConfigDict(extra="allow", populate_by_name=True)
-
-    @classmethod
-    def from_pysaml2(cls, ava: Dict[str, List[str]]) -> SAMLAttributes:
-        # pysaml returns attributes in lists, lets unwind all attributes with only a single value
-        for key, value in ava.items():
-            if not isinstance(value, list):
-                raise ValueError("attribute value is not a list")
-        single_values = dict([(key, value[0]) for key, value in ava.items() if len(value) == 1])
-        # please mypy
-        result: Dict[str, Union[str, List[str]]] = {}
-        result.update(ava)
-        result.update(single_values)
-        # what's up with pydantic typing, hopefully an upgrade to 2 will solve this
-        return cls(**result)
 
 
 class SessionInfo(BaseModel):
@@ -117,7 +113,7 @@ class SessionInfo(BaseModel):
             sp_provided_id=session_info["name_id"].sp_provided_id,
             id=session_info["name_id"].text,
         )
-        session_info["attributes"] = SAMLAttributes.from_pysaml2(ava=session_info["ava"])
+        session_info["attributes"] = SAMLAttributes(**session_info["ava"])
         return cls(**session_info)
 
 
