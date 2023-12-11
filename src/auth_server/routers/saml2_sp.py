@@ -96,7 +96,7 @@ async def redirect_to_idp(saml2_sp: SAML2SP, authn_id: AuthnRequestRef, idp_enti
 
     transaction_db = await get_transaction_state_db()
     if transaction_db is None:
-        logger.error(f"No transaction db found")
+        logger.error("No transaction db found")
         raise HTTPException(status_code=400, detail="SAML authentication misconfigured")
 
     # get any requested authentication context from subject request
