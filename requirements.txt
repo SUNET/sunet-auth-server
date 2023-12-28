@@ -4,9 +4,6 @@
 #
 #    make update_deps
 #
---index-url https://pypi.sunet.se
---extra-index-url https://pypi.sunet.se/simple
-
 aiodns==3.1.1 \
     --hash=sha256:1073eac48185f7a4150cad7f96a5192d6911f12b4fb894de80a088508c9b3a99 \
     --hash=sha256:a387b63da4ced6aad35b1dda2d09620ad608a1c7c0fb71efa07ebb4cd511928d
@@ -556,8 +553,8 @@ jinja2==3.1.2 \
     --hash=sha256:31351a702a408a9e7595a8fc6150fc3f43bb6bf7e319770cbc0db9df9437e852 \
     --hash=sha256:6088930bfe239f0e6710546ab9c19c9ef35e29792895fed6e6e31a023a182a61
     # via -r requirements.in
-jwcrypto==1.5.0 \
-    --hash=sha256:2c1dc51cf8e38ddf324795dfe9426dee9dd46caf47f535ccbc18781fba810b8d
+jwcrypto==1.5.1 \
+    --hash=sha256:48bb9bf433777136253579e52b75ffe0f9a4a721d133d01f45a0b91ed5f4f1ae
     # via -r requirements.in
 loguru==0.7.2 \
     --hash=sha256:003d71e3d3ed35f0f8984898359d65b79e5b21943f78af86aa5491210429b8eb \
@@ -781,7 +778,6 @@ pydantic==2.5.2 \
     #   fastapi
     #   pki-tools
     #   pydantic-settings
-    #   pysaml2
 pydantic-core==2.14.5 \
     --hash=sha256:038c9f763e650712b899f983076ce783175397c848da04985658e7628cbe873b \
     --hash=sha256:074f3d86f081ce61414d2dc44901f4f83617329c6f3ab49d2bc6c96948b2c26b \
@@ -980,9 +976,9 @@ pyopenssl==23.3.0 \
     --hash=sha256:6756834481d9ed5470f4a9393455154bc92fe7a64b7bc6ee2c804e78c52099b2 \
     --hash=sha256:6b2cba5cc46e822750ec3e5a81ee12819850b11303630d575e98108a079c2b12
     # via pysaml2
-pysaml2==7.4.1+sunet3 \
-    --hash=sha256:55772e8a497c8bb2757027f8d2b9980c2df8b46c5e85b95c2e779c4222bcbde6 \
-    --hash=sha256:7425ca65ed772417838329fbcc891a653abb069f8d803924602de78900471c47
+pysaml2==7.4.2 \
+    --hash=sha256:2bc5147b3b2f902a9131bf08240c068becea29994aafb7654a63d7270ac5b63b \
+    --hash=sha256:6616abe0526915cabef6af3a81570bd4c339bedd8db3ab12dcd4fa0612896837
     # via -r requirements.in
 python-dateutil==2.8.2 \
     --hash=sha256:0123cacc1627ae19ddf3c27a5de5bd67ee4586fbdd6440d9748f8abb483d3e86 \
