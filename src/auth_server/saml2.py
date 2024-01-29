@@ -18,6 +18,7 @@ from saml2.client import Saml2Client
 from saml2.config import SPConfig
 from saml2.response import AuthnResponse, StatusError, UnsolicitedResponse
 from saml2.saml import Subject
+from saml2.sigver import SignatureError
 
 from auth_server.config import load_config
 from auth_server.db.client import get_mongo_client
@@ -343,6 +344,9 @@ async def get_authn_response(raw_response: str) -> Tuple[AuthnResponse, AuthnReq
     except ParseError as e:
         logger.error(f"SAML response is not correctly formatted: {repr(e)}")
         raise BadSAMLResponse("SAML response is not correctly formatted")
+    except SignatureError as e:
+        logger.error(f"SAML response signature is invalid: {repr(e)}")
+        raise BadSAMLResponse("SAML response signature is invalid")
     except UnsolicitedResponse:
         logger.error("Unsolicited SAML response")
         # Extra debug to try and find the cause for some of these that seem to be incorrect
