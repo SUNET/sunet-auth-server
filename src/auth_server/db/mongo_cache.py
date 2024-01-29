@@ -13,6 +13,10 @@ from auth_server.time_utils import utc_now
 logger = getLogger(__name__)
 
 
+class CacheWriteException(Exception):
+    pass
+
+
 class MongoCacheDB(object):
     def __init__(
         self, db_client: MongoClient, db_name: str, collection: str, expire_after: timedelta, safe_writes: bool = False
@@ -86,7 +90,9 @@ class MongoCacheDB(object):
 
     def update_item(self, key: str, value: Any) -> None:
         doc = {"lookup_key": key, "data": value, "modified_ts": utc_now()}
-        self._coll.replace_one({"lookup_key": key}, doc, upsert=True)
+        res = self._coll.replace_one({"lookup_key": key}, doc, upsert=True)
+        if not res.acknowledged or (res.matched_count != res.modified_count):
+            raise CacheWriteException(f"Failed to UPDATE item {key} in collection {self._coll.name}")
 
     def get_item(self, key: str) -> MutableMapping:
         docs = self._get_documents_by_filter(spec={"lookup_key": key}, fields={"_id": False, "data": True}, limit=1)
@@ -105,7 +111,9 @@ class MongoCacheDB(object):
             yield doc["data"]
 
     def remove_item(self, key: str) -> None:
-        self._coll.delete_one(filter={"lookup_key": key})
+        res = self._coll.delete_one(filter={"lookup_key": key})
+        if not res.acknowledged or (res.deleted_count != 1):
+            raise CacheWriteException(f"Failed to DELETE item {key} in collection {self._coll.name}")
 
     def contains_item(self, key: str) -> bool:
         return bool(self.db_count(spec={"lookup_key": key}, limit=1))
