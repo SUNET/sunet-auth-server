@@ -6,9 +6,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import Annotated, List, Optional
 
-from pydantic import AnyUrl, BaseModel, ConfigDict, Field, PositiveInt
+from pydantic import AnyUrl, BaseModel, ConfigDict, Field, PositiveInt, StringConstraints
 
 from auth_server.models.jose import JOSEHeader
 
@@ -51,15 +51,17 @@ class PinDirective(BaseModel):
     )
 
 
+Tag = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]{1,64}$")]
+
+
 class Endpoint(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     description: Optional[str] = Field(None, examples=["SCIM Server 1"], title="Endpoint description")
-    tags: Optional[List[str]] = Field(
+    tags: Optional[List[Tag]] = Field(
         None,
         description="A list of strings that describe the endpoint's capabilities.\n",
         title="Endpoint tags",
-        pattern=r"^[a-z0-9]{1,64}$",
     )
     base_uri: Optional[AnyUrl] = Field(None, examples=["https://scim.example.com"], title="Endpoint base URI")
     pins: List[PinDirective] = Field(..., title="Certificate pin set")
