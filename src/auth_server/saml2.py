@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import lru_cache
 from logging import getLogger
-from typing import Annotated, Any, Dict, List, NewType, Optional, Tuple, Union
+from typing import Annotated, Any, Dict, List, NewType, Optional, Tuple
 from xml.etree.ElementTree import ParseError
 
 from pydantic import AnyUrl, BaseModel, BeforeValidator, ConfigDict, Field
@@ -351,7 +351,7 @@ async def get_authn_response(raw_response: str) -> Tuple[AuthnResponse, AuthnReq
         raise BadSAMLResponse("Unsolicited SAML response")
     except StatusError as e:
         logger.error(f"SAML response was a failure: {repr(e)}")
-        raise BadSAMLResponse("SAML status error")
+        raise e
 
     if response is None:
         logger.error("SAML response is None")

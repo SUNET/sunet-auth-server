@@ -307,6 +307,27 @@ class TestSAMLSP(TestCase):
         assert transaction_state.saml_assertion.issuer == self.test_session_info.issuer
         assert transaction_state.saml_assertion.attributes == self.test_session_info.attributes
 
+    def test_saml_acs_status_response(self):
+        self.config["saml2_single_idp"] = self.test_idp
+        self._update_app_config(config=self.config)
+        transaction_state = self._get_transaction_state_by_id(self.test_transaction_state.transaction_id)
+        transaction_state.requested_subject.authentication_context = ["https://refeds.org/profile/mfa"]
+        self._save_transaction_state(transaction_state)
+        # do authn request
+        authn_url = saml2_router.url_path_for("authenticate", transaction_id=self.test_transaction_state.transaction_id)
+        self.client.get(f"{authn_url}", allow_redirects=False)
+        auth_req_ref = self._get_current_saml_request_id()
+        generated_authn_response = self._generate_auth_response(
+            request_id=auth_req_ref, saml_response_tpl=self.saml_response_tpl_fail
+        )
+        # simulate IdP response
+        data = {"SAMLResponse": base64.b64encode(generated_authn_response).decode("utf-8"), "RelayState": ""}
+        response = self.client.post(
+            saml2_router.url_path_for("assertion_consumer_service"), data=data, follow_redirects=False
+        )
+        assert response.status_code == 401
+        assert response.json()["detail"].startswith("SAML Status Error: ") is True
+
     def test_idp_discovery(self):
         # test initial redirect
         authn_url = saml2_router.url_path_for("authenticate", transaction_id=self.test_transaction_state.transaction_id)

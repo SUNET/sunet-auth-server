@@ -8,6 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Form, HTTPException, Query, Response
 from loguru import logger
 from saml2.metadata import entity_descriptor
+from saml2.response import StatusError
 from starlette.responses import HTMLResponse, RedirectResponse
 
 from auth_server.config import load_config
@@ -133,6 +134,9 @@ async def assertion_consumer_service(request: ContextRequest, saml_response: str
     except BadSAMLResponse as e:
         logger.exception(f"{e}")
         raise HTTPException(status_code=400, detail=f"Bad SAML response: {e}")
+    except StatusError as e:
+        logger.error(f"{e}")
+        raise HTTPException(status_code=401, detail=f"SAML Status Error: {e}")
 
     config = load_config()
     saml2_sp = await get_saml2_sp()
