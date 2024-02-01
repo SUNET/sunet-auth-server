@@ -27,7 +27,7 @@ class MongoCacheDB(object):
         self._db = self._conn[db_name]
         self._coll = self._db[collection]
         self._coll.create_index("lookup_key", unique=True)
-        self._coll.create_index("modified_ts", expireAfterSeconds=expire_after.seconds)
+        self._coll.create_index("modified_ts", expireAfterSeconds=expire_after.total_seconds())
         if safe_writes:
             self._coll = self._coll.with_options(write_concern=WriteConcern(w="majority"))
 
