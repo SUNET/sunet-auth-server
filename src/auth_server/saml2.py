@@ -296,18 +296,10 @@ async def process_assertion(saml_response: str) -> Optional[AssertionData]:
 
     response, authn_ref = await get_authn_response(saml_response)
     logger.debug(f"authn response: {response}")
+
     if authn_ref not in saml2_sp.authn_req_cache:
         logger.info("Unknown response")
-        # DEBUG flaky cache?
-        from time import sleep
-
-        logger.debug(f"current authn_ref: {authn_ref}")
-        logger.debug(f"existing authn_req_cache: {saml2_sp.authn_req_cache.items()}")
-        # retry lookup
-        sleep(1)
-        if authn_ref not in saml2_sp.authn_req_cache:
-            logger.info("Unknown response, second try")
-            raise BadSAMLResponse("Unknown response")
+        raise BadSAMLResponse("Unknown response")
 
     session_info = SessionInfo.from_pysaml2(response.session_info())
     assertion_data = AssertionData(session_info=session_info, authn_req_ref=authn_ref)
