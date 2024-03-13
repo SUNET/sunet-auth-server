@@ -144,7 +144,7 @@ class TestAuthServer(TestCase):
 
     def test_mtls_transaction(self):
         parameters = [
-            ("bolag_a.crt", True, "SE165560000167"),
+            ("bolag_a.crt", True, "SE5560000167"),
             ("bolag_b.crt", False, "client certificate revoked"),
             ("bolag_c.crt", False, "client certificate expired or not yet valid"),
             ("bolag_e.crt", False, "client certificate expired or not yet valid"),

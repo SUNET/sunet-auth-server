@@ -39,7 +39,7 @@ def cert_within_validity_period(cert: Certificate) -> bool:
     check if certificate is within the validity period
     """
     cert_fingerprint = rfc8705_fingerprint(cert)
-    now = datetime.utcnow()
+    now = datetime.utcnow()  # datetimes in cert are not timezone aware
     if now < cert.not_valid_before:
         logger.error(f"Certificate {cert_fingerprint} not valid before {cert.not_valid_before}")
         return False
@@ -117,13 +117,14 @@ def get_org_id_from_cert(cert: Certificate, ca_name: str) -> Optional[str]:
 
 def get_org_id_expitrust(cert: Certificate) -> Optional[str]:
     """
-    The org number is just the serial number of the certificate.
+    The org number is the serial number of the certificate with prefix 16.
     """
     cert_fingerprint = rfc8705_fingerprint(cert)
     serial_number = get_oid_for_name(x509_name=cert.subject, oid=OID_SERIAL_NUMBER)
     if serial_number is None:
         logger.error(f"certificate {cert_fingerprint} has no subject serial number")
-    return serial_number
+        return None
+    return serial_number.removeprefix("16")
 
 
 def get_org_id_siths(cert: Certificate) -> Optional[str]:
