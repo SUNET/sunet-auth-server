@@ -10,6 +10,7 @@ from loguru import logger
 from saml2.metadata import entity_descriptor
 from saml2.response import StatusError
 from starlette.responses import HTMLResponse, RedirectResponse
+from starlette.templating import Jinja2Templates
 
 from auth_server.config import load_config
 from auth_server.context import ContextRequest, ContextRequestRoute
@@ -23,10 +24,9 @@ from auth_server.saml2 import (
     get_saml2_sp,
     process_assertion,
 )
-from auth_server.templating import TestableJinja2Templates
 
 saml2_router = APIRouter(route_class=ContextRequestRoute, prefix="/saml2")
-templates = TestableJinja2Templates(directory=str(Path(__file__).with_name("templates")))
+templates = Jinja2Templates(directory=str(Path(__file__).with_name("templates")))
 
 
 @saml2_router.get("/sp/authn/{transaction_id}", response_class=HTMLResponse)

@@ -7,16 +7,16 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Form, HTTPException
 from loguru import logger
 from starlette.responses import HTMLResponse, RedirectResponse, Response
+from starlette.templating import Jinja2Templates
 
 from auth_server.config import load_config
 from auth_server.context import ContextRequest, ContextRequestRoute
 from auth_server.db.transaction_state import FlowState, TransactionState, get_transaction_state_db
 from auth_server.models.gnap import FinishInteractionMethod
-from auth_server.templating import TestableJinja2Templates
 from auth_server.utils import get_interaction_hash, push_interaction_finish
 
 interaction_router = APIRouter(route_class=ContextRequestRoute, prefix="/interaction")
-templates = TestableJinja2Templates(directory=str(Path(__file__).with_name("templates")))
+templates = Jinja2Templates(directory=str(Path(__file__).with_name("templates")))
 
 
 @interaction_router.get("/redirect/{transaction_id}", response_class=HTMLResponse)
