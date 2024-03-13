@@ -390,7 +390,7 @@ class CommonFlow(BaseAuthFlow):
         claims = await self.create_claims()
 
         # Create access token
-        token = jwt.JWT(header={"alg": "ES256"}, claims=claims.to_rfc7519())
+        token = jwt.JWT(header={"alg": "ES256", "kid": self.config.signing_key_id}, claims=claims.to_rfc7519())
         token.make_signed_token(key=self.signing_key)
         expires_in = None
         if claims.exp:
@@ -402,7 +402,7 @@ class CommonFlow(BaseAuthFlow):
             expires_in=expires_in,
         )
         logger.info(f"OK:{self.state.key_reference}:{self.config.auth_token_audience}")
-        logger.debug(f"claims: {claims.dict(exclude_none=True)}")
+        logger.debug(f"claims: {claims.model_dump(exclude_none=True)}")
         return None
 
     async def finalize_transaction(self) -> Optional[GrantResponse]:

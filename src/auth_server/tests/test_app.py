@@ -124,6 +124,7 @@ class TestAuthServer(TestCase):
         response = client.get("/.well-known/jwk.json")
         assert response.status_code == 200
         token = jwt.JWT(key=jwk.JWK(**response.json()), jwt=access_token["value"])
+        assert json.loads(token.header)["kid"] == response.json()["kid"]
         return json.loads(token.claims)
 
     def _get_transaction_state_by_id(self, transaction_id) -> TransactionState:
