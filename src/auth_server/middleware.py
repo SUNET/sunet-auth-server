@@ -44,11 +44,11 @@ class JOSEMiddleware(BaseHTTPMiddleware, ContextRequestMixin):
 
         if request.headers.get("content-type") == "application/jose+json":
             request = self.make_context_request(request)
-            logger.info("got application/jose request")
+            logger.info("got application/jose+json request")
             body = await get_body(request)
             # deserialize jws
             body_str = body.decode("utf-8")
-            logger.debug(f"body: {body_str}")
+            logger.debug(f"JWS body: {body_str}")
             jwstoken = jws.JWS()
             try:
                 jwstoken.deserialize(body_str)
@@ -62,5 +62,14 @@ class JOSEMiddleware(BaseHTTPMiddleware, ContextRequestMixin):
             request.context.jws_obj = jwstoken
             # replace body with unverified deserialized token - verification is done when verifying proof
             await set_body(request, jwstoken.objects["payload"])
+
+        if request.headers.get("Detached-JWS"):
+            request = self.make_context_request(request)
+            logger.info("got detached jws request")
+            # save original body for the detached jws validation
+            body = await get_body(request)
+            body_str = body.decode("utf-8")
+            logger.debug(f"JWSD body: {body_str}")
+            request.context.detached_jws_body = body_str
 
         return await call_next(request)

@@ -170,8 +170,6 @@ class BaseAuthFlow(ABC):
             return await check_jwsd_proof(
                 request=self.request,
                 gnap_key=gnap_key,
-                gnap_request=gnap_request,
-                key_reference=self.state.key_reference,
                 access_token=self.state.continue_access_token,
             )
         else:

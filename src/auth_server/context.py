@@ -15,6 +15,7 @@ class Context(BaseModel):
     client_cert: Optional[str] = None
     jws_obj: Optional[jws.JWS] = None
     detached_jws: Optional[str] = None
+    detached_jws_body: Optional[str] = None
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def to_dict(self):

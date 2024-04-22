@@ -99,14 +99,13 @@ async def check_jws_proof(
 async def check_jwsd_proof(
     request: ContextRequest,
     gnap_key: Key,
-    gnap_request: Union[GrantRequest, ContinueRequest],
-    key_reference: Optional[str] = None,
     access_token: Optional[str] = None,
 ) -> bool:
-    if request.context.detached_jws is None:
+    if request.context.detached_jws is None or request.context.detached_jws_body is None:
         raise HTTPException(status_code=400, detail="No detached JWS found")
 
     logger.debug(f"detached_jws: {request.context.detached_jws}")
+    logger.debug(f"detached_jws_body: {request.context.detached_jws_body}")
 
     # recreate jws
     try:
@@ -115,19 +114,13 @@ async def check_jwsd_proof(
         logger.error(f"invalid detached jws: {e}")
         return False
 
-    gnap_request_orig = gnap_request.copy(deep=True)
-    if isinstance(gnap_request_orig, GrantRequest) and key_reference is not None:
-        # If key was sent as reference in grant request we need to mirror that when
-        # rebuilding the request as that was what was signed
-        assert isinstance(gnap_request_orig.client, Client)  # please mypy
-        gnap_request_orig.client.key = key_reference
-
-    logger.debug(f"gnap_request_orig: {gnap_request_orig.json(exclude_unset=True)}")
-    payload = base64url_encode(gnap_request_orig.json(exclude_unset=True))
+    payload = base64url_encode(request.context.detached_jws_body)
+    logger.debug(f"payload: {payload}")
     raw_jws = f"{header}.{payload}.{signature}"
-    _jws = jws.JWS()
+    logger.debug(f"raw_jws: {raw_jws}")
 
     # deserialize jws
+    _jws = jws.JWS()
     try:
         _jws.deserialize(raw_jws=raw_jws)
         logger.info("Detached JWS token deserialized")
