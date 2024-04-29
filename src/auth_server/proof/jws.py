@@ -5,7 +5,7 @@ from typing import Optional, Union
 from cryptography.hazmat.primitives.hashes import SHA256, SHA384, SHA512
 from fastapi import HTTPException
 from jwcrypto import jwk, jws
-from jwcrypto.common import base64url_encode
+from jwcrypto.common import base64url_decode, base64url_encode
 from loguru import logger
 from pydantic import ValidationError
 
@@ -109,13 +109,20 @@ async def check_jwsd_proof(
 
     # recreate jws
     try:
-        header, _, signature = request.context.detached_jws.split(".")
+        header, client_payload_hash, signature = request.context.detached_jws.split(".")
     except ValueError as e:
         logger.error(f"invalid detached jws: {e}")
         return False
 
     payload = base64url_encode(request.context.detached_jws_body)
     logger.debug(f"payload: {payload}")
+
+    # check hash of payload
+    payload_hash = hash_with(SHA256(), request.context.detached_jws_body.encode())
+    if payload_hash != base64url_decode(client_payload_hash):
+        logger.error(f"invalid payload hash: {repr(payload_hash)}")
+        return False
+
     raw_jws = f"{header}.{payload}.{signature}"
     logger.debug(f"raw_jws: {raw_jws}")
 
