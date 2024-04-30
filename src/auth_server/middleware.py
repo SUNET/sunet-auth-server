@@ -38,11 +38,11 @@ class JOSEMiddleware(BaseHTTPMiddleware, ContextRequestMixin):
         super().__init__(app)
 
     async def dispatch(self, request: Request, call_next):
-        if request.headers.get("content-type") == "application/jose":
-            # Return a more helpful error message for a common mistake
-            return return_error_response(status_code=422, detail="content-type needs to be application/jose+json")
+        acceptable_jose_content_types = ["application/jose", "application/jose+json"]
+        is_jose = request.headers.get("content-type") in acceptable_jose_content_types
+        is_detached_jws = request.headers.get("Detached-JWS") is not None
 
-        if request.headers.get("content-type") == "application/jose+json":
+        if is_jose and not is_detached_jws:
             request = self.make_context_request(request)
             logger.info("got application/jose+json request")
             body = await get_body(request)
@@ -63,7 +63,7 @@ class JOSEMiddleware(BaseHTTPMiddleware, ContextRequestMixin):
             # replace body with unverified deserialized token - verification is done when verifying proof
             await set_body(request, jwstoken.objects["payload"])
 
-        if request.headers.get("Detached-JWS"):
+        if is_detached_jws:
             request = self.make_context_request(request)
             logger.info("got detached jws request")
             # save original body for the detached jws validation
