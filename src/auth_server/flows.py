@@ -136,6 +136,9 @@ class BaseAuthFlow(ABC):
         self.state.proof_ok = await self.check_proof(
             gnap_key=self.state.grant_request.client.key, gnap_request=continue_request
         )
+        if not self.state.proof_ok:
+            logger.error("could not validate proof of key possession in continue response, aborting")
+            raise StopTransactionException(status_code=401, detail="could not validate proof of key possession")
 
         # run the remaining steps in the flow
         steps = await self.steps()
@@ -177,6 +180,7 @@ class BaseAuthFlow(ABC):
 
     async def create_claims(self) -> Claims:
         if self.state.auth_source is None:
+            logger.error("no auth_source set, aborting")
             raise NextFlowException(status_code=400, detail="no auth source set")
 
         claims = Claims(
@@ -382,7 +386,8 @@ class CommonFlow(BaseAuthFlow):
 
     async def create_auth_token(self) -> Optional[GrantResponse]:
         if not self.state.proof_ok:
-            return None
+            logger.error("could not validate proof of key possession, running next flow")
+            raise NextFlowException(status_code=401, detail="could not validate proof of key possession")
 
         # Create claims
         claims = await self.create_claims()
