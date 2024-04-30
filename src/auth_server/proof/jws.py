@@ -112,7 +112,7 @@ async def check_jwsd_proof(
         header, client_payload_hash, signature = request.context.detached_jws.split(".")
     except ValueError as e:
         logger.error(f"invalid detached jws: {e}")
-        return False
+        raise HTTPException(status_code=400, detail="invalid format for detached jws")
 
     payload = base64url_encode(request.context.detached_jws_body)
     logger.debug(f"payload: {payload}")
@@ -121,7 +121,7 @@ async def check_jwsd_proof(
     payload_hash = hash_with(SHA256(), request.context.detached_jws_body.encode())
     if payload_hash != base64url_decode(client_payload_hash):
         logger.error(f"invalid payload hash: {repr(payload_hash)}")
-        return False
+        raise HTTPException(status_code=400, detail="invalid payload hash")
 
     raw_jws = f"{header}.{payload}.{signature}"
     logger.debug(f"raw_jws: {raw_jws}")
@@ -134,7 +134,7 @@ async def check_jwsd_proof(
         logger.debug(f"JWS: {_jws.objects}")
     except jws.InvalidJWSObject as e:
         logger.error(f"Failed to deserialize detached jws: {e}")
-        return False
+        raise HTTPException(status_code=400, detail=str(e))
 
     verify_jws(jws_obj=_jws, gnap_key=gnap_key)
 
