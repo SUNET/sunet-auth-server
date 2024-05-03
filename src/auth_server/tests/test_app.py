@@ -309,7 +309,7 @@ class TestAuthServer(TestCase):
         )
         data = _jws.serialize(compact=True)
 
-        client_header = {"Content-Type": "application/jose+json"}
+        client_header = {"Content-Type": "application/jose"}
         response = self.client.post("/transaction", content=data, headers=client_header)
 
         assert response.status_code == 200

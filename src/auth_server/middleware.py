@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from typing import Optional
+
 from jwcrypto import jws
 from jwcrypto.common import JWException
 from loguru import logger
@@ -33,6 +35,27 @@ async def get_body(request: Request) -> bytes:
     return body
 
 
+def get_header_index(request: Request, header_key: bytes) -> Optional[int]:
+    for key, value in request.scope["headers"]:
+        if key == header_key:
+            return request.scope["headers"].index((key, value))
+    return None
+
+
+def set_header(request: Request, header_key: str, header_value: str) -> None:
+    b_header_key = header_key.encode("utf-8")
+    b_header_value = header_value.encode("utf-8")
+    content_type_index = get_header_index(request, b_header_key)
+    if content_type_index:
+        logger.debug(
+            f"Replacing header {request.scope['headers'][content_type_index]} with {(b_header_key, b_header_value)}"
+        )
+        request.scope["headers"][content_type_index] = (b_header_key, b_header_value)
+    else:
+        # no header to replace, just set it
+        request.scope["headers"].append((b_header_key, b_header_value))
+
+
 class JOSEMiddleware(BaseHTTPMiddleware, ContextRequestMixin):
     def __init__(self, app):
         super().__init__(app)
@@ -62,6 +85,10 @@ class JOSEMiddleware(BaseHTTPMiddleware, ContextRequestMixin):
             request.context.jws_obj = jwstoken
             # replace body with unverified deserialized token - verification is done when verifying proof
             await set_body(request, jwstoken.objects["payload"])
+            # set content-type to application/json as the body has changed
+            set_header(request, "content-type", "application/json")
+            # update content-length header to match the new body
+            set_header(request, "content-length", str(len(jwstoken.objects["payload"])))
 
         if is_detached_jws:
             request = self.make_context_request(request)
