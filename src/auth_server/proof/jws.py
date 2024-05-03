@@ -5,7 +5,7 @@ from typing import Optional, Union
 from cryptography.hazmat.primitives.hashes import SHA256, SHA384, SHA512
 from fastapi import HTTPException
 from jwcrypto import jwk, jws
-from jwcrypto.common import base64url_encode
+from jwcrypto.common import base64url_decode, base64url_encode
 from loguru import logger
 from pydantic import ValidationError
 
@@ -99,42 +99,42 @@ async def check_jws_proof(
 async def check_jwsd_proof(
     request: ContextRequest,
     gnap_key: Key,
-    gnap_request: Union[GrantRequest, ContinueRequest],
-    key_reference: Optional[str] = None,
     access_token: Optional[str] = None,
 ) -> bool:
-    if request.context.detached_jws is None:
+    if request.context.detached_jws is None or request.context.detached_jws_body is None:
         raise HTTPException(status_code=400, detail="No detached JWS found")
 
     logger.debug(f"detached_jws: {request.context.detached_jws}")
+    logger.debug(f"detached_jws_body: {request.context.detached_jws_body}")
 
     # recreate jws
     try:
-        header, _, signature = request.context.detached_jws.split(".")
+        header, client_payload_hash, signature = request.context.detached_jws.split(".")
     except ValueError as e:
         logger.error(f"invalid detached jws: {e}")
-        return False
+        raise HTTPException(status_code=400, detail="invalid format for detached jws")
 
-    gnap_request_orig = gnap_request.copy(deep=True)
-    if isinstance(gnap_request_orig, GrantRequest) and key_reference is not None:
-        # If key was sent as reference in grant request we need to mirror that when
-        # rebuilding the request as that was what was signed
-        assert isinstance(gnap_request_orig.client, Client)  # please mypy
-        gnap_request_orig.client.key = key_reference
+    payload = base64url_encode(request.context.detached_jws_body)
+    logger.debug(f"payload: {payload}")
 
-    logger.debug(f"gnap_request_orig: {gnap_request_orig.json(exclude_unset=True)}")
-    payload = base64url_encode(gnap_request_orig.json(exclude_unset=True))
+    # check hash of payload
+    payload_hash = hash_with(SHA256(), request.context.detached_jws_body.encode())
+    if payload_hash != base64url_decode(client_payload_hash):
+        logger.error(f"invalid payload hash: {repr(payload_hash)}")
+        raise HTTPException(status_code=400, detail="invalid payload hash")
+
     raw_jws = f"{header}.{payload}.{signature}"
-    _jws = jws.JWS()
+    logger.debug(f"raw_jws: {raw_jws}")
 
     # deserialize jws
+    _jws = jws.JWS()
     try:
         _jws.deserialize(raw_jws=raw_jws)
         logger.info("Detached JWS token deserialized")
         logger.debug(f"JWS: {_jws.objects}")
     except jws.InvalidJWSObject as e:
         logger.error(f"Failed to deserialize detached jws: {e}")
-        return False
+        raise HTTPException(status_code=400, detail=str(e))
 
     verify_jws(jws_obj=_jws, gnap_key=gnap_key)
 

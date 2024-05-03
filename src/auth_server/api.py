@@ -2,9 +2,13 @@
 from typing import Dict, Type, cast
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 from starlette.staticfiles import StaticFiles
+from starlette.status import HTTP_422_UNPROCESSABLE_ENTITY
 
 from auth_server.config import AuthServerConfig, ConfigurationError, FlowName, load_config
 from auth_server.context import ContextRequestRoute
@@ -78,4 +82,16 @@ def init_auth_server_api() -> AuthServer:
     app.mount(
         "/static", StaticFiles(packages=["auth_server"]), name="static"
     )  # defaults to the "statics" directory (the ending s is not a mistake) because starlette says so
+
+    config = load_config()
+    if config.debug or config.testing:
+        # log more info about 422 errors to ease fault tracing
+        @app.exception_handler(RequestValidationError)
+        async def validation_exception_handler(request: Request, exc: RequestValidationError):
+
+            exc_str = f"{exc}".replace("\n", " ").replace("   ", " ")
+            logger.exception(f"{exc}")
+            content = {"status_code": 10422, "message": exc_str, "data": None}
+            return JSONResponse(content=content, status_code=HTTP_422_UNPROCESSABLE_ENTITY)
+
     return app

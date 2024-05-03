@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from typing import Optional
+
 from jwcrypto import jws
 from jwcrypto.common import JWException
 from loguru import logger
@@ -33,22 +35,43 @@ async def get_body(request: Request) -> bytes:
     return body
 
 
+def get_header_index(request: Request, header_key: bytes) -> Optional[int]:
+    for key, value in request.scope["headers"]:
+        if key == header_key:
+            return request.scope["headers"].index((key, value))
+    return None
+
+
+def set_header(request: Request, header_key: str, header_value: str) -> None:
+    b_header_key = header_key.encode("utf-8")
+    b_header_value = header_value.encode("utf-8")
+    content_type_index = get_header_index(request, b_header_key)
+    if content_type_index:
+        logger.debug(
+            f"Replacing header {request.scope['headers'][content_type_index]} with {(b_header_key, b_header_value)}"
+        )
+        request.scope["headers"][content_type_index] = (b_header_key, b_header_value)
+    else:
+        # no header to replace, just set it
+        request.scope["headers"].append((b_header_key, b_header_value))
+
+
 class JOSEMiddleware(BaseHTTPMiddleware, ContextRequestMixin):
     def __init__(self, app):
         super().__init__(app)
 
     async def dispatch(self, request: Request, call_next):
-        if request.headers.get("content-type") == "application/jose":
-            # Return a more helpful error message for a common mistake
-            return return_error_response(status_code=422, detail="content-type needs to be application/jose+json")
+        acceptable_jose_content_types = ["application/jose", "application/jose+json"]
+        is_jose = request.headers.get("content-type") in acceptable_jose_content_types
+        is_detached_jws = request.headers.get("Detached-JWS") is not None
 
-        if request.headers.get("content-type") == "application/jose+json":
+        if is_jose and not is_detached_jws:
             request = self.make_context_request(request)
-            logger.info("got application/jose request")
+            logger.info("got application/jose+json request")
             body = await get_body(request)
             # deserialize jws
             body_str = body.decode("utf-8")
-            logger.debug(f"body: {body_str}")
+            logger.debug(f"JWS body: {body_str}")
             jwstoken = jws.JWS()
             try:
                 jwstoken.deserialize(body_str)
@@ -62,5 +85,18 @@ class JOSEMiddleware(BaseHTTPMiddleware, ContextRequestMixin):
             request.context.jws_obj = jwstoken
             # replace body with unverified deserialized token - verification is done when verifying proof
             await set_body(request, jwstoken.objects["payload"])
+            # set content-type to application/json as the body has changed
+            set_header(request, "content-type", "application/json")
+            # update content-length header to match the new body
+            set_header(request, "content-length", str(len(jwstoken.objects["payload"])))
+
+        if is_detached_jws:
+            request = self.make_context_request(request)
+            logger.info("got detached jws request")
+            # save original body for the detached jws validation
+            body = await get_body(request)
+            body_str = body.decode("utf-8")
+            logger.debug(f"JWSD body: {body_str}")
+            request.context.detached_jws_body = body_str
 
         return await call_next(request)

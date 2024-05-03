@@ -14,6 +14,7 @@ import yaml
 from cryptography import x509
 from cryptography.hazmat.primitives.hashes import SHA256
 from jwcrypto import jwk, jws, jwt
+from jwcrypto.common import base64url_encode
 from starlette.testclient import TestClient
 
 from auth_server.api import init_auth_server_api
@@ -308,7 +309,7 @@ class TestAuthServer(TestCase):
         )
         data = _jws.serialize(compact=True)
 
-        client_header = {"Content-Type": "application/jose+json"}
+        client_header = {"Content-Type": "application/jose"}
         response = self.client.post("/transaction", content=data, headers=client_header)
 
         assert response.status_code == 200
@@ -321,7 +322,7 @@ class TestAuthServer(TestCase):
         assert claims["auth_source"] == AuthSource.TEST
 
     def test_transaction_jwsd(self):
-        client_key_dict = self.client_jwk.export(as_dict=True)
+        client_key_dict = self.client_jwk.export_public(as_dict=True)
         client_jwk = ECJWK(**client_key_dict)
         req = GrantRequest(
             client=Client(key=Key(proof=Proof(method=ProofMethod.JWSD), jwk=client_jwk)),
@@ -335,7 +336,15 @@ class TestAuthServer(TestCase):
             "uri": "http://testserver/transaction",
             "created": int(utc_now().timestamp()),
         }
-        _jws = jws.JWS(payload=req.json(exclude_unset=True))
+
+        payload = req.model_dump_json(exclude_unset=True)
+
+        # create a hash of payload to send in payload place
+        payload_digest = hash_with(SHA256(), payload.encode())
+        payload_hash = base64url_encode(payload_digest)
+
+        # create detached jws
+        _jws = jws.JWS(payload=payload)
         _jws.add_signature(
             key=self.client_jwk,
             protected=json.dumps(jws_header),
@@ -344,9 +353,11 @@ class TestAuthServer(TestCase):
 
         # Remove payload from serialized jws
         header, _, signature = data.split(".")
-        client_header = {"Detached-JWS": f"{header}..{signature}"}
+        client_header = {"Detached-JWS": f"{header}.{payload_hash}.{signature}"}
 
-        response = self.client.post("/transaction", json=req.dict(exclude_unset=True), headers=client_header)
+        response = self.client.post(
+            "/transaction", content=req.model_dump_json(exclude_unset=True), headers=client_header
+        )
 
         assert response.status_code == 200
         assert "access_token" in response.json()
@@ -1148,7 +1159,7 @@ class TestAuthServer(TestCase):
         self.config["auth_flows"] = json.dumps(["InteractionFlow"])
         self._update_app_config(config=self.config)
 
-        client_key_dict = self.client_jwk.export(as_dict=True)
+        client_key_dict = self.client_jwk.export_public(as_dict=True)
         client_jwk = ECJWK(**client_key_dict)
 
         req = GrantRequest(
@@ -1164,7 +1175,14 @@ class TestAuthServer(TestCase):
             "uri": "http://testserver/transaction",
             "created": int(utc_now().timestamp()),
         }
-        _jws = jws.JWS(payload=req.json(exclude_unset=True))
+
+        payload = req.model_dump_json(exclude_unset=True)
+
+        # create a hash of payload to send in payload place
+        payload_digest = hash_with(SHA256(), payload.encode())
+        payload_hash = base64url_encode(payload_digest)
+
+        _jws = jws.JWS(payload=payload)
         _jws.add_signature(
             key=self.client_jwk,
             protected=json.dumps(jws_header),
@@ -1173,9 +1191,11 @@ class TestAuthServer(TestCase):
 
         # Remove payload from serialized jws
         header, _, signature = data.split(".")
-        client_header = {"Detached-JWS": f"{header}..{signature}"}
+        client_header = {"Detached-JWS": f"{header}.{payload_hash}.{signature}"}
 
-        response = self.client.post("/transaction", json=req.dict(exclude_unset=True), headers=client_header)
+        response = self.client.post(
+            "/transaction", content=req.model_dump_json(exclude_unset=True), headers=client_header
+        )
         assert response.status_code == 200
 
         # continue response with no continue reference in uri
@@ -1207,7 +1227,11 @@ class TestAuthServer(TestCase):
         # calculate ath header value
         access_token_hash = hash_with(SHA256(), continue_response["access_token"]["value"].encode())
         jws_header["ath"] = base64.urlsafe_b64encode(access_token_hash).decode("ascii").rstrip("=")
-        _jws = jws.JWS(payload="{}")
+        # create hash of empty payload to send in payload place
+        payload = "{}"
+        payload_digest = hash_with(SHA256(), payload.encode())
+        payload_hash = base64url_encode(payload_digest)
+        _jws = jws.JWS(payload=payload)
         _jws.add_signature(
             key=self.client_jwk,
             protected=json.dumps(jws_header),
@@ -1216,11 +1240,11 @@ class TestAuthServer(TestCase):
 
         # Remove payload from serialized jws
         continue_header, _, continue_signature = continue_data.split(".")
-        client_header = {"Detached-JWS": f"{continue_header}..{continue_signature}"}
+        client_header = {"Detached-JWS": f"{continue_header}.{payload_hash}.{continue_signature}"}
 
         authorization_header = f'GNAP {continue_response["access_token"]["value"]}'
         client_header["Authorization"] = authorization_header
-        response = self.client.post(continue_response["uri"], json=dict(), headers=client_header)
+        response = self.client.post(continue_response["uri"], content=payload, headers=client_header)
 
         assert response.status_code == 200
         assert "access_token" in response.json()

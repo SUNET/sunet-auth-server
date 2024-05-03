@@ -56,6 +56,7 @@ class TLSFEDMetadata(BaseModel):
 class AuthServerConfig(BaseSettings):
     app_name: str = Field(default="auth-server")
     environment: Environment = Field(default=Environment.PROD)
+    debug: bool = False
     testing: bool = False
     log_level: str = Field(default="INFO")
     log_color: bool = True
