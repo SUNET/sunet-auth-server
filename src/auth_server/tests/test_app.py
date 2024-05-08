@@ -288,7 +288,7 @@ class TestAuthServer(TestCase):
         assert claims["auth_source"] == AuthSource.MDQ
 
     def test_transaction_jws(self):
-        client_key_dict = self.client_jwk.export(as_dict=True)
+        client_key_dict = self.client_jwk.export_public(as_dict=True)
         client_jwk = ECJWK(**client_key_dict)
         req = GrantRequest(
             client=Client(key=Key(proof=Proof(method=ProofMethod.JWS), jwk=client_jwk)),
@@ -979,7 +979,7 @@ class TestAuthServer(TestCase):
         self.config["auth_flows"] = json.dumps(["InteractionFlow"])
         self._update_app_config(config=self.config)
 
-        client_key_dict = self.client_jwk.export(as_dict=True)
+        client_key_dict = self.client_jwk.export_public(as_dict=True)
         client_jwk = ECJWK(**client_key_dict)
 
         req = GrantRequest(
@@ -1061,7 +1061,7 @@ class TestAuthServer(TestCase):
         self.config["auth_flows"] = json.dumps(["InteractionFlow"])
         self._update_app_config(config=self.config)
 
-        client_key_dict = self.client_jwk.export(as_dict=True)
+        client_key_dict = self.client_jwk.export_public(as_dict=True)
         client_jwk = ECJWK(**client_key_dict)
 
         client_nonce = "client_nonce"
