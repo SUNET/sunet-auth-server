@@ -29,11 +29,13 @@ class ContextRequest(Request):
     @property
     def context(self):
         try:
-            return self.state.context
+            context = self.state.context
+            if isinstance(context, dict):
+                self.state.context = Context(**context)
         except AttributeError:
             # Lazy init of self.state.context
             self.state.context = Context()
-            return self.context
+        return self.state.context
 
     @context.setter
     def context(self, context: Context):

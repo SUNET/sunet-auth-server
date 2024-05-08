@@ -1,102 +1,127 @@
 # -*- coding: utf-8 -*-
-from typing import Optional
+from typing import Any, Optional
 
 from jwcrypto import jws
 from jwcrypto.common import JWException
 from loguru import logger
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import PlainTextResponse
-from starlette.types import Message
+from starlette.exceptions import HTTPException
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from auth_server.context import ContextRequestMixin
+from auth_server.context import Context
 
 __author__ = "lundberg"
 
 
-# middleware needs to return a reponse
-# some background: https://github.com/tiangolo/fastapi/issues/458
-def return_error_response(status_code: int, detail: str):
-    return PlainTextResponse(status_code=status_code, content=detail)
-
-
-# Hack to be able to get request body both now and later
-# https://github.com/encode/starlette/issues/495#issuecomment-513138055
-async def set_body(request: Request, body: bytes):
-    async def receive() -> Message:
-        return {"type": "http.request", "body": body}
-
-    request._receive = receive
-
-
-async def get_body(request: Request) -> bytes:
-    body = await request.body()
-    await set_body(request, body)
-    return body
-
-
-def get_header_index(request: Request, header_key: bytes) -> Optional[int]:
-    for key, value in request.scope["headers"]:
+def get_header_index(scope: Scope, header_key: bytes) -> Optional[int]:
+    for key, value in scope["headers"]:
         if key == header_key:
-            return request.scope["headers"].index((key, value))
+            return scope["headers"].index((key, value))
     return None
 
 
-def set_header(request: Request, header_key: str, header_value: str) -> None:
-    b_header_key = header_key.encode("utf-8")
-    b_header_value = header_value.encode("utf-8")
-    content_type_index = get_header_index(request, b_header_key)
+def set_header(scope: Scope, header: tuple[bytes, bytes]) -> None:
+    content_type_index = get_header_index(scope, header[0])
     if content_type_index:
-        logger.debug(
-            f"Replacing header {request.scope['headers'][content_type_index]} with {(b_header_key, b_header_value)}"
-        )
-        request.scope["headers"][content_type_index] = (b_header_key, b_header_value)
+        logger.debug(f"Replacing header {scope['headers'][content_type_index]} with {header}")
+        scope["headers"][content_type_index] = header
     else:
         # no header to replace, just set it
-        request.scope["headers"].append((b_header_key, b_header_value))
+        scope["headers"].append(header)
 
 
-class JOSEMiddleware(BaseHTTPMiddleware, ContextRequestMixin):
+def set_context(scope: Scope, data: dict[str, Any]) -> None:
+    context = scope["state"].get("context")
+    if not context:
+        context = Context().to_dict()
+    context.update(data)
+    scope["state"]["context"] = context
+
+
+# see https://github.com/florimondmanca/msgpack-asgi for a good example
+class JOSEMiddleware:
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            preparer = JOSEPreparer(self.app)
+            await preparer(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
+class JOSEPreparer:
     def __init__(self, app):
-        super().__init__(app)
+        self.app: ASGIApp = app
+        self.is_jose: bool = False
+        self.is_detached_jws: bool = False
+        self.receive: Receive = unattached_receive
+        self.send: Send = unattached_send
 
-    async def dispatch(self, request: Request, call_next):
-        acceptable_jose_content_types = ["application/jose", "application/jose+json"]
-        is_jose = request.headers.get("content-type") in acceptable_jose_content_types
-        is_detached_jws = request.headers.get("Detached-JWS") is not None
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        headers: dict[bytes, bytes] = dict(scope["headers"])
+        acceptable_jose_content_types = [b"application/jose", b"application/jose+json"]
+        self.is_jose = headers.get(b"content-type") in acceptable_jose_content_types
+        self.is_detached_jws = headers.get(b"detached-jws") is not None
 
-        if is_jose and not is_detached_jws:
-            request = self.make_context_request(request)
-            logger.info("got application/jose+json request")
-            body = await get_body(request)
-            # deserialize jws
+        self.receive = receive
+        self.send = send
+
+        async def receive_jose() -> Message:
+            message = await self.receive()
+
+            if message["type"] != "http.request":
+                return message
+
+            if not self.is_jose and not self.is_detached_jws:
+                return message
+
+            body = message["body"]
+            more_body = message.get("more_body", False)
+            if more_body:
+                # Some implementations (e.g. HTTPX) may send one more empty-body message.
+                # Make sure they don't send one that contains a body, or it means
+                # that clients attempt to stream the request body.
+                message = await self.receive()
+                if message["body"] != b"":
+                    raise HTTPException(status_code=400, detail="Streaming the request body isn't supported yet")
+
             body_str = body.decode("utf-8")
-            logger.debug(f"JWS body: {body_str}")
-            jwstoken = jws.JWS()
-            try:
-                jwstoken.deserialize(body_str)
-            except JWException:
-                logger.exception("JWS deserialization failure")
-                return return_error_response(status_code=400, detail="JWS could not be deserialized")
-            logger.info("JWS token deserialized")
-            logger.debug(f"JWS: {jwstoken.objects}")
 
-            # add jws to context request to be verified later
-            request.context.jws_obj = jwstoken
-            # replace body with unverified deserialized token - verification is done when verifying proof
-            await set_body(request, jwstoken.objects["payload"])
-            # set content-type to application/json as the body has changed
-            set_header(request, "content-type", "application/json")
-            # update content-length header to match the new body
-            set_header(request, "content-length", str(len(jwstoken.objects["payload"])))
+            if self.is_detached_jws:
+                # add original body to context for later use
+                logger.debug(f"detached JWS body: {body_str}")
+                set_context(scope, data={"detached_jws_body": body_str})
+                logger.info("added detached JWS original body to request state")
+            elif self.is_jose:
+                # deserialize jws and replace body with the resulting json
+                logger.debug(f"JWS body: {body_str}")
+                jwstoken = jws.JWS()
+                try:
+                    jwstoken.deserialize(body_str)
+                except JWException:
+                    logger.exception("JWS deserialization failure")
+                    raise HTTPException(status_code=400, detail="JWS could not be deserialized")
+                logger.info("JWS token deserialized")
+                logger.debug(f"JWS: {jwstoken.objects}")
 
-        if is_detached_jws:
-            request = self.make_context_request(request)
-            logger.info("got detached jws request")
-            # save original body for the detached jws validation
-            body = await get_body(request)
-            body_str = body.decode("utf-8")
-            logger.debug(f"JWSD body: {body_str}")
-            request.context.detached_jws_body = body_str
+                # add jws to context request to be verified later
+                set_context(scope, data={"jws_obj": jwstoken})
+                # replace body with unverified deserialized token - verification is done later in proof.jws
+                message["body"] = jwstoken.objects["payload"]
+                # set content-type to application/json as the body has changed
+                set_header(scope, (b"content-type", b"application/json"))
+                # update content-length header to match the new body
+                content_length = str(len(jwstoken.objects["payload"]))
+                set_header(scope, (b"content-length", content_length.encode("utf-8")))
+            return message
 
-        return await call_next(request)
+        await self.app(scope, receive_jose, send)
+
+
+async def unattached_receive() -> Message:
+    raise RuntimeError("receive awaitable not set")
+
+
+async def unattached_send(message: Message) -> None:
+    raise RuntimeError("send awaitable not set")
