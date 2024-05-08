@@ -321,6 +321,12 @@ class TestAuthServer(TestCase):
         claims = self._get_access_token_claims(access_token=access_token, client=self.client)
         assert claims["auth_source"] == AuthSource.TEST
 
+    def test_deserialize_bad_jws(self):
+        client_header = {"Content-Type": "application/jose"}
+        response = self.client.post("/transaction", content=b"bogus_jws", headers=client_header)
+        assert response.status_code == 400
+        assert response.json()["detail"] == "JWS could not be deserialized"
+
     def test_transaction_jwsd(self):
         client_key_dict = self.client_jwk.export_public(as_dict=True)
         client_jwk = ECJWK(**client_key_dict)
