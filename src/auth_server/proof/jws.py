@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from base64 import urlsafe_b64encode
-from typing import Optional, Union
+from typing import Optional
 
 from cryptography.hazmat.primitives.hashes import SHA256, SHA384, SHA512
 from fastapi import HTTPException
@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from auth_server.config import load_config
 from auth_server.context import ContextRequest
-from auth_server.models.gnap import Client, ContinueRequest, GNAPJOSEHeader, GrantRequest, Key
+from auth_server.models.gnap import GNAPJOSEHeader, Key
 from auth_server.models.jose import JWK, SupportedAlgorithms, SupportedJWSType
 from auth_server.time_utils import utc_now
 from auth_server.utils import hash_with
