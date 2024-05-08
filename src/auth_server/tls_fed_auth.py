@@ -191,13 +191,13 @@ async def load_metadata(metadata_sources: List[MetadataSource], max_age: timedel
         source_renew_at = metadata_source.issued_at + cache_ttl
         if source_renew_at < renew_at:
             renew_at = source_renew_at
-            logger.info(f"metadata should be renewed at {renew_at}")
+        logger.info(f"metadata from {metadata_source.issuer} should be renewed at {renew_at}")
         # Collect entities from all sources
         for entity in metadata_source.metadata.entities:
             entities[str(entity.entity_id)] = MetadataEntity(
                 issuer=metadata_source.issuer,
                 expires_at=metadata_source.expires_at,
-                **entity.dict(exclude_unset=True),
+                **entity.model_dump(exclude_unset=True),
             )
     return Metadata(renew_at=renew_at, entities=entities)
 
