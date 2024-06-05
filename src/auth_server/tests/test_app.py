@@ -36,7 +36,7 @@ from auth_server.models.gnap import (
     ProofMethod,
     StartInteractionMethod,
 )
-from auth_server.models.jose import ECJWK, SupportedAlgorithms, SupportedHTTPMethods, SupportedJWSType
+from auth_server.models.jose import ECJWK, SupportedAlgorithms, SupportedHTTPMethods, SupportedJWSType, SupportedJWSTypeLegacy
 from auth_server.models.status import Status
 from auth_server.saml2 import AuthnInfo, NameID, SAMLAttributes, SessionInfo
 from auth_server.testing import MongoTemporaryInstance
@@ -321,6 +321,41 @@ class TestAuthServer(TestCase):
         claims = self._get_access_token_claims(access_token=access_token, client=self.client)
         assert claims["auth_source"] == AuthSource.TEST
 
+    def test_transaction_jws_legacy_typ(self):
+        client_key_dict = self.client_jwk.export_public(as_dict=True)
+        client_jwk = ECJWK(**client_key_dict)
+        req = GrantRequest(
+            client=Client(key=Key(proof=Proof(method=ProofMethod.JWS), jwk=client_jwk)),
+            access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
+        )
+        jws_header = {
+            "typ": SupportedJWSTypeLegacy.JWS,
+            "alg": SupportedAlgorithms.ES256.value,
+            "kid": self.client_jwk.key_id,
+            "htm": SupportedHTTPMethods.POST.value,
+            "uri": "http://testserver/transaction",
+            "created": int(utc_now().timestamp()),
+        }
+        _jws = jws.JWS(payload=req.json(exclude_unset=True))
+        _jws.add_signature(
+            key=self.client_jwk,
+            protected=json.dumps(jws_header),
+        )
+        data = _jws.serialize(compact=True)
+
+        client_header = {"Content-Type": "application/jose"}
+        response = self.client.post("/transaction", content=data, headers=client_header)
+
+        assert response.status_code == 200
+        assert "access_token" in response.json()
+        access_token = response.json()["access_token"]
+        assert AccessTokenFlags.BEARER.value in access_token["flags"]
+        assert access_token["value"] is not None
+        # Verify token and check claims
+        claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims["auth_source"] == AuthSource.TEST
+
+
     def test_deserialize_bad_jws(self):
         client_header = {"Content-Type": "application/jose"}
         response = self.client.post("/transaction", content=b"bogus_jws", headers=client_header)
@@ -336,6 +371,53 @@ class TestAuthServer(TestCase):
         )
         jws_header = {
             "typ": SupportedJWSType.JWSD,
+            "alg": SupportedAlgorithms.ES256.value,
+            "kid": self.client_jwk.key_id,
+            "htm": SupportedHTTPMethods.POST.value,
+            "uri": "http://testserver/transaction",
+            "created": int(utc_now().timestamp()),
+        }
+
+        payload = req.model_dump_json(exclude_unset=True)
+
+        # create a hash of payload to send in payload place
+        payload_digest = hash_with(SHA256(), payload.encode())
+        payload_hash = base64url_encode(payload_digest)
+
+        # create detached jws
+        _jws = jws.JWS(payload=payload)
+        _jws.add_signature(
+            key=self.client_jwk,
+            protected=json.dumps(jws_header),
+        )
+        data = _jws.serialize(compact=True)
+
+        # Remove payload from serialized jws
+        header, _, signature = data.split(".")
+        client_header = {"Detached-JWS": f"{header}.{payload_hash}.{signature}"}
+
+        response = self.client.post(
+            "/transaction", content=req.model_dump_json(exclude_unset=True), headers=client_header
+        )
+
+        assert response.status_code == 200
+        assert "access_token" in response.json()
+        access_token = response.json()["access_token"]
+        assert AccessTokenFlags.BEARER.value in access_token["flags"]
+        assert access_token["value"] is not None
+        # Verify token and check claims
+        claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims["auth_source"] == AuthSource.TEST
+
+    def test_transaction_jwsd_legacy_typ(self):
+        client_key_dict = self.client_jwk.export_public(as_dict=True)
+        client_jwk = ECJWK(**client_key_dict)
+        req = GrantRequest(
+            client=Client(key=Key(proof=Proof(method=ProofMethod.JWSD), jwk=client_jwk)),
+            access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
+        )
+        jws_header = {
+            "typ": SupportedJWSTypeLegacy.JWSD,
             "alg": SupportedAlgorithms.ES256.value,
             "kid": self.client_jwk.key_id,
             "htm": SupportedHTTPMethods.POST.value,

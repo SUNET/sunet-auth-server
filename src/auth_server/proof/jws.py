@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from auth_server.config import load_config
 from auth_server.context import ContextRequest
 from auth_server.models.gnap import GNAPJOSEHeader, Key
-from auth_server.models.jose import JWK, SupportedAlgorithms, SupportedJWSType
+from auth_server.models.jose import JWK, SupportedAlgorithms, SupportedJWSType, SupportedJWSTypeLegacy
 from auth_server.time_utils import utc_now
 from auth_server.utils import hash_with
 
@@ -90,7 +90,7 @@ async def check_jws_proof(
         logger.error("Missing JWS header")
         raise HTTPException(status_code=400, detail=f"Missing JWS header: {e}")
 
-    if jws_header.typ is not SupportedJWSType.JWS:
+    if jws_header.typ not in [SupportedJWSType.JWS, SupportedJWSTypeLegacy.JWS]:
         raise HTTPException(status_code=400, detail=f"typ should be {SupportedJWSType.JWS}")
 
     return await verify_gnap_jws(request=request, gnap_key=gnap_key, jws_header=jws_header, access_token=access_token)
@@ -144,7 +144,7 @@ async def check_jwsd_proof(
         logger.error(f"Missing Detached JWS header: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
-    if jws_header.typ is not SupportedJWSType.JWSD:
+    if jws_header.typ not in [SupportedJWSType.JWSD, SupportedJWSTypeLegacy.JWSD]:
         raise HTTPException(status_code=400, detail=f"typ should be {SupportedJWSType.JWSD}")
 
     return await verify_gnap_jws(request=request, gnap_key=gnap_key, jws_header=jws_header, access_token=access_token)
