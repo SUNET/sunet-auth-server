@@ -12,6 +12,7 @@ from auth_server.models.jose import (
     SupportedAlgorithms,
     SupportedHTTPMethods,
     SupportedJWSType,
+    SupportedJWSTypeLegacy,
     SymmetricJWK,
 )
 
@@ -273,7 +274,7 @@ class GrantResponse(GnapBaseModel):
 class GNAPJOSEHeader(JOSEHeader):
     kid: str
     alg: SupportedAlgorithms
-    typ: SupportedJWSType
+    typ: Union[SupportedJWSType, SupportedJWSTypeLegacy]
     htm: SupportedHTTPMethods
     # The HTTP URI used for this request, including all path and query components.
     uri: str

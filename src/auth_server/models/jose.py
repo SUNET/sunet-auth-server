@@ -110,9 +110,14 @@ class JWKS(BaseModel):
     keys: List[Union[ECJWK, RSAJWK, SymmetricJWK]]
 
 
-class SupportedJWSType(str, Enum):
+class SupportedJWSTypeLegacy(str, Enum):
     JWS = "gnap-binding+jws"
     JWSD = "gnap-binding+jwsd"
+
+
+class SupportedJWSType(str, Enum):
+    JWS = "gnap-binding-jws"
+    JWSD = "gnap-binding-jwsd"
 
 
 class JOSEHeader(BaseModel):
