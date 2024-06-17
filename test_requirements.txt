@@ -4,9 +4,6 @@
 #
 #    make update_deps
 #
---index-url https://pypi.sunet.se
---extra-index-url https://pypi.sunet.se/simple
-
 aiodns==3.2.0 \
     --hash=sha256:62869b23409349c21b072883ec8998316b234c9a9e36675756e8e317e8768f72 \
     --hash=sha256:e443c0c27b07da3174a109fd9e736d69058d808f144d3c9d56dbd1776964c5f5
@@ -420,9 +417,7 @@ coverage[toml]==7.5.0 \
     --hash=sha256:f609ebcb0242d84b7adeee2b06c11a2ddaec5464d21888b2c8255f5fd6a98ae4 \
     --hash=sha256:fea9d3ca80bcf17edb2c08a4704259dadac196fe5e9274067e7a20511fad1743 \
     --hash=sha256:fed7a72d54bd52f4aeb6c6e951f363903bd7d70bc1cad64dd1f087980d309ab9
-    # via
-    #   coverage
-    #   pytest-cov
+    # via pytest-cov
 cryptography==42.0.5 \
     --hash=sha256:0270572b8bd2c833c3981724b8ee9747b3ec96f699a9665470018594301439ee \
     --hash=sha256:111a0d8553afcf8eb02a4fea6ca4f59d48ddb34497aa8706a6cf536f1a5ec576 \
@@ -999,7 +994,6 @@ pydantic==2.7.1 \
     #   fastapi
     #   pki-tools
     #   pydantic-settings
-    #   pysaml2
 pydantic-core==2.18.2 \
     --hash=sha256:0098300eebb1c837271d3d1a2cd2911e7c11b396eac9661655ee524a7f10587b \
     --hash=sha256:042473b6280246b1dbf530559246f6842b56119c2926d1e52b631bdc46075f2a \
@@ -1157,9 +1151,9 @@ pyopenssl==24.1.0 \
     --hash=sha256:17ed5be5936449c5418d1cd269a1a9e9081bc54c17aed272b45856a3d3dc86ad \
     --hash=sha256:cabed4bfaa5df9f1a16c0ef64a0cb65318b5cd077a7eda7d6970131ca2f41a6f
     # via pysaml2
-pysaml2==7.4.1+sunet5 \
-    --hash=sha256:b617eae19c50a40dac783ab4dc017c2e6c1d9d1cb5281f02d74e4273f0877676 \
-    --hash=sha256:c047cd3575b1d5d20e837eb21098863c3f76411892715ccb21bc77835d33625e
+pysaml2==7.5.0 \
+    --hash=sha256:bc6627cc344476a83c757f440a73fda1369f13b6fda1b4e16bca63ffbabb5318 \
+    --hash=sha256:f36871d4e5ee857c6b85532e942550d2cf90ea4ee943d75eb681044bbc4f54f7
     # via -r requirements.in
 pytest==8.2.0 \
     --hash=sha256:1733f0620f6cda4095bbf0d9ff8022486e91892245bb9e7d5542c018f612f233 \
@@ -1370,9 +1364,9 @@ ujson==5.9.0 \
     --hash=sha256:ff741a5b4be2d08fceaab681c9d4bc89abf3c9db600ab435e20b9b6d4dfef12e \
     --hash=sha256:ffdfebd819f492e48e4f31c97cb593b9c1a8251933d8f8972e81697f00326ff1
     # via fastapi
-urllib3==2.2.1 \
-    --hash=sha256:450b20ec296a467077128bff42b73080516e71b56ff59a60a02bef2232c4fa9d \
-    --hash=sha256:d0570876c61ab9e520d776c38acbbb5b05a776d3f9ff98a5c8fd5162a444cf19
+urllib3==2.2.2 \
+    --hash=sha256:a448b2f64d686155468037e1ace9f2d2199776e17f0a46610480d311f73e3472 \
+    --hash=sha256:dd505485549a7a552833da5e6063639d0d177c04f23bc3864e41e5dc5f612168
     # via requests
 uvicorn[standard]==0.29.0 \
     --hash=sha256:2c2aac7ff4f4365c206fd773a39bf4ebd1047c238f8b8268ad996829323473de \
