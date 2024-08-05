@@ -77,7 +77,7 @@ async def is_cert_revoked(cert: Certificate, ca_name: str) -> bool:
         return is_revoked(
             cert=PKIToolCertificate.from_cryptography(cert=cert), chain=Chain.from_cryptography([ca_cert])
         )
-    except PKIToolsError as e:
+    except (PKIToolsError, ValueError) as e:
         logger.error(f"Certificate {rfc8705_fingerprint(cert)} failed revoke check: {e}")
     return True
 
