@@ -19,3 +19,4 @@ six
 importlib-resources
 zipp
 async-timeout
+exceptiongroup

@@ -443,6 +443,10 @@ elementpath==4.4.0 \
     --hash=sha256:cda092281afe508ece1bf65373905b30196c9426f3730cfea46059e103a131bd \
     --hash=sha256:dfc4b8ca3d87966dcb0df40b5b6d04a98f053683271930fad9e7fa000924dfb2
     # via xmlschema
+exceptiongroup==1.2.2 \
+    --hash=sha256:3111b9d131c238bec2f8f516e123e14ba243563fb135d3fe885990585aa7795b \
+    --hash=sha256:47c2edf7c6738fafb49fd34290706d1a1a2f4d1c6df275526b62cbb4aa5393cc
+    # via -r requirements.in
 fastapi==0.112.2 \
     --hash=sha256:3d4729c038414d5193840706907a41839d839523da6ed0c2811f1168cac1798c \
     --hash=sha256:db84b470bd0e2b1075942231e90e3577e12a903c4dc8696f0d206a7904a7af1c
