@@ -51,7 +51,7 @@ class JOSEMiddleware:
 
 
 class JOSEPreparer:
-    def __init__(self, app):
+    def __init__(self, app) -> None:
         self.app: ASGIApp = app
         self.is_jose: bool = False
         self.is_detached_jws: bool = False
