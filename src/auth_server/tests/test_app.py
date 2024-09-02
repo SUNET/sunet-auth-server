@@ -81,6 +81,18 @@ class TestAuthServer(TestCase):
             "auth_token_audience": "some_audience",
             "auth_flows": json.dumps(["TestFlow"]),
             "mongo_uri": self.mongo_db.uri,
+            "logging_config": json.dumps(
+                {
+                    "loggers": {
+                        "saml2": {"level": "WARNING"},
+                        "xmlsec": {"level": "INFO"},
+                        "urllib3": {"level": "INFO"},
+                        "pymongo.serverSelection": {"level": "INFO"},
+                        "pymongo.command": {"level": "INFO"},
+                        "pymongo.connection": {"level": "INFO"},
+                    }
+                }
+            ),
         }
         environ.update(self.config)
         self.app = init_auth_server_api()

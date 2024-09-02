@@ -8,7 +8,6 @@ jinja2
 async_lru
 jwcrypto
 xmltodict
-loguru
 motor
 pysaml2
 pki-tools

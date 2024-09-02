@@ -29,6 +29,13 @@ class Environment(str, Enum):
     PROD = "prod"
 
 
+class LoggingFilters(str, Enum):
+    """Identifiers to coherently map elements in LocalContext.filters to filter classes in logging dictConfig."""
+
+    DEBUG_TRUE: str = "require_debug_true"
+    DEBUG_FALSE: str = "require_debug_false"
+
+
 class FlowName(str, Enum):
     CAFLOW = "CAFlow"
     CONFIGFLOW = "ConfigFlow"
@@ -58,9 +65,10 @@ class AuthServerConfig(BaseSettings):
     environment: Environment = Field(default=Environment.PROD)
     debug: bool = False
     testing: bool = False
-    log_level: str = Field(default="INFO")
-    log_color: bool = True
     log_format: Optional[str] = None
+    log_level: str = "INFO"
+    log_filters: list[LoggingFilters] = Field(default_factory=list)
+    logging_config: dict = Field(default_factory=dict)
     host: str = Field(default="0.0.0.0")
     port: int = Field(default=8080)
     application_root: str = Field(default="")

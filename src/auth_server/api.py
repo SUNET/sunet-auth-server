@@ -13,7 +13,7 @@ from starlette.status import HTTP_422_UNPROCESSABLE_ENTITY
 from auth_server.config import AuthServerConfig, ConfigurationError, FlowName, load_config
 from auth_server.context import ContextRequestRoute
 from auth_server.flows import BaseAuthFlow, CAFlow, ConfigFlow, InteractionFlow, MDQFlow, TestFlow, TLSFEDFlow
-from auth_server.log import init_logging
+from auth_server.logging import init_logging
 from auth_server.middleware import JOSEMiddleware
 from auth_server.routers.interaction import interaction_router
 from auth_server.routers.root import root_router
@@ -25,10 +25,10 @@ __author__ = "lundberg"
 
 
 class AuthServer(FastAPI):
-    def __init__(self):
+    def __init__(self) -> None:
         config = load_config()
         super().__init__(root_path=config.application_root)
-        init_logging(level=config.log_level, colorize=config.log_color, fmt=config.log_format)
+        init_logging(config=config)
 
         # Load flows
         self.builtin_flow: Dict[FlowName, Type[BaseAuthFlow]] = {
