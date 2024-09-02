@@ -1,4 +1,3 @@
--c constraints.txt
 fastapi
 python-multipart
 aiohttp[speedups]
