@@ -39,6 +39,7 @@ class MetadataEntity(Entity):
 
 
 class Metadata(BaseModel):
+    issuer: Optional[str] = None
     renew_at: datetime
     entities: Mapping[str, MetadataEntity]
     model_config = ConfigDict(frozen=True)
@@ -114,7 +115,7 @@ async def load_metadata_source(
     jose_headers = []
     for item in headers:
         try:
-            jose_headers.append(TLSFEDJOSEHeader.parse_obj(item))
+            jose_headers.append(TLSFEDJOSEHeader.model_validate(item))
         except ValidationError:
             logger.exception("header could not be validated")
             continue
@@ -141,7 +142,7 @@ async def load_metadata_source(
     logger.debug(f"payload: {_jws.payload}")
     try:
         # validate payload structure
-        metadata = TLSFEDMetadataModel.parse_raw(_jws.payload, encoding="utf-8")
+        metadata = TLSFEDMetadataModel.model_validate_json(_jws.payload)
         return MetadataSource(
             issued_at=jose_header.iat, expires_at=jose_header.exp, issuer=jose_header.iss, metadata=metadata
         )
@@ -157,7 +158,7 @@ async def load_metadata_source(
     entities = payload.pop("entities")
     payload["entities"] = []  # entities can not be missing
     try:
-        metadata = TLSFEDMetadataModel.parse_obj(payload)
+        metadata = TLSFEDMetadataModel.model_validate(payload)
     except ValidationError:
         logger.exception("partial metadata could not be validated")
         # if there is something wrong with the base structure of the metadata, give up
@@ -166,7 +167,7 @@ async def load_metadata_source(
     # validate entities and discard the ones failing
     for entity in entities:
         try:
-            metadata.entities.append(Entity.parse_obj(entity))
+            metadata.entities.append(Entity.model_validate(entity))
         except ValidationError:
             logger.exception(f'Failed to parse {entity.get("entity_id")} from {jose_header.iss} metadata')
             continue
@@ -176,10 +177,10 @@ async def load_metadata_source(
     )
 
 
-async def load_metadata(metadata_sources: List[MetadataSource], max_age: timedelta) -> Metadata:
+async def load_metadata(metadata_sources: List[MetadataSource], max_age: timedelta) -> list[Metadata]:
     # Set default renew and expire times
     renew_at = utc_now() + max_age
-    entities = {}
+    loaded_metadata: list[Metadata] = []
     for metadata_source in metadata_sources:
         # please mypy
         assert metadata_source.metadata.cache_ttl is not None
@@ -192,18 +193,20 @@ async def load_metadata(metadata_sources: List[MetadataSource], max_age: timedel
         if source_renew_at < renew_at:
             renew_at = source_renew_at
         logger.info(f"metadata from {metadata_source.issuer} should be renewed at {renew_at}")
-        # Collect entities from all sources
+        # Parse entities
+        entities = {}
         for entity in metadata_source.metadata.entities:
             entities[str(entity.entity_id)] = MetadataEntity(
                 issuer=metadata_source.issuer,
                 expires_at=metadata_source.expires_at,
                 **entity.model_dump(exclude_unset=True),
             )
-    return Metadata(renew_at=renew_at, entities=entities)
+        loaded_metadata.append(Metadata(issuer=metadata_source.issuer, renew_at=renew_at, entities=entities))
+    return loaded_metadata
 
 
 @alru_cache
-async def get_tls_fed_metadata() -> Metadata:
+async def get_tls_fed_metadata() -> list[Metadata]:
     config = load_config()
     metadata_sources = []
     for source in config.tls_fed_metadata:
@@ -226,27 +229,30 @@ async def get_tls_fed_metadata() -> Metadata:
 
 
 async def get_entity(entity_id: str) -> Optional[MetadataEntity]:
-    metadata = await get_tls_fed_metadata()
+    loaded_metadata = await get_tls_fed_metadata()
     now = utc_now()
 
-    # Check if metadata should be refreshed or if it wasn't initialized correct
-    if now > metadata.renew_at or not metadata.entities:
-        # clear lru_cache and reload metadata
-        get_tls_fed_metadata.cache_clear()
-        metadata = await get_tls_fed_metadata()
+    for metadata in loaded_metadata:
+        # Check if metadata should be refreshed or if it wasn't initialized correct
+        if now > metadata.renew_at or not metadata.entities:
+            # clear lru_cache and reload metadata
+            get_tls_fed_metadata.cache_clear()
+            loaded_metadata = await get_tls_fed_metadata()
 
-    # Get entity from metadata
-    entity = metadata.entities.get(entity_id)
-    if not entity:
-        logger.error(f"{entity_id} not found in metadata")
-        return None
+        # Get entity from metadata
+        entity = metadata.entities.get(entity_id)
+        if not entity:
+            logger.info(f"{entity_id} not found in {metadata.issuer} metadata")
+            continue
 
-    # Check if entity has expired
-    if now > entity.expires_at:
-        logger.error(f"{entity_id} expired {entity.expires_at}")
-        return None
+        # Check if entity has expired
+        if now > entity.expires_at:
+            logger.error(f"{entity_id} expired {entity.expires_at} in {metadata.issuer} metadata")
+            continue
 
-    return entity
+        return entity
+
+    return None
 
 
 async def entity_to_key(entity: Optional[MetadataEntity]) -> Optional[Key]:
