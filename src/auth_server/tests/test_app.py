@@ -36,7 +36,13 @@ from auth_server.models.gnap import (
     ProofMethod,
     StartInteractionMethod,
 )
-from auth_server.models.jose import ECJWK, SupportedAlgorithms, SupportedHTTPMethods, SupportedJWSType, SupportedJWSTypeLegacy
+from auth_server.models.jose import (
+    ECJWK,
+    SupportedAlgorithms,
+    SupportedHTTPMethods,
+    SupportedJWSType,
+    SupportedJWSTypeLegacy,
+)
 from auth_server.models.status import Status
 from auth_server.saml2 import AuthnInfo, NameID, SAMLAttributes, SessionInfo
 from auth_server.testing import MongoTemporaryInstance
@@ -367,7 +373,6 @@ class TestAuthServer(TestCase):
         claims = self._get_access_token_claims(access_token=access_token, client=self.client)
         assert claims["auth_source"] == AuthSource.TEST
 
-
     def test_deserialize_bad_jws(self):
         client_header = {"Content-Type": "application/jose"}
         response = self.client.post("/transaction", content=b"bogus_jws", headers=client_header)
@@ -622,7 +627,7 @@ class TestAuthServer(TestCase):
             access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
         )
         client_header = {"Client-Cert": self.client_cert_str}
-        response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
+        response = self.client.post("/transaction", json=req.model_dump(exclude_none=True), headers=client_header)
         assert response.status_code == 401
 
     def test_config_flow(self):

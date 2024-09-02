@@ -43,7 +43,7 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
 
     async def _load_metadata(
         self, metadata: Optional[Union[TLSFEDMetadata, str]] = None, strict: bool = True
-    ) -> Optional[Metadata]:
+    ) -> Optional[list[Metadata]]:
         if metadata is None:
             metadata = create_tls_fed_metadata(
                 entity_id=self.entity_id,
@@ -67,7 +67,8 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
         return await load_metadata(metadata_sources=[metadata_source], max_age=self.max_age)
 
     async def test_parse_metadata(self):
-        metadata = await self._load_metadata()
+        loaded_metadata = await self._load_metadata()
+        metadata = loaded_metadata[0]
         assert metadata is not None
         assert metadata.renew_at == (self.about_now + self.cache_ttl).replace(microsecond=0)
         assert len(metadata.entities) == 1
@@ -105,9 +106,10 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
         assert metadata is None
 
         # valid entities should be returned when using non strict mode
-        metadata = await self._load_metadata(metadata=modified_metadata, strict=False)
-        assert metadata is not None
-        assert len(metadata.entities) == 1
+        loaded_metadata = await self._load_metadata(metadata=modified_metadata, strict=False)
+        for metadata in loaded_metadata:
+            assert metadata is not None
+            assert len(metadata.entities) == 1
 
     async def test_parse_unregistered_extension_in_metadata(self):
         serialized_metadata = create_tls_fed_metadata(
@@ -125,8 +127,9 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
         deserialized_metadata["entities"].extend([unknown_extension_entity])
         modified_metadata = json.dumps(deserialized_metadata)
         # both entities should be returned when using strict mode
-        metadata = await self._load_metadata(metadata=modified_metadata, strict=True)
+        loaded_metadata = await self._load_metadata(metadata=modified_metadata, strict=True)
 
+        metadata = loaded_metadata[0]
         assert metadata is not None
         assert len(metadata.entities) == 2
         # but the unregistered extension should be removed
