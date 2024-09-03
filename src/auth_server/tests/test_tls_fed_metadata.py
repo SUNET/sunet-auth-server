@@ -43,7 +43,7 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
 
     async def _load_metadata(
         self, metadata: Optional[Union[TLSFEDMetadata, str]] = None, strict: bool = True
-    ) -> Optional[list[Metadata]]:
+    ) -> Optional[Metadata]:
         if metadata is None:
             metadata = create_tls_fed_metadata(
                 entity_id=self.entity_id,
@@ -67,12 +67,12 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
         return await load_metadata(metadata_sources=[metadata_source], max_age=self.max_age)
 
     async def test_parse_metadata(self):
-        loaded_metadata = await self._load_metadata()
-        metadata = loaded_metadata[0]
-        assert metadata is not None
-        assert metadata.renew_at == (self.about_now + self.cache_ttl).replace(microsecond=0)
-        assert len(metadata.entities) == 1
-        for entity_id, entity in metadata.entities.items():
+        metadata = await self._load_metadata()
+        issuer_metadata = list(metadata.issuer_metadata.values())[0]
+        assert issuer_metadata is not None
+        assert issuer_metadata.renew_at == (self.about_now + self.cache_ttl).replace(microsecond=0)
+        assert len(issuer_metadata.entities) == 1
+        for entity_id, entity in issuer_metadata.entities.items():
             assert isinstance(entity, MetadataEntity) is True
             assert entity.issuer == self.issuer
             assert entity.entity_id == self.entity_id
@@ -105,11 +105,11 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
         metadata = await self._load_metadata(metadata=modified_metadata, strict=True)
         assert metadata is None
 
-        # valid entities should be returned when using non strict mode
-        loaded_metadata = await self._load_metadata(metadata=modified_metadata, strict=False)
-        for metadata in loaded_metadata:
-            assert metadata is not None
-            assert len(metadata.entities) == 1
+        # valid entities should be returned when using non-strict mode
+        metadata = await self._load_metadata(metadata=modified_metadata, strict=False)
+        for issuer_metadata in metadata.issuer_metadata.values():
+            assert issuer_metadata is not None
+            assert len(issuer_metadata.entities) == 1
 
     async def test_parse_unregistered_extension_in_metadata(self):
         serialized_metadata = create_tls_fed_metadata(
@@ -127,12 +127,12 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
         deserialized_metadata["entities"].extend([unknown_extension_entity])
         modified_metadata = json.dumps(deserialized_metadata)
         # both entities should be returned when using strict mode
-        loaded_metadata = await self._load_metadata(metadata=modified_metadata, strict=True)
+        metadata = await self._load_metadata(metadata=modified_metadata, strict=True)
 
-        metadata = loaded_metadata[0]
-        assert metadata is not None
-        assert len(metadata.entities) == 2
+        issuer_metadata = list(metadata.issuer_metadata.values())[0]
+        assert issuer_metadata is not None
+        assert len(issuer_metadata.entities) == 2
         # but the unregistered extension should be removed
-        entity = metadata.entities["https://unknown_extension_entity"]
+        entity = issuer_metadata.entities["https://unknown_extension_entity"]
         assert entity.extensions.saml_scope.scope == self.scopes
         assert entity.extensions.model_dump()["not_a_registered_extension"] == {"some_key": "some_value"}

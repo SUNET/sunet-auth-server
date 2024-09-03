@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Mapping, Optional
+from uuid import uuid4
 
 import aiohttp
 from aiofiles import open as async_open
@@ -34,14 +35,17 @@ class MetadataSource(BaseModel):
 class MetadataEntity(Entity):
     issuer: Optional[str] = None
     expires_at: datetime
-    # organization_id should be part of the Entity schema
-    organization_id: str
+    model_config = ConfigDict(frozen=True)
+
+
+class IssuerMetadata(BaseModel):
+    renew_at: datetime
+    entities: Mapping[str, MetadataEntity]
+    model_config = ConfigDict(frozen=True)
 
 
 class Metadata(BaseModel):
-    issuer: Optional[str] = None
-    renew_at: datetime
-    entities: Mapping[str, MetadataEntity]
+    issuer_metadata: Mapping[str, IssuerMetadata]
     model_config = ConfigDict(frozen=True)
 
 
@@ -177,10 +181,10 @@ async def load_metadata_source(
     )
 
 
-async def load_metadata(metadata_sources: List[MetadataSource], max_age: timedelta) -> list[Metadata]:
+async def load_metadata(metadata_sources: List[MetadataSource], max_age: timedelta) -> Metadata:
     # Set default renew and expire times
     renew_at = utc_now() + max_age
-    loaded_metadata: list[Metadata] = []
+    loaded_metadata: dict[str, IssuerMetadata] = {}
     for metadata_source in metadata_sources:
         # please mypy
         assert metadata_source.metadata.cache_ttl is not None
@@ -201,12 +205,15 @@ async def load_metadata(metadata_sources: List[MetadataSource], max_age: timedel
                 expires_at=metadata_source.expires_at,
                 **entity.model_dump(exclude_unset=True),
             )
-        loaded_metadata.append(Metadata(issuer=metadata_source.issuer, renew_at=renew_at, entities=entities))
-    return loaded_metadata
+        key = metadata_source.issuer
+        if key is None:
+            key = str(uuid4())
+        loaded_metadata[key] = IssuerMetadata(issuer=metadata_source.issuer, renew_at=renew_at, entities=entities)
+    return Metadata(issuer_metadata=loaded_metadata)
 
 
 @alru_cache
-async def get_tls_fed_metadata() -> list[Metadata]:
+async def get_tls_fed_metadata() -> Metadata:
     config = load_config()
     metadata_sources = []
     for source in config.tls_fed_metadata:
@@ -229,25 +236,25 @@ async def get_tls_fed_metadata() -> list[Metadata]:
 
 
 async def get_entity(entity_id: str) -> Optional[MetadataEntity]:
-    loaded_metadata = await get_tls_fed_metadata()
+    metadata = await get_tls_fed_metadata()
     now = utc_now()
 
-    for metadata in loaded_metadata:
+    for issuer, issuer_metadata in metadata.issuer_metadata.items():
         # Check if metadata should be refreshed or if it wasn't initialized correct
-        if now > metadata.renew_at or not metadata.entities:
+        if now > issuer_metadata.renew_at or not issuer_metadata.entities:
             # clear lru_cache and reload metadata
             get_tls_fed_metadata.cache_clear()
-            loaded_metadata = await get_tls_fed_metadata()
+            return await get_entity(entity_id=entity_id)
 
         # Get entity from metadata
-        entity = metadata.entities.get(entity_id)
+        entity = issuer_metadata.entities.get(entity_id)
         if not entity:
-            logger.info(f"{entity_id} not found in {metadata.issuer} metadata")
+            logger.info(f"{entity_id} not found in {issuer} metadata")
             continue
 
         # Check if entity has expired
         if now > entity.expires_at:
-            logger.error(f"{entity_id} expired {entity.expires_at} in {metadata.issuer} metadata")
+            logger.error(f"{entity_id} expired {entity.expires_at} in {issuer} metadata")
             continue
 
         return entity
