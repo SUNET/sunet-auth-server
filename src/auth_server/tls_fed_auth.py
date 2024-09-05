@@ -28,18 +28,19 @@ __author__ = "lundberg"
 class MetadataSource(BaseModel):
     issued_at: datetime
     expires_at: datetime
-    issuer: Optional[str] = None
+    issuer: str
     metadata: TLSFEDMetadataModel
 
 
 class MetadataEntity(Entity):
-    issuer: Optional[str] = None
-    expires_at: datetime
+    issuer: str
     model_config = ConfigDict(frozen=True)
 
 
 class IssuerMetadata(BaseModel):
+    issued_at: datetime
     renew_at: datetime
+    expires_at: datetime
     entities: Mapping[str, MetadataEntity]
     model_config = ConfigDict(frozen=True)
 
@@ -181,21 +182,14 @@ async def load_metadata_source(
     )
 
 
-async def load_metadata(metadata_sources: List[MetadataSource], max_age: timedelta) -> Metadata:
-    # Set default renew and expire times
-    renew_at = utc_now() + max_age
+async def load_metadata(metadata_sources: List[MetadataSource], cache_ttl: timedelta) -> Metadata:
+    now = utc_now()
+    renew_at = now + cache_ttl  # Set default renew time
     loaded_metadata: dict[str, IssuerMetadata] = {}
     for metadata_source in metadata_sources:
-        # please mypy
-        assert metadata_source.metadata.cache_ttl is not None
-        assert isinstance(metadata_source.metadata.cache_ttl, int)
-        # Set renew_at to the earliest issue time + cache ttl or max age
-        cache_ttl = timedelta(seconds=metadata_source.metadata.cache_ttl)
-        if max_age <= cache_ttl:
-            cache_ttl = max_age
-        source_renew_at = metadata_source.issued_at + cache_ttl
-        if source_renew_at < renew_at:
-            renew_at = source_renew_at
+        # Set renew_at to the issuer's cache_ttl if available
+        if metadata_source.metadata.cache_ttl is not None:
+            renew_at = now + timedelta(seconds=metadata_source.metadata.cache_ttl)
         logger.info(f"metadata from {metadata_source.issuer} should be renewed at {renew_at}")
         # Parse entities
         entities = {}
@@ -208,7 +202,13 @@ async def load_metadata(metadata_sources: List[MetadataSource], max_age: timedel
         key = metadata_source.issuer
         if key is None:
             key = str(uuid4())
-        loaded_metadata[key] = IssuerMetadata(issuer=metadata_source.issuer, renew_at=renew_at, entities=entities)
+        loaded_metadata[key] = IssuerMetadata(
+            issuer=metadata_source.issuer,
+            issued_at=metadata_source.issued_at,
+            renew_at=renew_at,
+            expires_at=metadata_source.expires_at,
+            entities=entities,
+        )
     return Metadata(issuer_metadata=loaded_metadata)
 
 
@@ -232,7 +232,7 @@ async def get_tls_fed_metadata() -> Metadata:
         if metadata_source is not None:
             logger.debug(f"loaded metadata source: {metadata_source}")
             metadata_sources.append(metadata_source)
-    return await load_metadata(metadata_sources=metadata_sources, max_age=config.tls_fed_metadata_max_age)
+    return await load_metadata(metadata_sources=metadata_sources, cache_ttl=config.tls_fed_metadata_cache_ttl)
 
 
 async def get_entity(entity_id: str) -> Optional[MetadataEntity]:
@@ -240,21 +240,28 @@ async def get_entity(entity_id: str) -> Optional[MetadataEntity]:
     now = utc_now()
 
     for issuer, issuer_metadata in metadata.issuer_metadata.items():
-        # Check if metadata should be refreshed or if it wasn't initialized correct
+        # Check if metadata should be refreshed or if it is missing entities
         if now > issuer_metadata.renew_at or not issuer_metadata.entities:
+            logger.info(f"{issuer} metadata cache has expired {issuer_metadata.renew_at} or no entities found")
+            logger.debug(f"Cache info: {get_tls_fed_metadata.cache_info()}")
             # clear lru_cache and reload metadata
             get_tls_fed_metadata.cache_clear()
             return await get_entity(entity_id=entity_id)
+
+        # Check if metadata is valid
+        # not before issued_at
+        if now < issuer_metadata.issued_at:
+            logger.error(f"Metadata for issuer {issuer} is not valid yet (issued at {issuer_metadata.issued_at})")
+            continue
+        # not after expires_at
+        if now > issuer_metadata.expires_at:
+            logger.error(f"Metadata for issuer {issuer} has expired {issuer_metadata.expires_at}")
+            continue
 
         # Get entity from metadata
         entity = issuer_metadata.entities.get(entity_id)
         if not entity:
             logger.info(f"{entity_id} not found in {issuer} metadata")
-            continue
-
-        # Check if entity has expired
-        if now > entity.expires_at:
-            logger.error(f"{entity_id} expired {entity.expires_at} in {issuer} metadata")
             continue
 
         return entity

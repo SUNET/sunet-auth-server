@@ -27,7 +27,6 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
         self.entity_id = "https://test.localhost"
         self.issuer = "metadata.example.com"
         self.about_now = utc_now()
-        self.max_age = timedelta(days=365)
         self.expires = timedelta(days=14)
         self.cache_ttl = timedelta(hours=1)
         self.scopes = ["test.localhost"]
@@ -64,13 +63,15 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
         metadata_source = await load_metadata_source(raw_jws=metadata_jws, jwks=self.tls_fed_jwks, strict=strict)
         if metadata_source is None:
             return None
-        return await load_metadata(metadata_sources=[metadata_source], max_age=self.max_age)
+        return await load_metadata(metadata_sources=[metadata_source], cache_ttl=self.cache_ttl)
 
     async def test_parse_metadata(self):
         metadata = await self._load_metadata()
         issuer_metadata = list(metadata.issuer_metadata.values())[0]
         assert issuer_metadata is not None
-        assert issuer_metadata.renew_at == (self.about_now + self.cache_ttl).replace(microsecond=0)
+        assert issuer_metadata.renew_at.replace(microsecond=0) == (self.about_now + self.cache_ttl).replace(
+            microsecond=0
+        )
         assert len(issuer_metadata.entities) == 1
         for entity_id, entity in issuer_metadata.entities.items():
             assert isinstance(entity, MetadataEntity) is True

@@ -107,6 +107,5 @@ class Model(BaseModel):
         description="How long (in seconds) to cache metadata.\nEffective maximum TTL is the minimum of HTTP Expire and TTL\n",
         examples=[3600],
         title="Metadata cache TTL",
-        default=3600,
     )
     entities: List[Entity]

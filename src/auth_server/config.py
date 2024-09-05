@@ -75,7 +75,7 @@ class AuthServerConfig(BaseSettings):
     auth_flows: List[str] = Field(default_factory=list)
     mdq_server: Optional[str] = Field(default=None)
     tls_fed_metadata: List[TLSFEDMetadata] = Field(default_factory=list)
-    tls_fed_metadata_max_age: timedelta = Field(default=timedelta(hours=1))
+    tls_fed_metadata_cache_ttl: timedelta = Field(default=timedelta(hours=1))
     keystore_path: Path = Field(default=Path("keystore.jwks"))
     signing_key_id: str = Field(default="default")
     auth_token_issuer: str
