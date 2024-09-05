@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import importlib
 import json
+import logging
 from base64 import urlsafe_b64encode
 from functools import lru_cache
 from typing import Any, Callable, Generator, Mapping, Sequence, Union
@@ -10,12 +11,13 @@ import aiohttp
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.hashes import SHA3_256, SHA3_384, SHA3_512, SHA256, SHA512, HashAlgorithm
 from jwcrypto import jwk
-from loguru import logger
 
 from auth_server.config import ConfigurationError, load_config
 from auth_server.models.gnap import HashMethod
 
 __author__ = "lundberg"
+
+logger = logging.getLogger(__name__)
 
 
 @lru_cache()

@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
-
+import logging
 from typing import Optional
-
-from loguru import logger
 
 from auth_server.config import ClientKey, ConfigurationError, load_config
 from auth_server.models.gnap import Key
 from auth_server.models.jose import ECJWK, RSAJWK, KeyType, SymmetricJWK
 
 __author__ = "lundberg"
+
+logger = logging.getLogger(__name__)
 
 
 async def load_config_key(client_key: ClientKey) -> Key:

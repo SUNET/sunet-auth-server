@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 __author__ = "lundberg"
 
+import logging
 from base64 import b64encode
 from datetime import datetime
 from enum import Enum
@@ -13,13 +14,14 @@ from cryptography.hazmat.bindings._rust import ObjectIdentifier
 from cryptography.hazmat.primitives._serialization import Encoding
 from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.x509 import Certificate, ExtensionNotFound, Name, load_der_x509_certificate, load_pem_x509_certificate
-from loguru import logger
 from pki_tools import Certificate as PKIToolCertificate
 from pki_tools import Chain
 from pki_tools import Error as PKIToolsError
 from pki_tools import is_revoked
 
 from auth_server.config import ConfigurationError, load_config
+
+logger = logging.getLogger(__name__)
 
 OID_COMMON_NAME = ObjectIdentifier("2.5.4.3")
 OID_ORGANIZATION_NAME = ObjectIdentifier("2.5.4.10")

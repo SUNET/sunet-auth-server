@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
-
-from loguru import logger
+import logging
 
 from auth_server.cert_utils import load_pem_from_str, rfc8705_fingerprint
 from auth_server.models.gnap import Key
 
 __author__ = "lundberg"
+
+logger = logging.getLogger(__name__)
 
 
 async def check_mtls_proof(gnap_key: Key, cert: str) -> bool:

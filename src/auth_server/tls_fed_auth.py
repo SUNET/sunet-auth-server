@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import asyncio
 import json
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Mapping, Optional
@@ -11,7 +12,6 @@ from aiofiles import open as async_open
 from async_lru import alru_cache
 from cryptography.x509 import load_pem_x509_certificate
 from jwcrypto import jwk, jws
-from loguru import logger
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from auth_server.cert_utils import rfc8705_fingerprint
@@ -23,6 +23,8 @@ from auth_server.models.tls_fed_metadata import TLSFEDJOSEHeader
 from auth_server.time_utils import utc_now
 
 __author__ = "lundberg"
+
+logger = logging.getLogger(__name__)
 
 
 class MetadataSource(BaseModel):

@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
+import logging
 from typing import Dict, Type, cast
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from loguru import logger
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.staticfiles import StaticFiles
@@ -22,6 +22,8 @@ from auth_server.routers.status import status_router
 from auth_server.utils import import_class
 
 __author__ = "lundberg"
+
+logger = logging.getLogger(__name__)
 
 
 class AuthServer(FastAPI):

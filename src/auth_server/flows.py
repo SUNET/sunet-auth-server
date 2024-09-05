@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import logging
 from abc import ABC
 from typing import Any, List, Mapping, Optional, Union
 
 from fastapi import HTTPException
 from jwcrypto import jwt
 from jwcrypto.jwk import JWK
-from loguru import logger
 
 from auth_server.cert_utils import (
     cert_signed_by_ca,
@@ -62,6 +62,8 @@ from auth_server.tls_fed_auth import entity_to_key, get_entity
 from auth_server.utils import get_hex_uuid4, get_values
 
 __author__ = "lundberg"
+
+logger = logging.getLogger(__name__)
 
 
 # Use this to go to next flow

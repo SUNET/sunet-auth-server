@@ -1,15 +1,17 @@
 # -*- coding: utf-8 -*-
+import logging
 from typing import Any, Optional
 
 from jwcrypto import jws
 from jwcrypto.common import JWException
-from loguru import logger
 from starlette.exceptions import HTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from auth_server.context import Context
 
 __author__ = "lundberg"
+
+logger = logging.getLogger(__name__)
 
 
 def get_header_index(scope: Scope, header_key: bytes) -> Optional[int]:

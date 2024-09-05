@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 __author__ = "lundberg"
 
+import logging
 import uuid
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Form, HTTPException, Query, Response
-from loguru import logger
 from saml2.metadata import entity_descriptor
 from saml2.response import StatusError
 from starlette.responses import HTMLResponse, RedirectResponse
@@ -24,6 +24,8 @@ from auth_server.saml2 import (
     get_saml2_sp,
     process_assertion,
 )
+
+logger = logging.getLogger(__name__)
 
 saml2_router = APIRouter(route_class=ContextRequestRoute, prefix="/saml2")
 templates = Jinja2Templates(directory=str(Path(__file__).with_name("templates")))

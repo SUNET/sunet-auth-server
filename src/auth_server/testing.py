@@ -30,6 +30,7 @@
 from __future__ import annotations
 
 import atexit
+import logging
 import random
 import shutil
 import subprocess
@@ -38,13 +39,14 @@ import time
 from abc import ABC, abstractmethod
 from typing import Any, Optional, Sequence, Type, cast
 
-from loguru import logger
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 
 from auth_server.time_utils import utc_now
 
 __author__ = "lundberg"
+
+logger = logging.getLogger(__name__)
 
 
 class TemporaryInstance(ABC):
