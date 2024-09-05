@@ -242,9 +242,9 @@ async def get_entity(entity_id: str) -> Optional[MetadataEntity]:
     now = utc_now()
 
     for issuer, issuer_metadata in metadata.issuer_metadata.items():
-        # Check if metadata should be refreshed or if it is missing entities
-        if now > issuer_metadata.renew_at or not issuer_metadata.entities:
-            logger.info(f"{issuer} metadata cache has expired {issuer_metadata.renew_at} or no entities found")
+        # Check if metadata should be refreshed
+        if now > issuer_metadata.renew_at:
+            logger.info(f"{issuer} metadata cache has expired {issuer_metadata.renew_at}")
             logger.debug(f"Cache info: {get_tls_fed_metadata.cache_info()}")
             # clear lru_cache and reload metadata
             get_tls_fed_metadata.cache_clear()
