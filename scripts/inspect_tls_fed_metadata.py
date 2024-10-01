@@ -76,10 +76,10 @@ def main(args: argparse.Namespace):
         for item in metadata.get("entities", []):
             if item.get("entity_id") == args.entity:
                 print(f"Entity ID: {args.entity}")
-                print(json.dumps(item, indent=2))
+                print(json.dumps(item, indent=2, ensure_ascii=False))
     else:
         # print full metadata
-        print(json.dumps(metadata, indent=2))
+        print(json.dumps(metadata, indent=2, ensure_ascii=False))
     print()
 
 
