@@ -93,7 +93,7 @@ def init_auth_server_api() -> AuthServer:
 
             exc_str = f"{exc}".replace("\n", " ").replace("   ", " ")
             logger.exception(f"{exc}")
-            content = {"status_code": 10422, "message": exc_str, "data": None}
+            content = {"status_code": 422, "message": exc_str, "data": None}
             return JSONResponse(content=content, status_code=HTTP_422_UNPROCESSABLE_ENTITY)
 
     return app
