@@ -64,6 +64,14 @@ async def user_code_finish(request: ContextRequest, user_code: Optional[str] = F
         # TODO: show error in template
         return templates.TemplateResponse("user_code.jinja2", context={"request": request})
 
+    # normalize user code
+    # the AS MUST transform the input string remove invalid characters
+    # the AS MUST treat user input as case-insensitive
+    user_code = "".join(user_code.split()).lower()
+    if not user_code.isalnum():
+        # TODO: show error in template
+        return templates.TemplateResponse("user_code.jinja2", context={"request": request})
+
     transaction_state = await transaction_db.get_state_by_user_code(user_code)
     if transaction_state is None:
         raise HTTPException(status_code=404, detail="transaction not found")
@@ -101,6 +109,11 @@ async def finish_interaction(
                 request.url_for("transaction"),
             ),
         )
+
+        # TODO: The client instance's URI MUST be protected by HTTPS, be hosted on a
+        #       server local to the RO's browser ("localhost"), or use an
+        #       application-specific URI scheme that is loaded on the end user's
+        #       device.
 
         # redirect method
         if transaction_state.grant_request.interact.finish.method is FinishInteractionMethod.REDIRECT:

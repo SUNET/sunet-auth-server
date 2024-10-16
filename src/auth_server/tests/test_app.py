@@ -185,8 +185,12 @@ class TestAuthServer(TestCase):
         authn_info = [
             AuthnInfo(authn_class="https://refeds.org/profile/mfa", authn_authority=[], authn_instant=utc_now())
         ]
-        transaction_state.saml_assertion = SessionInfo(
-            issuer="https://idp.example.com", attributes=attributes, name_id=name_id, authn_info=authn_info
+        transaction_state.saml_session_info = SessionInfo(
+            issuer="https://idp.example.com",
+            attributes=attributes,
+            name_id=name_id,
+            authn_info=authn_info,
+            # raw_assertion="mock_raw_assertion",
         )
         self._save_transaction_state(transaction_state)
 

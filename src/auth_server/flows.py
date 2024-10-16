@@ -158,9 +158,9 @@ class BaseAuthFlow(ABC):
             if not self.request.context.client_cert:
                 raise NextFlowException(status_code=400, detail="no client certificate found")
             return await check_mtls_proof(gnap_key=gnap_key, cert=self.request.context.client_cert)
-        # HTTPSIGN
-        elif gnap_key.proof.method is ProofMethod.HTTPSIGN:
-            raise NextFlowException(status_code=400, detail="httpsign is not implemented")
+        # HTTPSIG
+        elif gnap_key.proof.method is ProofMethod.HTTPSIG:
+            raise NextFlowException(status_code=400, detail="httpsig proof method is not implemented")
         # JWS
         elif gnap_request and gnap_key.proof.method is ProofMethod.JWS:
             return await check_jws_proof(

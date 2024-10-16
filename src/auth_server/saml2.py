@@ -100,9 +100,12 @@ class SessionInfo(BaseModel):
     authn_info: List[AuthnInfo] = Field(default_factory=list)
     name_id: NameID
     attributes: SAMLAttributes
+    # TODO: raw assertion needed for spec compliant SubjectAssertion
+    # raw_assertion: str
 
     @classmethod
     def from_pysaml2(cls, session_info: Dict[str, Any]) -> SessionInfo:
+        # session_info["raw_assertion"] = raw_assertion
         session_info["authn_info"] = [
             AuthnInfo(authn_class=item[0], authn_authority=item[1], authn_instant=item[2])
             for item in session_info["authn_info"]
@@ -301,6 +304,7 @@ async def process_assertion(saml_response: str) -> Optional[AssertionData]:
         logger.info("Unknown response")
         raise BadSAMLResponse("Unknown response")
 
+    # raw_assertion = str(response.assertions[0])
     session_info = SessionInfo.from_pysaml2(response.session_info())
     assertion_data = AssertionData(session_info=session_info, authn_req_ref=authn_ref)
     # Fix eduPersonTargetedID

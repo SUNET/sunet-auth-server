@@ -42,6 +42,7 @@ async def get_public_pem(signing_key: JWK = Depends(get_signing_key)):
     return Response(content=data, media_type="application/x-pem-file")
 
 
+# TODO implement OPTIONS (discovery)
 @root_router.post("/transaction", response_model=GrantResponse, response_model_exclude_none=True)
 async def transaction(
     request: ContextRequest,
@@ -84,11 +85,14 @@ async def transaction(
         if isinstance(res, GrantResponse):
             logger.info(f"flow {auth_flow_name} returned GrantResponse")
             logger.debug(res.dict(exclude_none=True))
+            # TODO: The AS MUST include the HTTP Cache-Control response header field
+            #       [RFC9111] with a value set to "no-store".
             return res
 
     raise HTTPException(status_code=401, detail="permission denied")
 
 
+# TODO: implement DELETE (revoke transaction) and PATCH (modify transaction) for continue
 @root_router.post("/continue/{continue_reference}", response_model=GrantResponse, response_model_exclude_none=True)
 @root_router.post("/continue", response_model=GrantResponse, response_model_exclude_none=True)
 async def continue_transaction(
@@ -137,6 +141,11 @@ async def continue_transaction(
     if authorization != f"GNAP {transaction_state.continue_access_token}":
         raise HTTPException(status_code=401, detail="permission denied")
 
+    # TODO: Need to verify that continuation responses are handled correctly
+    # Do not return transaction reference again
+    # Change continuation access token for next request
+    # More?
+
     # return continue response again if interaction is not completed or interaction reference is not used
     if transaction_state.flow_state != FlowState.APPROVED:
         logger.debug(f"transaction state: {transaction_state.flow_state}. Can not continue yet.")
@@ -167,3 +176,6 @@ async def continue_transaction(
         return res
 
     raise HTTPException(status_code=401, detail="permission denied")
+
+
+# TODO: implement token management end point

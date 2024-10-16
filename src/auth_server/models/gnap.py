@@ -28,12 +28,10 @@ class GnapBaseModel(BaseModel):
 
 
 class ProofMethod(str, Enum):
-    DPOP = "dpop"
-    HTTPSIGN = "httpsign"
+    HTTPSIG = "httpsig"
+    MTLS = "mtls"
     JWSD = "jwsd"
     JWS = "jws"
-    MTLS = "mtls"
-    OAUTHPOP = "oauthpop"
     TEST = "test"
 
 
@@ -155,6 +153,29 @@ class User(GnapBaseModel):
     assertions: Optional[List[SubjectAssertion]] = None
 
 
+class TokenManagementInfo(GnapBaseModel):
+    # TODO:
+    #    uri (string):  The URI of the token management API for this access
+    #       token.  This URI MUST be an absolute URI.  This URI MUST NOT
+    #       include the value of the access token being managed or the value
+    #       of the access token used to protect the URI.  This URI SHOULD be
+    #       different for each access token issued in a request.  REQUIRED.
+    #    access_token (object):  A unique access token for continuing the
+    #       request, called the "token management access token".  The value of
+    #       this property MUST be an object in the format specified in
+    #       Section 3.2.1.  This access token MUST be bound to the client
+    #       instance's key used in the request (or its most recent rotation)
+    #       and MUST NOT be a bearer token.  As a consequence, the flags array
+    #       of this access token MUST NOT contain the string bearer, and the
+    #       key field MUST be omitted.  This access token MUST NOT have a
+    #       manage field.  This access token MUST NOT have the same value as
+    #       the token it is managing.  The client instance MUST present the
+    #       continuation access token in all requests to the continuation URI
+    #       as described in Section 7.2.  REQUIRED.
+    uri: Optional[str] = None
+    access_token: Optional[Any] = None
+
+
 class StartInteractionMethod(str, Enum):
     REDIRECT = "redirect"
     APP = "app"
@@ -229,7 +250,7 @@ class InteractionResponse(GnapBaseModel):
 class AccessTokenResponse(GnapBaseModel):
     value: str
     label: Optional[str] = None
-    manage: Optional[str] = None
+    manage: Optional[TokenManagementInfo] = None
     access: Optional[List[Union[str, Access]]] = None
     expires_in: Optional[int] = Field(default=None, description="seconds until expiry")
     key: Optional[Union[str, Key]] = None
@@ -243,19 +264,26 @@ class SubjectResponse(GnapBaseModel):
 
 
 class ErrorCode(str, Enum):
+    INVALID_REQUEST = "invalid_request"
     INVALID_CLIENT = "invalid_client"
     INVALID_INTERACTION = "invalid_interaction"
-    INVALID_REQUEST = "invalid_request"
-    REQUEST_DENIED = "request_denied"
-    TOO_FAST = "too_fast"
-    UNKNOWN_REQUEST = "unknown_request"
+    INVALID_FLAG = "invalid_flag"
+    INVALID_ROTATION = "invalid_rotation"
+    KEY_ROTATION_NOT_SUPPORTED = "key_rotation_not_supported"
+    INVALID_CONTINUATION = "invalid_continuation"
     USER_DENIED = "user_denied"
+    REQUEST_DENIED = "request_denied"
+    UNKNOWN_USER = "unknown_user"
+    UNKNOWN_INTERACTION = "unknown_interaction"
+    TOO_FAST = "too_fast"
+    TOO_MANY_ATTEMPTS = "too_many_attempts"
 
 
 # TODO: Change FastApi HTTPException responses to ErrorResponse
 class ErrorResponse(BaseModel):
-    error: ErrorCode
+    code: ErrorCode
     error_description: Optional[str] = None
+    continue_: Optional[Continue] = Field(default=None, alias="continue")
 
 
 class ContinueRequest(GnapBaseModel):
