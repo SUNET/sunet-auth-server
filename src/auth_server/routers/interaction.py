@@ -39,7 +39,7 @@ async def redirect(request: ContextRequest, transaction_id: str, background_task
         raise HTTPException(status_code=400, detail="transaction is in the wrong state")
 
     # we only support saml2 for user authentication for now
-    if not transaction_state.saml_assertion:
+    if not transaction_state.saml_session_info:
         redirect_url = request.url_for("authenticate", transaction_id=transaction_state.transaction_id)
         return RedirectResponse(redirect_url)
 

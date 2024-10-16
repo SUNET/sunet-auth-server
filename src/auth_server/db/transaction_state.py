@@ -54,7 +54,7 @@ class TransactionState(BaseModel, ABC):
     proof_ok: bool = False
     requested_access: List[Union[str, Access]] = Field(default_factory=list)
     requested_subject: SubjectRequest = Field(default_factory=SubjectRequest)
-    saml_assertion: Optional[SessionInfo] = None
+    saml_session_info: Optional[SessionInfo] = None
     interaction_reference: Optional[str] = None
     user_code: Optional[str] = None
     continue_reference: Optional[str] = None

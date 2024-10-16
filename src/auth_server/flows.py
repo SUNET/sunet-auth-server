@@ -193,18 +193,18 @@ class BaseAuthFlow(ABC):
             auth_source=self.state.auth_source,
             requested_access=self.state.requested_access,
         )
-        if self.state.saml_assertion is not None:
+        if self.state.saml_session_info is not None:
             claims = SAMLAssertionClaims(**claims.dict())
-            claims.saml_issuer = self.state.saml_assertion.issuer
-            claims.saml_assurance = self.state.saml_assertion.attributes.assurance
-            claims.saml_entitlement = self.state.saml_assertion.attributes.entitlement
+            claims.saml_issuer = self.state.saml_session_info.issuer
+            claims.saml_assurance = self.state.saml_session_info.attributes.assurance
+            claims.saml_entitlement = self.state.saml_session_info.attributes.entitlement
             # return either eppn, unique_id or targeted_id, in that order
-            if self.state.saml_assertion.attributes.eppn:
-                claims.saml_eppn = self.state.saml_assertion.attributes.eppn
-            elif self.state.saml_assertion.attributes.unique_id:
-                claims.saml_unique_id = self.state.saml_assertion.attributes.unique_id
-            elif self.state.saml_assertion.attributes.targeted_id:
-                claims.saml_targeted_id = self.state.saml_assertion.attributes.targeted_id
+            if self.state.saml_session_info.attributes.eppn:
+                claims.saml_eppn = self.state.saml_session_info.attributes.eppn
+            elif self.state.saml_session_info.attributes.unique_id:
+                claims.saml_unique_id = self.state.saml_session_info.attributes.unique_id
+            elif self.state.saml_session_info.attributes.targeted_id:
+                claims.saml_targeted_id = self.state.saml_session_info.attributes.targeted_id
         return claims
 
     @classmethod
@@ -374,12 +374,19 @@ class CommonFlow(BaseAuthFlow):
         if self.state.requested_subject.assertion_formats is not None:
             if (
                 SubjectAssertionFormat.SAML2 in self.state.requested_subject.assertion_formats
-                and self.state.saml_assertion is not None
+                and self.state.saml_session_info is not None
             ):
                 # saml assertion requested
+                # TODO: assertion should be a base64url encoded string of the xml assertion
+                # A SAML 2.0 assertion [SAML2], encoded as a single base64url string with no padding.
+                # b64_assertion = base64url_encode(self.state.saml_session_info.raw_assertion).rstrip("=")
+                # subject_assertion = SubjectAssertion(
+                #    format=SubjectAssertionFormat.SAML2,
+                #    value=b64_assertion,
+                # )
                 subject_assertion = SubjectAssertion(
                     format=SubjectAssertionFormat.SAML2,
-                    value=self.state.saml_assertion.json(by_alias=True, exclude_none=True),
+                    value=self.state.saml_session_info.json(by_alias=True, exclude_none=True),
                 )
                 self.state.grant_response.subject = SubjectResponse(
                     assertions=[subject_assertion], updated_at=utc_now()

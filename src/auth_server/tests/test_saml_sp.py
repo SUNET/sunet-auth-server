@@ -303,9 +303,9 @@ class TestSAMLSP(TestCase):
 
         # check authentication result
         transaction_state = self._get_transaction_state_by_id(self.test_transaction_state.transaction_id)
-        assert transaction_state.saml_assertion is not None
-        assert transaction_state.saml_assertion.issuer == self.test_session_info.issuer
-        assert transaction_state.saml_assertion.attributes == self.test_session_info.attributes
+        assert transaction_state.saml_session_info is not None
+        assert transaction_state.saml_session_info.issuer == self.test_session_info.issuer
+        assert transaction_state.saml_session_info.attributes == self.test_session_info.attributes
 
     def test_saml_acs_status_response(self):
         self.config["saml2_single_idp"] = self.test_idp

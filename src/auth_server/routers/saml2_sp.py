@@ -181,7 +181,7 @@ async def assertion_consumer_service(request: ContextRequest, saml_response: str
     #        continue
     #    scopes.append(item.get("text"))
 
-    transaction_state.saml_assertion = assertion_data.session_info
+    transaction_state.saml_session_info = assertion_data.session_info
     await transaction_db.save(transaction_state, expires_in=config.transaction_state_expires_in)
     logger.debug(f"saml_assertion added to transaction state with id: {transaction_id}")
 
