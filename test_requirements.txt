@@ -4,9 +4,6 @@
 #
 #    make update_deps
 #
---index-url https://pypi.sunet.se
---extra-index-url https://pypi.sunet.se/simple
-
 aiodns==3.2.0 \
     --hash=sha256:62869b23409349c21b072883ec8998316b234c9a9e36675756e8e317e8768f72 \
     --hash=sha256:e443c0c27b07da3174a109fd9e736d69058d808f144d3c9d56dbd1776964c5f5
@@ -967,7 +964,6 @@ pydantic==2.8.2 \
     #   fastapi
     #   pki-tools
     #   pydantic-settings
-    #   pysaml2
 pydantic-core==2.20.1 \
     --hash=sha256:035ede2e16da7281041f0e626459bcae33ed998cca6a0a007a5ebb73414ac72d \
     --hash=sha256:04024d270cf63f586ad41fff13fde4311c4fc13ea74676962c876d9577bcc78f \
@@ -1121,9 +1117,9 @@ pyopenssl==24.2.1 \
     --hash=sha256:4247f0dbe3748d560dcbb2ff3ea01af0f9a1a001ef5f7c4c647956ed8cbf0e95 \
     --hash=sha256:967d5719b12b243588573f39b0c677637145c7a1ffedcd495a487e58177fbb8d
     # via pysaml2
-pysaml2==7.4.1+sunet5 \
-    --hash=sha256:b617eae19c50a40dac783ab4dc017c2e6c1d9d1cb5281f02d74e4273f0877676 \
-    --hash=sha256:c047cd3575b1d5d20e837eb21098863c3f76411892715ccb21bc77835d33625e
+pysaml2==7.5.0 \
+    --hash=sha256:bc6627cc344476a83c757f440a73fda1369f13b6fda1b4e16bca63ffbabb5318 \
+    --hash=sha256:f36871d4e5ee857c6b85532e942550d2cf90ea4ee943d75eb681044bbc4f54f7
     # via -r requirements.in
 pytest==8.3.2 \
     --hash=sha256:4ba08f9ae7dcf84ded419494d229b48d0903ea6407b030eaec46df5e6a73bba5 \
@@ -1145,9 +1141,9 @@ python-dotenv==1.0.1 \
     # via
     #   pydantic-settings
     #   uvicorn
-python-multipart==0.0.9 \
-    --hash=sha256:03f54688c663f1b7977105f021043b0793151e4cb1c1a9d4a11fc13d622c4026 \
-    --hash=sha256:97ca7b8ea7b05f977dc3849c3ba99d51689822fab725c3703af7c866a0c2b215
+python-multipart==0.0.18 \
+    --hash=sha256:7a68db60c8bfb82e460637fa4750727b45af1d5e2ed215593f917f64694d34fe \
+    --hash=sha256:efe91480f485f6a361427a541db4796f9e1591afc0fb8e7a4ba06bfbc6708996
     # via -r requirements.in
 pytz==2024.1 \
     --hash=sha256:2a29735ea9c18baf14b448846bde5a48030ed267578472d8955cd0e7443a9812 \
