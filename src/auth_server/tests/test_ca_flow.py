@@ -197,9 +197,9 @@ class TestAuthServerAsync(IsolatedAsyncioTestCase):
 
     async def test_cert_is_revoked(self):
         parameters = [
-            ("bolag_a.crt", "CN=ExpiTrust Test CA v8,O=Expisoft AB,C=SE", False),
-            ("bolag_b.crt", "CN=ExpiTrust Test CA v8,O=Expisoft AB,C=SE", True),
+            ("bolag_a.crt", False),
+            ("bolag_b.crt", True),
         ]
-        for cert_name, ca_name, revoked_status in parameters:
+        for cert_name, revoked_status in parameters:
             cert = self._load_cert(filename=cert_name)
-            assert await is_cert_revoked(cert, ca_name) is revoked_status, f"{cert_name} should be {not revoked_status}"
+            assert await is_cert_revoked(cert) is revoked_status, f"{cert_name} should be {not revoked_status}"

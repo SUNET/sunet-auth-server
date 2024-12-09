@@ -51,6 +51,7 @@ def cert_within_validity_period(cert: Certificate) -> bool:
     return True
 
 
+@lru_cache()
 def cert_signed_by_ca(cert: Certificate) -> Optional[str]:
     """
     check if the cert is signed by any on our loaded CA certs
@@ -68,19 +69,32 @@ def cert_signed_by_ca(cert: Certificate) -> Optional[str]:
     return None
 
 
-async def is_cert_revoked(cert: Certificate, ca_name: str) -> bool:
+@lru_cache()
+def get_chain(cert: Certificate) -> list[Certificate]:
+    chain = list()
+    # please mypy
+    _cert: Certificate | None = cert
+    while ca_name := cert_signed_by_ca(_cert):
+        _cert = load_ca_certs().get(ca_name)
+        if _cert:
+            chain.append(_cert)
+        if _cert is None or ca_name == _cert.issuer.rfc4514_string():  # no cert of signed by self
+            break
+    return chain
+
+
+async def is_cert_revoked(cert: Certificate) -> bool:
     """
     check if cert is revoked
     """
-    ca_cert = load_ca_certs().get(ca_name)
-    if ca_cert is None:
-        raise ConfigurationError(f"CA cert {ca_name} not found")
+    cert_fingerprint = rfc8705_fingerprint(cert)
+    ca_chain = get_chain(cert)
+    if not ca_chain:
+        raise ConfigurationError(f"No CA cert found for certificate {cert_fingerprint}")
     try:
-        return is_revoked(
-            cert=PKIToolCertificate.from_cryptography(cert=cert), chain=Chain.from_cryptography([ca_cert])
-        )
+        return is_revoked(cert=PKIToolCertificate.from_cryptography(cert=cert), chain=Chain.from_cryptography(ca_chain))
     except (PKIToolsError, ValueError) as e:
-        logger.error(f"Certificate {rfc8705_fingerprint(cert)} failed revoke check: {e}")
+        logger.error(f"Certificate {cert_fingerprint} failed revoke check: {e}")
     return True
 
 
@@ -248,5 +262,6 @@ def serialize_certificate(cert: Certificate, encoding: Encoding = Encoding.PEM) 
         return public_bytes.decode("ascii")
 
 
+@lru_cache()
 def rfc8705_fingerprint(cert: Certificate):
     return b64encode(cert.fingerprint(algorithm=SHA256())).decode("ascii")

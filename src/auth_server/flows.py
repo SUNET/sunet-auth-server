@@ -644,7 +644,7 @@ class CAFlow(OnlyMTLSProofFlow):
         if ca_name is None:
             raise StopTransactionException(status_code=401, detail="client certificate not signed by CA")
 
-        if await is_cert_revoked(cert=client_cert, ca_name=ca_name) is True:
+        if await is_cert_revoked(cert=client_cert) is True:
             raise StopTransactionException(status_code=401, detail="client certificate revoked")
 
         # set client CN and issuer CN in state for use in claims
