@@ -3,7 +3,7 @@ builders:
 triggers:
   cron: "@weekly"
 script:
-  - "python3.10 -m venv venv"
+  - "python3.11 -m venv venv"
   - ". venv/bin/activate"
   - "pip install -U pip setuptools wheel mypy"
   - "pip install --index-url https://pypi.sunet.se -r test_requirements.txt"
