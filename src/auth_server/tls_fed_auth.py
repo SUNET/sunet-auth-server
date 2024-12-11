@@ -271,20 +271,23 @@ async def get_entity(entity_id: str) -> Optional[MetadataEntity]:
     return None
 
 
-async def entity_to_key(entity: Optional[MetadataEntity]) -> Optional[Key]:
+async def entity_to_keys(entity: Optional[MetadataEntity]) -> list[Key]:
+    keys: list[Key] = []
     if entity is None:
-        return None
+        return keys
 
     certs = [
         load_pem_x509_certificate(item.x509certificate.encode())
         for item in entity.issuers
         if item.x509certificate is not None
     ]
-    if certs:
-        # TODO: how do we handle multiple certs?
-        logger.info("Found cert in metadata")
-        return Key(
-            proof=Proof(method=ProofMethod.MTLS),
-            cert_S256=rfc8705_fingerprint(certs[0]),
+    for cert in certs:
+        _fingerprint = rfc8705_fingerprint(cert)
+        logger.info(f"Found cert in metadata, S256: {_fingerprint}")
+        keys.append(
+            Key(
+                proof=Proof(method=ProofMethod.MTLS),
+                cert_S256=_fingerprint,
+            )
         )
-    return None
+    return keys

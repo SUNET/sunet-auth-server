@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from auth_server.db.client import BaseDB, get_motor_client
 from auth_server.mdq import MDQData
-from auth_server.models.gnap import Access, GrantRequest, GrantResponse, SubjectRequest
+from auth_server.models.gnap import Access, GrantRequest, GrantResponse, Key, SubjectRequest
 from auth_server.saml2 import SessionInfo
 from auth_server.time_utils import utc_now
 from auth_server.tls_fed_auth import MetadataEntity
@@ -87,12 +87,16 @@ class ConfigState(TransactionState):
     config_claims: Dict[str, Any] = Field(default_factory=dict)
 
 
-class MDQState(TransactionState):
+class MetadataState(TransactionState):
+    keys_from_metadata: List[Key] = Field(default_factory=list)
+
+
+class MDQState(MetadataState):
     auth_source: AuthSource = AuthSource.MDQ
     mdq_data: Optional[MDQData] = None
 
 
-class TLSFEDState(TransactionState):
+class TLSFEDState(MetadataState):
     auth_source: AuthSource = AuthSource.TLSFED
     entity: Optional[MetadataEntity] = None
 

@@ -32,7 +32,7 @@ from auth_server.db.transaction_state import (
     TLSFEDState,
     get_transaction_state_db,
 )
-from auth_server.mdq import mdq_data_to_key, xml_mdq_get
+from auth_server.mdq import mdq_data_to_keys, xml_mdq_get
 from auth_server.models.claims import CAClaims, Claims, ConfigClaims, MDQClaims, SAMLAssertionClaims, TLSFEDClaims
 from auth_server.models.gnap import (
     AccessTokenFlags,
@@ -58,7 +58,7 @@ from auth_server.proof.common import lookup_client_key_from_config
 from auth_server.proof.jws import check_jws_proof, check_jwsd_proof
 from auth_server.proof.mtls import check_mtls_proof
 from auth_server.time_utils import utc_now
-from auth_server.tls_fed_auth import entity_to_key, get_entity
+from auth_server.tls_fed_auth import entity_to_keys, get_entity
 from auth_server.utils import get_hex_uuid4, get_values
 
 __author__ = "lundberg"
@@ -519,7 +519,23 @@ class OnlyMTLSProofFlow(CommonFlow):
         return None
 
 
-class MDQFlow(OnlyMTLSProofFlow):
+class MetadataFlow(OnlyMTLSProofFlow):
+    # Used to handle multiple keys in metadata when rolling out new a new key
+    async def validate_proof(self) -> Optional[GrantResponse]:
+        for client_key in self.state.keys_from_metadata:
+            self.state.grant_request.client.key = client_key
+            try:
+                await super().validate_proof()
+            except NextFlowException:
+                pass
+            if self.state.proof_ok:
+                break
+        if not self.state.proof_ok:
+            raise NextFlowException(status_code=401, detail="no client certificate found")
+        return None
+
+
+class MDQFlow(MetadataFlow):
     @classmethod
     def load_state(cls, state: Mapping[str, Any]) -> MDQState:
         return MDQState.from_dict(state=state)
@@ -541,11 +557,12 @@ class MDQFlow(OnlyMTLSProofFlow):
         # Look for a key using mdq
         logger.info(f"Trying to load key from mdq")
         self.state.mdq_data = await xml_mdq_get(entity_id=key_id, mdq_url=self.config.mdq_server)
-        client_key = await mdq_data_to_key(self.state.mdq_data)
+        client_keys = await mdq_data_to_keys(self.state.mdq_data)
 
-        if not client_key:
+        if not client_keys:
             raise NextFlowException(status_code=400, detail=f"no client key found for {key_id}")
-        self.state.grant_request.client.key = client_key
+
+        self.state.keys_from_metadata = client_keys
         return None
 
     async def create_claims(self) -> MDQClaims:
@@ -578,7 +595,7 @@ class MDQFlow(OnlyMTLSProofFlow):
         return MDQClaims(**base_claims.model_dump(exclude_none=True), entity_id=entity_id, scopes=scopes, source=source)
 
 
-class TLSFEDFlow(OnlyMTLSProofFlow):
+class TLSFEDFlow(MetadataFlow):
     @classmethod
     def load_state(cls, state: Mapping[str, Any]) -> TLSFEDState:
         return TLSFEDState.from_dict(state=state)
@@ -600,11 +617,12 @@ class TLSFEDFlow(OnlyMTLSProofFlow):
         # Look for a key in the TLS fed metadata
         logger.info("Trying to load key from TLS fed auth")
         self.state.entity = await get_entity(entity_id=key_id)
-        client_key = await entity_to_key(self.state.entity)
+        client_keys = await entity_to_keys(self.state.entity)
 
-        if not client_key:
+        if not client_keys:
             raise NextFlowException(status_code=400, detail=f"no client key found for {key_id}")
-        self.state.grant_request.client.key = client_key
+
+        self.state.keys_from_metadata = client_keys
         return None
 
     async def create_claims(self) -> TLSFEDClaims:

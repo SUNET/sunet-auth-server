@@ -1,18 +1,17 @@
 # -*- coding: utf-8 -*-
 import logging
-from base64 import b64encode
 from collections import OrderedDict as _OrderedDict
 from enum import Enum
-from typing import Any, List, Optional, OrderedDict
+from typing import Any, List, OrderedDict
 
 import aiohttp
 import xmltodict
-from cryptography.hazmat.primitives.hashes import SHA1, SHA256
+from cryptography.hazmat.primitives.hashes import SHA1
 from cryptography.x509 import Certificate
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 from pyexpat import ExpatError
 
-from auth_server.cert_utils import load_pem_from_str, serialize_certificate
+from auth_server.cert_utils import load_pem_from_str, rfc8705_fingerprint, serialize_certificate
 from auth_server.models.gnap import Key, Proof, ProofMethod
 from auth_server.utils import get_values, hash_with
 
@@ -83,7 +82,7 @@ async def xml_mdq_get(entity_id: str, mdq_url: str) -> MDQData:
         entity = xmltodict.parse(xml, process_namespaces=True)
         certs = []
         # Certs
-        for key_descriptor in get_values(key="urn:oasis:names:tc:SAML:2.0:metadata:KeyDescriptor", obj=entity):
+        for key_descriptor in list(get_values(key="urn:oasis:names:tc:SAML:2.0:metadata:KeyDescriptor", obj=entity))[0]:
             use = list(get_values(key="@use", obj=key_descriptor))[0]
             raw_cert = list(get_values(key="http://www.w3.org/2000/09/xmldsig#:X509Certificate", obj=key_descriptor))[0]
             cert = load_pem_from_str(raw_cert)
@@ -94,13 +93,16 @@ async def xml_mdq_get(entity_id: str, mdq_url: str) -> MDQData:
     return MDQData()
 
 
-async def mdq_data_to_key(mdq_data: MDQData) -> Optional[Key]:
-    signing_cert = [item.cert for item in mdq_data.certs if item.use == KeyUse.SIGNING]
-    # There should only be one or zero signing certs
-    if signing_cert:
-        logger.info("Found cert in metadata")
-        return Key(
-            proof=Proof(method=ProofMethod.MTLS),
-            cert_S256=b64encode(signing_cert[0].fingerprint(algorithm=SHA256())).decode("utf-8"),
+async def mdq_data_to_keys(mdq_data: MDQData) -> list[Key]:
+    keys = list()
+    signing_certs = [item.cert for item in mdq_data.certs if item.use == KeyUse.SIGNING]
+    for cert in signing_certs:
+        _fingerprint = rfc8705_fingerprint(cert)
+        logger.info(f"Found cert in metadata, S256: {_fingerprint}")
+        keys.append(
+            Key(
+                proof=Proof(method=ProofMethod.MTLS),
+                cert_S256=_fingerprint,
+            )
         )
-    return None
+    return keys
