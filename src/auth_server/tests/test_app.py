@@ -46,7 +46,7 @@ from auth_server.models.jose import (
 from auth_server.models.status import Status
 from auth_server.saml2 import AuthnInfo, NameID, SAMLAttributes, SessionInfo
 from auth_server.testing import MongoTemporaryInstance
-from auth_server.tests.utils import create_tls_fed_metadata, tls_fed_metadata_to_jws
+from auth_server.tests.utils import create_cert, create_tls_fed_metadata, tls_fed_metadata_to_jws
 from auth_server.time_utils import utc_now
 from auth_server.tls_fed_auth import get_tls_fed_metadata
 from auth_server.utils import get_hash_by_name, get_signing_key, hash_with, load_jwks
@@ -503,8 +503,14 @@ class TestAuthServer(TestCase):
         assert claims["scopes"] == ["localhost"]
         assert claims["source"] == "http://www.swamid.se/"
 
-    @mock.patch("aiohttp.ClientSession.get", new_callable=AsyncMock)
-    def test_tls_fed_flow_remote_metadata(self, mock_metadata):
+    def _setup_remote_tls_fed_test(
+        self, entity_id: str, scopes: list[str] | None = None, client_certs: list[str] | None = None
+    ) -> bytes:
+        if scopes is None:
+            scopes = ["test.localhost"]
+        if client_certs is None:
+            client_certs = [self.client_cert_str]
+
         self.config["auth_flows"] = json.dumps(["TestFlow", "TLSFEDFlow"])
         self.config["tls_fed_metadata"] = json.dumps(
             [{"remote": "https://metadata.example.com/metadata.jws", "jwks": f"{self.datadir}/tls_fed_jwks.json"}]
@@ -516,10 +522,7 @@ class TestAuthServer(TestCase):
             tls_fed_jwks = jwk.JWKSet()
             tls_fed_jwks.import_keyset(f.read())
 
-        entity_id = "https://test.localhost"
-        metadata = create_tls_fed_metadata(
-            entity_id=entity_id, scopes=["test.localhost"], client_cert=self.client_cert_str
-        )
+        metadata = create_tls_fed_metadata(entity_id=entity_id, scopes=scopes, client_certs=client_certs)
         metadata_jws = tls_fed_metadata_to_jws(
             metadata,
             key=tls_fed_jwks.get_key("metadata_signing_key_id"),
@@ -527,6 +530,12 @@ class TestAuthServer(TestCase):
             expires=timedelta(days=14),
             alg=SupportedAlgorithms.ES256,
         )
+        return metadata_jws
+
+    @mock.patch("aiohttp.ClientSession.get", new_callable=AsyncMock)
+    def test_tls_fed_flow_remote_metadata(self, mock_metadata):
+        entity_id = "https://test.localhost"
+        metadata_jws = self._setup_remote_tls_fed_test(entity_id=entity_id)
         mock_metadata.return_value = MockResponse(content=metadata_jws)
 
         # Start transaction
@@ -550,6 +559,36 @@ class TestAuthServer(TestCase):
         assert claims["organization_id"] == "SE0123456789"
         assert claims["source"] == "metadata.example.com"
 
+    @mock.patch("aiohttp.ClientSession.get", new_callable=AsyncMock)
+    def test_tls_fed_flow_remote_metadata_multi_certs(self, mock_metadata):
+        entity_id = "https://test.localhost"
+        new_client_key, new_client_cert = create_cert(common_name="test.localhost")
+        new_client_cert_str = serialize_certificate(cert=new_client_cert)
+        client_certs = [new_client_cert_str, self.client_cert_str]
+        metadata_jws = self._setup_remote_tls_fed_test(entity_id=entity_id, client_certs=client_certs)
+        mock_metadata.return_value = MockResponse(content=metadata_jws)
+
+        # Start transaction
+        req = GrantRequest(
+            client=Client(key=entity_id),
+            access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
+        )
+        client_header = {"Client-Cert": new_client_cert_str}
+        response = self.client.post("/transaction", json=req.model_dump(exclude_none=True), headers=client_header)
+        assert response.status_code == 200
+        assert "access_token" in response.json()
+        access_token = response.json()["access_token"]
+        assert AccessTokenFlags.BEARER.value in access_token["flags"]
+        assert access_token["value"] is not None
+
+        # Verify token and check claims
+        claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims["auth_source"] == AuthSource.TLSFED
+        assert claims["entity_id"] == "https://test.localhost"
+        assert claims["scopes"] == ["test.localhost"]
+        assert claims["organization_id"] == "SE0123456789"
+        assert claims["source"] == "metadata.example.com"
+
     def test_tls_fed_flow_local_metadata(self):
         # Create metadata jws and save it as a temporary file
         with open(f"{self.datadir}/tls_fed_jwks.json", "r") as f:
@@ -558,7 +597,7 @@ class TestAuthServer(TestCase):
 
         entity_id = "https://test.localhost"
         metadata = create_tls_fed_metadata(
-            entity_id=entity_id, scopes=["test.localhost"], client_cert=self.client_cert_str
+            entity_id=entity_id, scopes=["test.localhost"], client_certs=[self.client_cert_str]
         )
         metadata_jws = tls_fed_metadata_to_jws(
             metadata,
@@ -613,7 +652,7 @@ class TestAuthServer(TestCase):
             tls_fed_jwks.import_keyset(f.read())
 
         entity_id = "https://test.localhost"
-        metadata = create_tls_fed_metadata(entity_id=entity_id, client_cert=self.client_cert_str)
+        metadata = create_tls_fed_metadata(entity_id=entity_id, client_certs=[self.client_cert_str])
         metadata_jws = tls_fed_metadata_to_jws(
             metadata,
             key=tls_fed_jwks.get_key("metadata_signing_key_id"),

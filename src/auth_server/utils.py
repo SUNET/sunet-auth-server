@@ -3,6 +3,7 @@ import importlib
 import json
 import logging
 from base64 import urlsafe_b64encode
+from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Callable, Generator, Mapping, Sequence, Union
 from uuid import uuid4
@@ -18,6 +19,10 @@ from auth_server.models.gnap import HashMethod
 __author__ = "lundberg"
 
 logger = logging.getLogger(__name__)
+
+
+def utc_now() -> datetime:
+    return datetime.now(tz=timezone.utc)
 
 
 @lru_cache()

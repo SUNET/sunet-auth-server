@@ -32,6 +32,13 @@
         </ds:X509Data>
       </ds:KeyInfo>
     </md:KeyDescriptor>
+    <md:KeyDescriptor use="signing">
+      <ds:KeyInfo>
+        <ds:X509Data>
+          <ds:X509Certificate>MIIFOTCCAyGgAwIBAgIUFfCwL9eeKjTqY5RZCuLLnPvYxdgwDQYJKoZIhvcNAQELBQAwTzELMAkGA1UEBhMCU0UxCTAHBgNVBAgMADENMAsGA1UEBwwEVGVzdDENMAsGA1UECgwEVGVzdDEXMBUGA1UEAwwOdGVzdC5sb2NhbGhvc3QwHhcNMjQxMjExMTMzNTI3WhcNMjQxMjEyMTMzNTI3WjBPMQswCQYDVQQGEwJTRTEJMAcGA1UECAwAMQ0wCwYDVQQHDARUZXN0MQ0wCwYDVQQKDARUZXN0MRcwFQYDVQQDDA50ZXN0LmxvY2FsaG9zdDCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBALougAZhSedNXRcPVYMpCZKKHscY5l8Kb1pLk14++Ktz5olIZKdfY9SWfYkZpAmshubEQ13n0PJFzZohEvZ/xDczbK7xrCAjYZuCFzVLgUj1E3rBm7yN5D1wTSKzmhmGs2JFSDxo5a+NAJDEuZXvi2ypOuWn/KZzmY+aZY9e/L7jTz7e8kT9xZN8n4Nd7Uc50S1RB89zkmbc4M/sRLkFypv7rO8BGStEn+KnaPfAVCsyiPDjoIss5Qm1KdDAl+7g/gmYch+u/ilv+52jkUecDo7cyoipvNcSIawH3pIM7S3tmF7PuUl/Ko7qotNG9OxIQJCSlkyIO3F/hFKWe60tG+Gxh6PnDangOhAt6kvCYUpemELqFQwVjB8KveqkddlQx3TUPM1x5oJ/p6JKklgUxbzWrC9oMrxR9gsjs4jd2384WuADM3C5UxDoPQLEirLUB50Gj9Xkx3dPtEM3kqpAxOh4SKMMvN7vGE8iCAcga7HZzDekwn/R8gUzxLpY7qSvMwgADX7GW+Cb+z9wrPg8gg9vRAFV1XCBMH1+1l4m6+ZaWE+rKFTlLT8YPLKBjBlzZ5MjX3XWhdvQesRu1SlgA+mR7GrAj9xF3BMvUE2Vn2hbQqgJYBSFasP5PvkLITClbR4uMUfeskLcllogHQt2a4Pj71pyRsN8s7SlDRLviAElAgMBAAGjDTALMAkGA1UdEQQCMAAwDQYJKoZIhvcNAQELBQADggIBAAHo8UTXtytQmf0Q6c2pRsn96uVxlxP4+tQ6J1GXAtGq511SpqAR/BnBYbMw6VOwPjfZxKN2HK43dKX6us2wz4vD5RV7rt7ssZwysSn0kCJGqmH8/vRewQrKceamnRsF3Y+PUdXWhqDTJsLnYev/XnkpFQjhKs/1ALY7D7PaH8UoQCNrwa0ZQPKUJaCqZ08E43wbvOlk4Gwosa+HN3eMMsmCj4nURxGV8IpSc445GWHzMGw3JrfWwENFcVp4He9CB3Uem0MqUnU6H4FlFpbiOYGS3oH6fnfqAmTa4aLm0Hg75t5xc/nXPPNZXmwlWzG91QgP/AFv/PpFvc4HdmDIl7kgSYol7SPvwC9Stvw2nXXcc4Vg/ceeYxmbcZWB4bAy8oYPNqq/+GWOQeC2SFlie2H2NtYBRqFEJhlspYpjRR79cU+98syWe76ccDYw2w7+RhX5NEdE3/+VDmlPIePhy0iPXueLjL0VgGvIRWmcxcZ2ZaF/hQ8yTqP7f92igU7Y6ynej+mzPcDzQhXA1wDNSD3cBM2E56/MLQTKmgbeFGgr/MsGOiSpUMYR9Dh1nao1itlBhkvcLkdKy8Ulx4RqsnCohtbexSW3Qu1ObLGOabafL069DzcHL9JmainO3UwFpp/z+SFfyq/ZgRz4I34AXDg/x7BtLIKO/c8Rkzhr3fF4</ds:X509Certificate>
+        </ds:X509Data>
+      </ds:KeyInfo>
+    </md:KeyDescriptor>
     <md:NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:transient</md:NameIDFormat>
     <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://test.localhost/Saml2SP/sso/redirect"/>
     <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="https://test.localhost/Saml2SP/sso/post"/>

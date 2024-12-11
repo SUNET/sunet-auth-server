@@ -48,7 +48,7 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
                 entity_id=self.entity_id,
                 cache_ttl=self.cache_ttl.seconds,
                 scopes=self.scopes,
-                client_cert=self.client_cert_str,
+                client_certs=[self.client_cert_str],
             )
         metadata_jws = tls_fed_metadata_to_jws(
             metadata,
@@ -85,7 +85,7 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
             entity_id=self.entity_id,
             cache_ttl=self.cache_ttl.seconds,
             scopes=self.scopes,
-            client_cert=self.client_cert_str,
+            client_certs=[self.client_cert_str],
         ).json(by_alias=True)
         deserialized_metadata = json.loads(serialized_metadata)
         entity = deserialized_metadata["entities"][0]
@@ -117,7 +117,7 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
             entity_id=self.entity_id,
             cache_ttl=self.cache_ttl.seconds,
             scopes=self.scopes,
-            client_cert=self.client_cert_str,
+            client_certs=[self.client_cert_str],
         ).model_dump_json(by_alias=True)
         deserialized_metadata = json.loads(serialized_metadata)
 
