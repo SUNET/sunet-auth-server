@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import logging
 
 from auth_server.cert_utils import load_pem_from_str, rfc8705_fingerprint

@@ -1,9 +1,7 @@
-# -*- coding: utf-8 -*-
-
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 __author__ = "lundberg"
 
 
 def utc_now() -> datetime:
-    return datetime.now(tz=timezone.utc)
+    return datetime.now(tz=UTC)

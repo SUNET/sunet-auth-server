@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 __author__ = "lundberg"
 
 import logging
@@ -7,7 +6,6 @@ from datetime import datetime
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.bindings._rust import ObjectIdentifier
@@ -15,9 +13,8 @@ from cryptography.hazmat.primitives._serialization import Encoding
 from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.x509 import Certificate, ExtensionNotFound, Name, load_der_x509_certificate, load_pem_x509_certificate
 from pki_tools import Certificate as PKIToolCertificate
-from pki_tools import Chain
+from pki_tools import Chain, is_revoked
 from pki_tools import Error as PKIToolsError
-from pki_tools import is_revoked
 
 from auth_server.config import ConfigurationError, load_config
 
@@ -51,8 +48,8 @@ def cert_within_validity_period(cert: Certificate) -> bool:
     return True
 
 
-@lru_cache()
-def cert_signed_by_ca(cert: Certificate) -> Optional[str]:
+@lru_cache
+def cert_signed_by_ca(cert: Certificate) -> str | None:
     """
     check if the cert is signed by any on our loaded CA certs
     """
@@ -69,7 +66,7 @@ def cert_signed_by_ca(cert: Certificate) -> Optional[str]:
     return None
 
 
-@lru_cache()
+@lru_cache
 def get_chain(cert: Certificate) -> list[Certificate]:
     chain = list()
     # please mypy
@@ -98,7 +95,7 @@ async def is_cert_revoked(cert: Certificate) -> bool:
     return True
 
 
-def get_org_id_from_cert(cert: Certificate, ca_name: str) -> Optional[str]:
+def get_org_id_from_cert(cert: Certificate, ca_name: str) -> str | None:
     ca_cert = load_ca_certs().get(ca_name)
     if not ca_cert:
         raise ConfigurationError(f"CA cert {ca_name} not found")
@@ -131,7 +128,7 @@ def get_org_id_from_cert(cert: Certificate, ca_name: str) -> Optional[str]:
     return f"{client_country_code}{org_id}"
 
 
-def get_org_id_expitrust(cert: Certificate) -> Optional[str]:
+def get_org_id_expitrust(cert: Certificate) -> str | None:
     """
     The org number is the serial number of the certificate with prefix 16.
     """
@@ -143,7 +140,7 @@ def get_org_id_expitrust(cert: Certificate) -> Optional[str]:
     return serial_number.removeprefix("16")
 
 
-def get_org_id_siths(cert: Certificate) -> Optional[str]:
+def get_org_id_siths(cert: Certificate) -> str | None:
     """
     The org number is the first part of the serial number of the certificate with a prefix of SE.
     ex. SE5565594230-AAAA -> 5565594230
@@ -165,7 +162,7 @@ def get_org_id_siths(cert: Certificate) -> Optional[str]:
     return org_id.removeprefix("SE")
 
 
-def get_org_id_efos(cert: Certificate):
+def get_org_id_efos(cert: Certificate) -> str:
     """
     The org number is the first part of the serial number of the certificate with a prefix of EFOS16.
     ex. EFOS165565594230-012345 -> 5565594230
@@ -180,28 +177,28 @@ def get_org_id_efos(cert: Certificate):
     return org_id.removeprefix("EFOS16")
 
 
-def get_subject_cn(cert: Certificate) -> Optional[str]:
+def get_subject_cn(cert: Certificate) -> str | None:
     common_name = get_oid_for_name(x509_name=cert.subject, oid=OID_COMMON_NAME)
     if common_name is None:
         logger.error(f"certificate {rfc8705_fingerprint(cert)} has no subject common name")
     return common_name
 
 
-def get_subject_c(cert: Certificate) -> Optional[str]:
+def get_subject_c(cert: Certificate) -> str | None:
     country_code = get_oid_for_name(x509_name=cert.subject, oid=OID_COUNTRY_CODE)
     if country_code is None:
         logger.error(f"certificate {rfc8705_fingerprint(cert)} has no subject country code")
     return country_code
 
 
-def get_subject_o(cert: Certificate) -> Optional[str]:
+def get_subject_o(cert: Certificate) -> str | None:
     org_name = get_oid_for_name(x509_name=cert.subject, oid=OID_ORGANIZATION_NAME)
     if org_name is None:
         logger.error(f"certificate {rfc8705_fingerprint(cert)} has no subject organization name")
     return org_name
 
 
-def get_issuer_cn(ca_name: str) -> Optional[str]:
+def get_issuer_cn(ca_name: str) -> str | None:
     ca_cert = load_ca_certs().get(ca_name)
     if ca_cert is None:
         logger.error(f"CA {ca_name} not found")
@@ -212,7 +209,7 @@ def get_issuer_cn(ca_name: str) -> Optional[str]:
     return issuer_common_name
 
 
-def get_oid_for_name(x509_name: Name, oid: ObjectIdentifier) -> Optional[str]:
+def get_oid_for_name(x509_name: Name, oid: ObjectIdentifier) -> str | None:
     try:
         ret = x509_name.get_attributes_for_oid(oid)[0].value
         if isinstance(ret, bytes):
@@ -222,7 +219,7 @@ def get_oid_for_name(x509_name: Name, oid: ObjectIdentifier) -> Optional[str]:
         return None
 
 
-@lru_cache()
+@lru_cache
 def load_ca_certs() -> dict[str, Certificate]:
     config = load_config()
     if config.ca_certs_path is None:
@@ -241,7 +238,7 @@ def load_ca_certs() -> dict[str, Certificate]:
                     cert = load_der_x509_certificate(content)
             if cert_within_validity_period(cert):
                 certs[cert.subject.rfc4514_string()] = cert
-        except (IOError, ValueError) as e:
+        except (OSError, ValueError) as e:
             logger.error(f"Failed to load CA cert {crt}: {e}")
     logger.info(f"Loaded {len(certs)} CA certs")
     logger.debug(f"Certs loaded: {certs.keys()}")
@@ -262,6 +259,6 @@ def serialize_certificate(cert: Certificate, encoding: Encoding = Encoding.PEM) 
         return public_bytes.decode("ascii")
 
 
-@lru_cache()
-def rfc8705_fingerprint(cert: Certificate):
+@lru_cache
+def rfc8705_fingerprint(cert: Certificate) -> str:
     return b64encode(cert.fingerprint(algorithm=SHA256())).decode("ascii")

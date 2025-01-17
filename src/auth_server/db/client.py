@@ -1,6 +1,6 @@
-# -*- coding: utf-8 -*-
 import logging
-from typing import Any, AsyncGenerator, Dict, List, Mapping, Optional, Union
+from collections.abc import AsyncGenerator, Mapping
+from typing import Any, Self
 
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -13,14 +13,14 @@ __author__ = "lundberg"
 logger = logging.getLogger(__name__)
 
 
-async def get_motor_client() -> Optional[AsyncIOMotorClient]:
+async def get_motor_client() -> AsyncIOMotorClient | None:
     config = load_config()
     if config.mongo_uri is None:
         return None
     return AsyncIOMotorClient(config.mongo_uri, tz_aware=True)
 
 
-async def get_mongo_client() -> Optional[MongoClient]:
+async def get_mongo_client() -> MongoClient | None:
     config = load_config()
     if config.mongo_uri is None:
         return None
@@ -35,10 +35,12 @@ class MultipleDocumentsReturned(DBError):
     pass
 
 
-class BaseDB(object):
+class BaseDB:
     """Base class for common db operations"""
 
-    def __init__(self, db_client: AsyncIOMotorClient, db_name: str, collection: str, safe_writes: bool = False):
+    def __init__(
+        self: Self, db_client: AsyncIOMotorClient, db_name: str, collection: str, safe_writes: bool = False
+    ) -> None:
         self._conn = db_client
         self._db_name = db_name
         self._coll_name = collection
@@ -47,27 +49,27 @@ class BaseDB(object):
         if safe_writes:
             self._coll = self._coll.with_options(write_concern=WriteConcern(w="majority"))
 
-    def __repr__(self):
+    def __repr__(self: Self) -> str:
         return f"<AsyncBaseDB {self.__class__.__name__}: {self._db_name}.{self._coll_name}>"
 
     __str__ = __repr__
 
-    async def _drop_whole_collection(self):
+    async def _drop_whole_collection(self: Self) -> None:
         """
         Drop the whole collection. Should ONLY be used in testing, obviously.
         :return:
         """
-        logger.warning("{!s} Dropping collection {!r}".format(self, self._coll_name))
+        logger.warning(f"{self!s} Dropping collection {self._coll_name!r}")
         return await self._coll.drop()
 
-    async def _get_all_docs(self) -> AsyncGenerator[Mapping, None]:
+    async def _get_all_docs(self: Self) -> AsyncGenerator[Mapping, None]:
         """
         Return all the documents in the database.
         """
         async for doc in self._get_documents_by_filter(spec={}):
             yield doc
 
-    async def _get_document_by_attr(self, attr: str, value: str) -> Optional[Mapping]:
+    async def _get_document_by_attr(self: Self, attr: str, value: str) -> Mapping | None:
         """
         Return the document in the MongoDB matching field=value
 
@@ -86,7 +88,7 @@ class BaseDB(object):
             raise MultipleDocumentsReturned(f"Multiple matching documents for {attr}={repr(value)}")
         return docs[0]
 
-    async def _get_documents_by_attr(self, attr: str, value: str) -> AsyncGenerator[Mapping, None]:
+    async def _get_documents_by_attr(self: Self, attr: str, value: str) -> AsyncGenerator[Mapping, None]:
         """
         Return the document in the MongoDB matching field=value
 
@@ -99,11 +101,11 @@ class BaseDB(object):
             yield doc
 
     async def _get_documents_by_filter(
-        self,
-        spec: Dict[str, Any],
-        fields: Optional[Union[Dict[str, bool], List[str]]] = None,
-        skip: Optional[int] = None,
-        limit: Optional[int] = None,
+        self: Self,
+        spec: dict[str, Any],
+        fields: dict[str, bool] | list[str] | None = None,
+        skip: int | None = None,
+        limit: int | None = None,
     ) -> AsyncGenerator[Mapping, None]:
         """
         Locate documents in the db using a custom search filter.
@@ -126,20 +128,20 @@ class BaseDB(object):
         async for doc in cursor:
             yield doc
 
-    async def db_count(self, spec: Optional[dict] = None, limit: Optional[int] = None) -> int:
+    async def db_count(self: Self, spec: dict | None = None, limit: int | None = None) -> int:
         """
         Return number of entries in the collection.
 
         :return: Document count
         """
-        args: Dict[Any, Any] = {"filter": {}}
+        args: dict[Any, Any] = {"filter": {}}
         if spec:
             args["filter"] = spec
         if limit:
             args["limit"] = limit
         return await self._coll.count_documents(**args)
 
-    async def remove_document(self, spec_or_id: Union[dict, ObjectId]) -> bool:
+    async def remove_document(self: Self, spec_or_id: dict | ObjectId) -> bool:
         """
         Remove a document in the db given the _id or dict spec.
 
@@ -150,11 +152,11 @@ class BaseDB(object):
         result = await self._coll.delete_one(spec_or_id)
         return result.acknowledged
 
-    async def setup_indexes(self, indexes: Dict[str, Any]):
+    async def setup_indexes(self: Self, indexes: dict[str, Any]) -> None:
         """
         To update an index add a new item in indexes and remove the previous version.
         """
-        # indexes={'index-name': {'key': [('key', 1)], 'param1': True, 'param2': False}, }
+        # indexes={'index-name': {'key': [('key', 1)], 'param1': True, 'param2': False}, }  # noqa: ERA001
         # http://docs.mongodb.org/manual/reference/method/db.collection.ensureIndex/
         default_indexes = ["_id_"]  # _id_ index can not be deleted from a mongo collection
         current_indexes = await self._coll.index_information()
@@ -167,5 +169,5 @@ class BaseDB(object):
                 params["name"] = name
                 await self._coll.create_index(key, **params)
 
-    async def close(self):
+    async def close(self: Self) -> None:
         self._db.close()

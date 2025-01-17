@@ -1,6 +1,5 @@
-# -*- coding: utf-8 -*-
 import logging
-from typing import Any, Optional
+from typing import Any, Self
 
 from jwcrypto import jws
 from jwcrypto.common import JWException
@@ -14,7 +13,7 @@ __author__ = "lundberg"
 logger = logging.getLogger(__name__)
 
 
-def get_header_index(scope: Scope, header_key: bytes) -> Optional[int]:
+def get_header_index(scope: Scope, header_key: bytes) -> int | None:
     for key, value in scope["headers"]:
         if key == header_key:
             return scope["headers"].index((key, value))
@@ -41,10 +40,10 @@ def set_context(scope: Scope, data: dict[str, Any]) -> None:
 
 # see https://github.com/florimondmanca/msgpack-asgi for a good example
 class JOSEMiddleware:
-    def __init__(self, app: ASGIApp) -> None:
+    def __init__(self: Self, app: ASGIApp) -> None:
         self.app = app
 
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+    async def __call__(self: Self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "http":
             preparer = JOSEPreparer(self.app)
             await preparer(scope, receive, send)
@@ -53,14 +52,14 @@ class JOSEMiddleware:
 
 
 class JOSEPreparer:
-    def __init__(self, app) -> None:
+    def __init__(self: Self, app: ASGIApp) -> None:
         self.app: ASGIApp = app
         self.is_jose: bool = False
         self.is_detached_jws: bool = False
         self.receive: Receive = unattached_receive
         self.send: Send = unattached_send
 
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+    async def __call__(self: Self, scope: Scope, receive: Receive, send: Send) -> None:
         headers: dict[bytes, bytes] = dict(scope["headers"])
         acceptable_jose_content_types = [b"application/jose", b"application/jose+json"]
         self.is_jose = headers.get(b"content-type") in acceptable_jose_content_types

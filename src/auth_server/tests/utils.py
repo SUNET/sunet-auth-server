@@ -1,8 +1,5 @@
-# -*- coding: utf-8 -*-
-
 import json
 from datetime import datetime, timedelta
-from typing import List, Optional, Union
 
 from cryptography import x509
 from cryptography.hazmat._oid import NameOID
@@ -13,21 +10,20 @@ from cryptography.x509 import Certificate
 from jwcrypto import jwk, jws
 
 from auth_server.models.jose import SupportedAlgorithms
-from auth_server.models.tls_fed_metadata import CertIssuers, Entity, Extensions
+from auth_server.models.tls_fed_metadata import CertIssuers, Entity, Extensions, SAMLScopeExtension
 from auth_server.models.tls_fed_metadata import Model as TLSFEDMetadata
-from auth_server.models.tls_fed_metadata import SAMLScopeExtension
 from auth_server.time_utils import utc_now
 
 __author__ = "lundberg"
 
 
 def tls_fed_metadata_to_jws(
-    metadata: Union[TLSFEDMetadata, str],
+    metadata: TLSFEDMetadata | str,
     key: jwk.JWK,
     issuer: str,
     expires: timedelta,
     alg: SupportedAlgorithms,
-    issue_time: Optional[datetime] = None,
+    issue_time: datetime | None = None,
     compact: bool = True,
 ) -> bytes:
     if isinstance(metadata, TLSFEDMetadata):
@@ -55,7 +51,7 @@ def create_tls_fed_metadata(
     client_certs: list[str],
     cache_ttl: int = 3600,
     organization_id: str = "SE0123456789",
-    scopes: Optional[List[str]] = None,
+    scopes: list[str] | None = None,
 ) -> TLSFEDMetadata:
     if scopes is None:
         scopes = list()

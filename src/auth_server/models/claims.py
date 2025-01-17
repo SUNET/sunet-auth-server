@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-from typing import List, Optional, Union
-
 from pydantic import ConfigDict
 
 from auth_server.models.gnap import Access
@@ -12,9 +9,9 @@ __author__ = "lundberg"
 class Claims(RegisteredClaims):
     version: int = 1
     auth_source: str
-    source: Optional[str] = None
-    origins: Optional[List[str]] = None  # What should we use this for?
-    requested_access: Optional[List[Union[str, Access]]] = None
+    source: str | None = None
+    origins: list[str] | None = None  # What should we use this for?
+    requested_access: list[str | Access] | None = None
 
 
 class ConfigClaims(Claims):
@@ -23,24 +20,24 @@ class ConfigClaims(Claims):
 
 class CAClaims(Claims):
     common_name: str
-    organization_name: Optional[str] = None
-    country_code: Optional[str] = None
-    organization_id: Optional[str] = None
+    organization_name: str | None = None
+    country_code: str | None = None
+    organization_id: str | None = None
 
 
 class MDQClaims(Claims):
     entity_id: str
-    scopes: Optional[List[str]] = None
+    scopes: list[str] | None = None
 
 
 class TLSFEDClaims(MDQClaims):
-    organization_id: Optional[str] = None
+    organization_id: str | None = None
 
 
 class SAMLAssertionClaims(Claims):
-    saml_issuer: Optional[str] = None
-    saml_assurance: Optional[list[str]] = None
-    saml_entitlement: Optional[list[str]] = None
-    saml_eppn: Optional[str] = None
-    saml_unique_id: Optional[str] = None
-    saml_targeted_id: Optional[str] = None
+    saml_issuer: str | None = None
+    saml_assurance: list[str] | None = None
+    saml_entitlement: list[str] | None = None
+    saml_eppn: str | None = None
+    saml_unique_id: str | None = None
+    saml_targeted_id: str | None = None

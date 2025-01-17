@@ -1,9 +1,9 @@
-# -*- coding: utf-8 -*-
 import base64
+from collections.abc import Mapping
 from datetime import datetime, timedelta
 from os import environ
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Self
 from unittest import TestCase
 from urllib.parse import parse_qs, urlparse
 
@@ -32,10 +32,10 @@ from auth_server.time_utils import utc_now
 
 
 class TestSAMLSP(TestCase):
-    def setUp(self) -> None:
+    def setUp(self: Self) -> None:
         self.datadir = Path(__file__).with_name("data") / "saml"
         self.mongo_db = MongoTemporaryInstance.get_instance()
-        self.config: Dict[str, Any] = {
+        self.config: dict[str, Any] = {
             "testing": "true",
             "log_level": "DEBUG",
             "auth_token_issuer": "http://testserver",
@@ -106,17 +106,24 @@ class TestSAMLSP(TestCase):
         )
 
         self.saml_response_tpl_success = """<?xml version='1.0' encoding='UTF-8'?>
-        <samlp:Response xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Destination="{sp_url}saml2-acs" ID="id-88b9f586a2a3a639f9327485cc37c40a" InResponseTo="{session_id}" IssueInstant="{timestamp}" Version="2.0">
-          <saml:Issuer Format="urn:oasis:names:tc:SAML:2.0:nameid-format:entity">https://idp.example.com/simplesaml/saml2/idp/metadata.php</saml:Issuer>
+        <samlp:Response xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion"
+        xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        Destination="{sp_url}saml2-acs" ID="id-88b9f586a2a3a639f9327485cc37c40a" InResponseTo="{session_id}"
+        IssueInstant="{timestamp}" Version="2.0">
+          <saml:Issuer Format="urn:oasis:names:tc:SAML:2.0:nameid-format:entity">
+          https://idp.example.com/simplesaml/saml2/idp/metadata.php</saml:Issuer>
           <samlp:Status>
             <samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success" />
           </samlp:Status>
           <saml:Assertion ID="id-093952102ceb73436e49cb91c58b0578" IssueInstant="{timestamp}" Version="2.0">
-            <saml:Issuer Format="urn:oasis:names:tc:SAML:2.0:nameid-format:entity">https://idp.example.com/simplesaml/saml2/idp/metadata.php</saml:Issuer>
+            <saml:Issuer Format="urn:oasis:names:tc:SAML:2.0:nameid-format:entity">
+            https://idp.example.com/simplesaml/saml2/idp/metadata.php</saml:Issuer>
             <saml:Subject>
-              <saml:NameID Format="urn:oasis:names:tc:SAML:2.0:nameid-format:transient" NameQualifier="" SPNameQualifier="{sp_url}saml2-metadata">1f87035b4c1325b296a53d92097e6b3fa36d7e30ee82e3fcb0680d60243c1f03</saml:NameID>
+              <saml:NameID Format="urn:oasis:names:tc:SAML:2.0:nameid-format:transient" NameQualifier=""
+              SPNameQualifier="{sp_url}saml2-metadata">1f87035b4c1325b296a53d92097e6b3fa36d7e30ee82e3fcb0680d60243c1f03</saml:NameID>
               <saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">
-                <saml:SubjectConfirmationData InResponseTo="{session_id}" NotOnOrAfter="{tomorrow}" Recipient="{sp_url}saml2-acs" />
+                <saml:SubjectConfirmationData InResponseTo="{session_id}" NotOnOrAfter="{tomorrow}"
+                Recipient="{sp_url}saml2-acs" />
               </saml:SubjectConfirmation>
             </saml:Subject>
             <saml:Conditions NotBefore="{yesterday}" NotOnOrAfter="{tomorrow}">
@@ -130,74 +137,99 @@ class TestSAMLSP(TestCase):
               </saml:AuthnContext>
             </saml:AuthnStatement>
             <saml:AttributeStatement>
-              <saml:Attribute Name="urn:oid:2.16.840.1.113730.3.1.241" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="displayName">
+              <saml:Attribute Name="urn:oid:2.16.840.1.113730.3.1.241"
+              NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="displayName">
                 <saml:AttributeValue xsi:type="xs:string">Testsson</saml:AttributeValue>
               </saml:Attribute>
-              <saml:Attribute Name="urn:oid:1.3.6.1.4.1.5923.1.1.1.6" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="eduPersonPrincipalName">
+              <saml:Attribute Name="urn:oid:1.3.6.1.4.1.5923.1.1.1.6"
+              NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="eduPersonPrincipalName">
                 <saml:AttributeValue xsi:type="xs:string">eppn@idp.example.com</saml:AttributeValue>
               </saml:Attribute>
-              <saml:Attribute Name="urn:oid:2.5.4.42" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="givenName">
+              <saml:Attribute Name="urn:oid:2.5.4.42" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri"
+              FriendlyName="givenName">
                 <saml:AttributeValue xsi:type="xs:string">Test Testaren</saml:AttributeValue>
               </saml:Attribute>
-              <saml:Attribute Name="urn:oid:2.5.4.6" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="c">
+              <saml:Attribute Name="urn:oid:2.5.4.6" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri"
+              FriendlyName="c">
                 <saml:AttributeValue xsi:type="xs:string">se</saml:AttributeValue>
               </saml:Attribute>
-              <saml:Attribute Name="urn:oid:0.9.2342.19200300.100.1.43" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="co">
+              <saml:Attribute Name="urn:oid:0.9.2342.19200300.100.1.43"
+              NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="co">
                 <saml:AttributeValue xsi:type="xs:string">Sweden</saml:AttributeValue>
               </saml:Attribute>
-              <saml:Attribute Name="urn:oid:1.3.6.1.4.1.5923.1.1.1.13" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="eduPersonUniqueID">
+              <saml:Attribute Name="urn:oid:1.3.6.1.4.1.5923.1.1.1.13"
+              NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="eduPersonUniqueID">
                 <saml:AttributeValue xsi:type="xs:string">eppn@idp.example.com</saml:AttributeValue>
               </saml:Attribute>
-              <saml:Attribute Name="urn:oid:1.3.6.1.4.1.5923.1.1.1.11" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="eduPersonAssurance">
-                <saml:AttributeValue xsi:type="xs:string">http://www.swamid.se/policy/assurance/al1</saml:AttributeValue>
-                <saml:AttributeValue xsi:type="xs:string">http://www.swamid.se/policy/assurance/al2</saml:AttributeValue>
+              <saml:Attribute Name="urn:oid:1.3.6.1.4.1.5923.1.1.1.11"
+              NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="eduPersonAssurance">
+                <saml:AttributeValue xsi:type="xs:string">
+                http://www.swamid.se/policy/assurance/al1</saml:AttributeValue>
+                <saml:AttributeValue xsi:type="xs:string">
+                http://www.swamid.se/policy/assurance/al2</saml:AttributeValue>
                 <saml:AttributeValue xsi:type="xs:string">https://refeds.org/assurance</saml:AttributeValue>
                 <saml:AttributeValue xsi:type="xs:string">https://refeds.org/assurance/ID/unique</saml:AttributeValue>
-                <saml:AttributeValue xsi:type="xs:string">https://refeds.org/assurance/ID/eppn-unique-no-reassign</saml:AttributeValue>
+                <saml:AttributeValue xsi:type="xs:string">
+                https://refeds.org/assurance/ID/eppn-unique-no-reassign</saml:AttributeValue>
                 <saml:AttributeValue xsi:type="xs:string">https://refeds.org/assurance/IAP/low</saml:AttributeValue>
                 <saml:AttributeValue xsi:type="xs:string">https://refeds.org/assurance/IAP/medium</saml:AttributeValue>
               </saml:Attribute>
-              <saml:Attribute Name="urn:oid:2.5.4.3" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="cn">
+              <saml:Attribute Name="urn:oid:2.5.4.3" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri"
+               FriendlyName="cn">
                 <saml:AttributeValue xsi:type="xs:string">Test Testaren Testsson</saml:AttributeValue>
               </saml:Attribute>
-              <saml:Attribute Name="urn:oid:2.5.4.4" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="sn">
+              <saml:Attribute Name="urn:oid:2.5.4.4"
+              NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="sn">
                 <saml:AttributeValue xsi:type="xs:string">Testsson</saml:AttributeValue>
               </saml:Attribute>
-              <saml:Attribute Name="urn:oid:1.3.6.1.4.1.2428.90.1.5" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="norEduPersonNIN">
+              <saml:Attribute Name="urn:oid:1.3.6.1.4.1.2428.90.1.5"
+              NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="norEduPersonNIN">
                 <saml:AttributeValue xsi:type="xs:string">190102031234</saml:AttributeValue>
               </saml:Attribute>
-              <saml:Attribute Name="urn:oid:1.2.752.29.4.13" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="personalIdentityNumber">
+              <saml:Attribute Name="urn:oid:1.2.752.29.4.13"
+              NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="personalIdentityNumber">
                 <saml:AttributeValue xsi:type="xs:string">190102031234</saml:AttributeValue>
               </saml:Attribute>
-              <saml:Attribute Name="urn:oid:1.3.6.1.4.1.25178.1.2.3" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="schacDateOfBirth">
+              <saml:Attribute Name="urn:oid:1.3.6.1.4.1.25178.1.2.3"
+              NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="schacDateOfBirth">
                 <saml:AttributeValue xsi:type="xs:string">19010203</saml:AttributeValue>
               </saml:Attribute>
-              <saml:Attribute Name="urn:oid:0.9.2342.19200300.100.1.3" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="mail">
+              <saml:Attribute Name="urn:oid:0.9.2342.19200300.100.1.3"
+              NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="mail">
                 <saml:AttributeValue xsi:type="xs:string">testsson@example.com</saml:AttributeValue>
               </saml:Attribute>
-              <saml:Attribute Name="urn:oid:1.3.6.1.4.1.5923.1.1.1.10" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="eduPersonTargetedID">
+              <saml:Attribute Name="urn:oid:1.3.6.1.4.1.5923.1.1.1.10"
+               NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="eduPersonTargetedID">
                 <saml:AttributeValue>
-                  <saml:NameID Format="urn:oasis:names:tc:SAML:2.0:nameid-format:persistent" NameQualifier="https://idp.example.com/simplesaml/saml2/idp/metadata.php" SPNameQualifier="http://test.localhost/saml2-metadata">398f4967ef4ec07985d93a9200d3891184b9c0f6c79db53280894ae75673eab8</saml:NameID>
+                  <saml:NameID Format="urn:oasis:names:tc:SAML:2.0:nameid-format:persistent"
+                   NameQualifier="https://idp.example.com/simplesaml/saml2/idp/metadata.php"
+                   SPNameQualifier="http://test.localhost/saml2-metadata">
+                   398f4967ef4ec07985d93a9200d3891184b9c0f6c79db53280894ae75673eab8</saml:NameID>
                 </saml:AttributeValue>
               </saml:Attribute>
-              <saml:Attribute Name="urn:oid:1.3.6.1.4.1.5923.1.1.1.7" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="eduPersonEntitlement">
-                <saml:AttributeValue xsi:type="xs:string">urn:mace:swamid.se:example.com:role:member</saml:AttributeValue>
+              <saml:Attribute Name="urn:oid:1.3.6.1.4.1.5923.1.1.1.7"
+              NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="eduPersonEntitlement">
+                <saml:AttributeValue xsi:type="xs:string">
+                urn:mace:swamid.se:example.com:role:member</saml:AttributeValue>
               </saml:Attribute>
             </saml:AttributeStatement>
           </saml:Assertion>
         </samlp:Response>"""
         self.saml_response_tpl_fail = """<?xml version="1.0" encoding="UTF-8"?>
-        <saml2p:Response xmlns:saml2p="urn:oasis:names:tc:SAML:2.0:protocol" Destination="{sp_url}saml2-acs" ID="_ebad01e547857fa54927b020dba1edb1" InResponseTo="{session_id}" IssueInstant="{timestamp}" Version="2.0">
-          <saml2:Issuer xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion">https://idp.example.com/simplesaml/saml2/idp/metadata.php</saml2:Issuer>
+        <saml2p:Response xmlns:saml2p="urn:oasis:names:tc:SAML:2.0:protocol" Destination="{sp_url}saml2-acs"
+         ID="_ebad01e547857fa54927b020dba1edb1" InResponseTo="{session_id}" IssueInstant="{timestamp}" Version="2.0">
+          <saml2:Issuer xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion">
+          https://idp.example.com/simplesaml/saml2/idp/metadata.php</saml2:Issuer>
           <saml2p:Status>
             <saml2p:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Requester">
               <saml2p:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:AuthnFailed" />
             </saml2p:StatusCode>
-            <saml2p:StatusMessage>User login was not successful or could not meet the requirements of the requesting application.</saml2p:StatusMessage>
+            <saml2p:StatusMessage>User login was not successful or could not meet the requirements of the requesting
+             application.</saml2p:StatusMessage>
           </saml2p:Status>
         </saml2p:Response>"""
 
-    def _update_app_config(self, config: Optional[Dict] = None):
+    def _update_app_config(self: Self, config: dict | None = None) -> None:
         if config is not None:
             environ.clear()
             environ.update(config)
@@ -206,12 +238,12 @@ class TestSAMLSP(TestCase):
         self.client = TestClient(self.app)
 
     @staticmethod
-    def _clear_lru_cache():
+    def _clear_lru_cache() -> None:
         # Clear lru_cache to allow config update
         load_config.cache_clear()
         get_pysaml2_sp_config.cache_clear()
 
-    def tearDown(self) -> None:
+    def tearDown(self: Self) -> None:
         self.app = None  # type: ignore
         self.client = None  # type: ignore
         self._clear_lru_cache()
@@ -221,13 +253,13 @@ class TestSAMLSP(TestCase):
         # Clear environment variables
         environ.clear()
 
-    def _get_transaction_state_by_id(self, transaction_id) -> TransactionState:
+    def _get_transaction_state_by_id(self: Self, transaction_id: str) -> TransactionState:
         doc = self.transaction_states.find_one({"transaction_id": transaction_id})
         assert doc is not None  # please mypy
         assert isinstance(doc, Mapping) is True  # please mypy
         return TransactionState(**doc)
 
-    def _save_transaction_state(self, transaction_state: TransactionState) -> None:
+    def _save_transaction_state(self: Self, transaction_state: TransactionState) -> None:
         self.transaction_states.replace_one(
             filter={"transaction_id": transaction_state.transaction_id},
             replacement=transaction_state.dict(exclude_none=True),
@@ -249,25 +281,23 @@ class TestSAMLSP(TestCase):
 
         resp = " ".join(
             saml_response_tpl.format(
-                **{
-                    "session_id": request_id,
-                    "timestamp": timestamp.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "tomorrow": tomorrow.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "yesterday": yesterday.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "sp_url": sp_baseurl,
-                }
+                session_id=request_id,
+                timestamp=timestamp.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                tomorrow=tomorrow.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                yesterday=yesterday.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                sp_url=sp_baseurl,
             ).split()
         )
 
         return resp.encode("utf-8")
 
-    def _get_current_saml_request_id(self) -> str:
+    def _get_current_saml_request_id(self: Self) -> str:
         ids = list(self.outstanding_queries_cache.keys())
         if len(ids) != 1:
             raise RuntimeError("More or less than one authn request in the session")
         return ids[0]
 
-    def test_authn_request(self):
+    def test_authn_request(self: Self) -> None:
         self.config["saml2_single_idp"] = self.test_idp
         self._update_app_config(config=self.config)
         authn_url = saml2_router.url_path_for("authenticate", transaction_id=self.test_transaction_state.transaction_id)
@@ -280,7 +310,7 @@ class TestSAMLSP(TestCase):
             is True
         )
 
-    def test_saml_acs(self):
+    def test_saml_acs(self: Self) -> None:
         self.config["saml2_single_idp"] = self.test_idp
         self._update_app_config(config=self.config)
         transaction_state = self._get_transaction_state_by_id(self.test_transaction_state.transaction_id)
@@ -307,7 +337,7 @@ class TestSAMLSP(TestCase):
         assert transaction_state.saml_session_info.issuer == self.test_session_info.issuer
         assert transaction_state.saml_session_info.attributes == self.test_session_info.attributes
 
-    def test_saml_acs_status_response(self):
+    def test_saml_acs_status_response(self: Self) -> None:
         self.config["saml2_single_idp"] = self.test_idp
         self._update_app_config(config=self.config)
         transaction_state = self._get_transaction_state_by_id(self.test_transaction_state.transaction_id)
@@ -328,7 +358,7 @@ class TestSAMLSP(TestCase):
         assert response.status_code == 401
         assert response.json()["detail"].startswith("SAML Status Error: ") is True
 
-    def test_idp_discovery(self):
+    def test_idp_discovery(self: Self) -> None:
         # test initial redirect
         authn_url = saml2_router.url_path_for("authenticate", transaction_id=self.test_transaction_state.transaction_id)
         response = self.client.get(f"{authn_url}", allow_redirects=False)
@@ -357,7 +387,7 @@ class TestSAMLSP(TestCase):
             is True
         )
 
-    def test_get_metadata(self):
+    def test_get_metadata(self: Self) -> None:
         response = self.client.get(saml2_router.url_path_for("metadata"))
         assert response.headers["content-type"] == "text/xml; charset=utf-8"
         assert response.text is not None

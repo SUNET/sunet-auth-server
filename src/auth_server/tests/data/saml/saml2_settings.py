@@ -12,7 +12,7 @@ SAML_CONFIG = {
     # full path to the xmlsec1 binary programm
     "xmlsec_binary": "/usr/bin/xmlsec1",
     # your entity id, usually your subdomain plus the url to the metadata view
-    "entityid": "%ssaml2-metadata" % BASE_URL,
+    "entityid": f"{BASE_URL}saml2-metadata",
     # directory with attribute mapping
     "attribute_map_dir": DEFAULT_ATTRIBUTEMAPS,
     "allow_unknown_attributes": True,  # Allow eduidIdPCredentialsUsed
@@ -25,22 +25,16 @@ SAML_CONFIG = {
                 # url and binding to the assetion consumer service view
                 # do not change the binding or service name
                 "assertion_consumer_service": [
-                    ("%ssaml2-acs" % BASE_URL, saml2.BINDING_HTTP_POST),
+                    (f"{BASE_URL}saml2-acs", saml2.BINDING_HTTP_POST),
                 ],
                 # url and binding to the single logout service view
                 # do not change the binding or service name
                 "single_logout_service": [
-                    ("%ssaml2-ls" % BASE_URL, saml2.BINDING_HTTP_REDIRECT),
+                    (f"{BASE_URL}saml2-ls", saml2.BINDING_HTTP_REDIRECT),
                 ],
             },
             # Do not check for signature during tests
             "want_response_signed": False,
-            # # This is commented to be compatible with simplesamlphp
-            # # attributes that this project need to identify a user
-            # 'required_attributes': ['uid'],
-            #
-            # # attributes that may be useful to have but not required
-            # 'optional_attributes': ['eduPersonAffiliation'],
             # in this section the list of IdPs we talk to are defined
             "idp": {
                 # we do not need a WAYF service since there is
@@ -58,7 +52,7 @@ SAML_CONFIG = {
             },
         },
     },
-    "discovery_response": ["%sdiscovery-response" % BASE_URL],
+    "discovery_response": [f"{BASE_URL}discovery-response"],
     # where the remote metadata is stored
     "metadata": {
         "local": [path.join(SAML2DIR, "remote_metadata.xml")],
@@ -66,12 +60,12 @@ SAML_CONFIG = {
     # set to 1 to output debugging information
     "debug": 1,
     # certificate
-    "key_file": path.join("%s%s" % (SAML2DIR, "/certs"), "test_sp.key"),  # private part
-    "cert_file": path.join("%s%s" % (SAML2DIR, "/certs"), "test_sp.crt"),  # public part
+    "key_file": path.join(f"{SAML2DIR}/certs", "test_sp.key"),  # private part
+    "cert_file": path.join(f"{SAML2DIR}/certs", "test_sp.crt"),  # public part
     "encryption_keypairs": [
         {
-            "key_file": path.join("%s%s" % (SAML2DIR, "/certs"), "test_sp.key"),  # private part
-            "cert_file": path.join("%s%s" % (SAML2DIR, "/certs"), "test_sp.crt"),  # public part
+            "key_file": path.join(f"{SAML2DIR}/certs", "test_sp.key"),  # private part
+            "cert_file": path.join(f"{SAML2DIR}/certs", "test_sp.crt"),  # public part
         }
     ],
     # own metadata settings

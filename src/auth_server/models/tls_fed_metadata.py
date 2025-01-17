@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Annotated, List, Optional
+from typing import Annotated
 
 from pydantic import AnyUrl, BaseModel, ConfigDict, Field, PositiveInt, StringConstraints
 
@@ -16,7 +16,7 @@ from auth_server.models.jose import JOSEHeader
 class TLSFEDJOSEHeader(JOSEHeader):
     iat: datetime
     exp: datetime
-    iss: Optional[str] = None
+    iss: str | None = None
 
 
 class RegisteredExtensions(str, Enum):
@@ -24,17 +24,17 @@ class RegisteredExtensions(str, Enum):
 
 
 class SAMLScopeExtension(BaseModel):
-    scope: List[str]
+    scope: list[str]
 
 
 class Extensions(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
-    saml_scope: Optional[SAMLScopeExtension] = Field(default=None, alias=RegisteredExtensions.SAML_SCOPE.value)
+    saml_scope: SAMLScopeExtension | None = Field(default=None, alias=RegisteredExtensions.SAML_SCOPE.value)
 
 
 class CertIssuers(BaseModel):
-    x509certificate: Optional[str] = Field(None, title="X.509 Certificate (PEM)")
+    x509certificate: str | None = Field(None, title="X.509 Certificate (PEM)")
 
 
 class Alg(str, Enum):
@@ -57,14 +57,14 @@ Tag = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]{1,64}$")]
 class Endpoint(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    description: Optional[str] = Field(None, examples=["SCIM Server 1"], title="Endpoint description")
-    tags: Optional[List[Tag]] = Field(
+    description: str | None = Field(None, examples=["SCIM Server 1"], title="Endpoint description")
+    tags: list[Tag] | None = Field(
         None,
         description="A list of strings that describe the endpoint's capabilities.\n",
         title="Endpoint tags",
     )
-    base_uri: Optional[AnyUrl] = Field(None, examples=["https://scim.example.com"], title="Endpoint base URI")
-    pins: List[PinDirective] = Field(..., title="Certificate pin set")
+    base_uri: AnyUrl | None = Field(None, examples=["https://scim.example.com"], title="Endpoint base URI")
+    pins: list[PinDirective] = Field(..., title="Certificate pin set")
 
 
 class Entity(BaseModel):
@@ -76,22 +76,24 @@ class Entity(BaseModel):
         examples=["https://example.com"],
         title="Entity identifier",
     )
-    organization: Optional[str] = Field(
+    organization: str | None = Field(
         None,
         description="Name identifying the organization that the entity’s\nmetadata represents.\n",
         examples=["Example Org"],
         title="Name of entity organization",
     )
-    issuers: List[CertIssuers] = Field(
+    issuers: list[CertIssuers] = Field(
         ...,
-        description="A list of certificate issuers that are allowed to issue certificates\nfor the entity's endpoints. For each issuer, the issuer's root CA\ncertificate is included in the x509certificate property (PEM-encoded).\n",
+        description="A list of certificate issuers that are allowed to issue certificates\n"
+        "for the entity's endpoints. For each issuer, the issuer's root CA\n"
+        "certificate is included in the x509certificate property (PEM-encoded).\n",
         title="Entity certificate issuers",
     )
-    servers: Optional[List[Endpoint]] = None
-    clients: Optional[List[Endpoint]] = None
+    servers: list[Endpoint] | None = None
+    clients: list[Endpoint] | None = None
     # added after generation
-    organization_id: Optional[str] = None
-    extensions: Optional[Extensions] = None
+    organization_id: str | None = None
+    extensions: Extensions | None = None
 
 
 class Model(BaseModel):
@@ -103,9 +105,10 @@ class Model(BaseModel):
         title="Metadata schema version",
         pattern=r"^\d+\.\d+\.\d+$",
     )
-    cache_ttl: Optional[PositiveInt] = Field(
-        description="How long (in seconds) to cache metadata.\nEffective maximum TTL is the minimum of HTTP Expire and TTL\n",
+    cache_ttl: PositiveInt | None = Field(
+        description="How long (in seconds) to cache metadata.\n"
+        "Effective maximum TTL is the minimum of HTTP Expire and TTL\n",
         examples=[3600],
         title="Metadata cache TTL",
     )
-    entities: List[Entity]
+    entities: list[Entity]

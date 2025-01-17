@@ -1,9 +1,7 @@
-# -*- coding: utf-8 -*-
 import logging
 from base64 import urlsafe_b64encode
-from typing import Optional
 
-from cryptography.hazmat.primitives.hashes import SHA256, SHA384, SHA512
+from cryptography.hazmat.primitives.hashes import SHA256, SHA384, SHA512, HashAlgorithm
 from fastapi import HTTPException
 from jwcrypto import jwk, jws
 from jwcrypto.common import base64url_decode, base64url_encode
@@ -21,7 +19,7 @@ __author__ = "lundberg"
 logger = logging.getLogger(__name__)
 
 
-async def choose_hash_alg(alg: SupportedAlgorithms):
+async def choose_hash_alg(alg: SupportedAlgorithms) -> HashAlgorithm:
     # TODO: what about EdDSA
     if alg.name.endswith("256"):
         return SHA256()
@@ -34,7 +32,7 @@ async def choose_hash_alg(alg: SupportedAlgorithms):
 
 
 async def verify_gnap_jws(
-    request: ContextRequest, gnap_key: Key, jws_header: GNAPJOSEHeader, access_token: Optional[str] = None
+    request: ContextRequest, gnap_key: Key, jws_header: GNAPJOSEHeader, access_token: str | None = None
 ) -> bool:
     config = load_config()
 
@@ -77,7 +75,7 @@ async def verify_gnap_jws(
 async def check_jws_proof(
     request: ContextRequest,
     gnap_key: Key,
-    access_token: Optional[str] = None,
+    access_token: str | None = None,
 ) -> bool:
     # Verify jws
     if request.context.jws_obj is None:
@@ -101,7 +99,7 @@ async def check_jws_proof(
 async def check_jwsd_proof(
     request: ContextRequest,
     gnap_key: Key,
-    access_token: Optional[str] = None,
+    access_token: str | None = None,
 ) -> bool:
     if request.context.detached_jws is None or request.context.detached_jws_body is None:
         raise HTTPException(status_code=400, detail="No detached JWS found")
@@ -152,7 +150,7 @@ async def check_jwsd_proof(
     return await verify_gnap_jws(request=request, gnap_key=gnap_key, jws_header=jws_header, access_token=access_token)
 
 
-def verify_jws(jws_obj: jws.JWS, client_key: Optional[jwk.JWK] = None, gnap_key: Optional[Key] = None) -> bool:
+def verify_jws(jws_obj: jws.JWS, client_key: jwk.JWK | None = None, gnap_key: Key | None = None) -> bool:
     if gnap_key is not None and gnap_key.jwk is not None:
         client_key = jws.JWK(**gnap_key.jwk.dict(exclude_unset=True))
     if client_key is not None:

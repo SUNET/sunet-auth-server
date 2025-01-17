@@ -1,15 +1,15 @@
-# -*- coding: utf-8 -*-
 import logging
+from collections import OrderedDict
 from collections import OrderedDict as _OrderedDict
 from enum import Enum
-from typing import Any, List, OrderedDict
+from pyexpat import ExpatError
+from typing import Any, Self
 
 import aiohttp
 import xmltodict
 from cryptography.hazmat.primitives.hashes import SHA1
 from cryptography.x509 import Certificate
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
-from pyexpat import ExpatError
 
 from auth_server.cert_utils import load_pem_from_str, rfc8705_fingerprint, serialize_certificate
 from auth_server.models.gnap import Key, Proof, ProofMethod
@@ -35,13 +35,13 @@ class MDQCert(MDQBase):
 
     @field_validator("cert", mode="before")
     @classmethod
-    def deserialize_cert(cls, v: str) -> Certificate:
+    def deserialize_cert(cls: "MDQCert", v: str) -> Certificate:
         if isinstance(v, Certificate):
             return v
         return load_pem_from_str(v)
 
     @model_serializer
-    def serialize_mdq_cert(self) -> dict[str, Any]:
+    def serialize_mdq_cert(self: Self) -> dict[str, Any]:
         """
         serialize Certificate on model_dump
         """
@@ -49,7 +49,7 @@ class MDQCert(MDQBase):
 
 
 class MDQData(MDQBase):
-    certs: List[MDQCert] = Field(default_factory=list)
+    certs: list[MDQCert] = Field(default_factory=list)
     metadata: OrderedDict = Field(default_factory=_OrderedDict)
 
 

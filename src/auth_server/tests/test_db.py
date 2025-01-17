@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
 from datetime import timedelta
+from typing import Self
 from unittest import IsolatedAsyncioTestCase
 
 import pytest
@@ -16,24 +16,24 @@ __author__ = "lundberg"
 
 
 class TestBaseDB(IsolatedAsyncioTestCase):
-    async def asyncSetUp(self) -> None:
+    async def asyncSetUp(self: Self) -> None:
         self.mongo_db = MongoTemporaryInstance.get_instance()
         self.db_client = AsyncIOMotorClient(self.mongo_db.uri, tz_aware=True)
         self.base_db = BaseDB(db_client=self.db_client, db_name="test", collection="test_collection", safe_writes=True)
         # add documents
         self.doc_count = 200
         await self.base_db._coll.insert_many(
-            [{f"unique_key": f"value_{i}", "key": "test"} for i in range(self.doc_count)]
+            [{"unique_key": f"value_{i}", "key": "test"} for i in range(self.doc_count)]
         )
 
-    async def asyncTearDown(self) -> None:
+    async def asyncTearDown(self: Self) -> None:
         await self.base_db._drop_whole_collection()
 
-    async def test_get_all_docs(self):
+    async def test_get_all_docs(self: Self) -> None:
         docs = [doc async for doc in self.base_db._get_all_docs()]
         assert len(docs) == self.doc_count
 
-    async def test_get_document_by_attr(self):
+    async def test_get_document_by_attr(self: Self) -> None:
         doc = await self.base_db._get_document_by_attr(attr="unique_key", value="value_25")
         assert list(doc.keys()) == ["_id", "unique_key", "key"]
         assert doc["unique_key"] == "value_25"
@@ -42,7 +42,7 @@ class TestBaseDB(IsolatedAsyncioTestCase):
         with pytest.raises(MultipleDocumentsReturned):
             await self.base_db._get_document_by_attr(attr="key", value="test")
 
-    async def test_get_documents_by_attr(self):
+    async def test_get_documents_by_attr(self: Self) -> None:
         docs = [doc async for doc in self.base_db._get_documents_by_attr(attr="unique_key", value="value_25")]
         assert list(docs[0].keys()) == ["_id", "unique_key", "key"]
         assert docs[0]["unique_key"] == "value_25"
@@ -51,49 +51,49 @@ class TestBaseDB(IsolatedAsyncioTestCase):
         docs = [doc async for doc in self.base_db._get_documents_by_attr(attr="key", value="test")]
         assert len(docs) == self.doc_count
 
-    async def def_get_documents_by_filter_fields(self):
+    async def def_get_documents_by_filter_fields(self: Self) -> None:
         doc_gen = self.base_db._get_documents_by_filter(
             spec={"unique_key": "value_25"}, fields={"unique_key": True, "key": True}
         )
         docs = [doc async for doc in doc_gen]
         assert docs[0] == {"unique_key": "value_25", "key": "test"}
 
-    async def def_get_documents_by_filter_skip(self):
+    async def def_get_documents_by_filter_skip(self: Self) -> None:
         doc_gen = self.base_db._get_documents_by_filter(spec={"key": "test"}, skip=10)
         docs = [doc async for doc in doc_gen]
         assert docs[0]["unique_id"] == "value_9"
 
-    async def test_get_documents_by_filter_limit(self):
+    async def test_get_documents_by_filter_limit(self: Self) -> None:
         doc_gen = self.base_db._get_documents_by_filter(spec={"key": "test"}, limit=10)
         docs = [doc async for doc in doc_gen]
         assert len(docs) == 10
 
-    async def test_db_count(self):
+    async def test_db_count(self: Self) -> None:
         count = await self.base_db.db_count()
         assert count == self.doc_count
 
-    async def test_db_count_spec(self):
+    async def test_db_count_spec(self: Self) -> None:
         count = await self.base_db.db_count(spec={"unique_key": "value_25"})
         assert count == 1
 
-    async def test_db_count_limit(self):
+    async def test_db_count_limit(self: Self) -> None:
         count = await self.base_db.db_count(spec={"key": "test"}, limit=1)
         assert count == 1
 
-    async def test_remove_document_spec(self):
+    async def test_remove_document_spec(self: Self) -> None:
         res = await self.base_db.remove_document(spec_or_id={"unique_key": "value_25"})
         assert res is True
         doc = await self.base_db._get_document_by_attr(attr="unique_key", value="value_25")
         assert doc is None
 
-    async def test_remove_document_id(self):
+    async def test_remove_document_id(self: Self) -> None:
         doc = await self.base_db._get_document_by_attr(attr="unique_key", value="value_25")
         res = await self.base_db.remove_document(spec_or_id=doc["_id"])
         assert res is True
         doc = await self.base_db._get_document_by_attr(attr="unique_key", value="value_25")
         assert doc is None
 
-    async def test_setup_indexes(self):
+    async def test_setup_indexes(self: Self) -> None:
         indexes = {
             "unique-unique_key": {"key": [("unique_key", 1)], "unique": True},
         }
@@ -110,7 +110,7 @@ class TestBaseDB(IsolatedAsyncioTestCase):
 
 
 class TestMongoCache(IsolatedAsyncioTestCase):
-    async def asyncSetUp(self) -> None:
+    async def asyncSetUp(self: Self) -> None:
         self.mongo_db = MongoTemporaryInstance.get_instance()
         self.db_client: MongoClient = MongoClient(self.mongo_db.uri, tz_aware=True)
         self.mongo_cache = MongoCache(
@@ -121,10 +121,10 @@ class TestMongoCache(IsolatedAsyncioTestCase):
         self.test_value = "test value"
         self.mongo_cache[self.test_key] = self.test_value
 
-    async def asyncTearDown(self) -> None:
+    async def asyncTearDown(self: Self) -> None:
         self.mongo_cache._db._drop_whole_collection()
 
-    async def test_set_get_item(self):
+    async def test_set_get_item(self: Self) -> None:
         value = {
             "test string": "some string",
             "test bool": True,
@@ -135,35 +135,35 @@ class TestMongoCache(IsolatedAsyncioTestCase):
         assert self.mongo_cache.get(self.test_key) == value
         assert self.mongo_cache[self.test_key] == value
 
-    async def test_iter(self):
+    async def test_iter(self: Self) -> None:
         res = [item for item in self.mongo_cache]
         assert len(res) == 1
         assert res[0] == self.test_value
 
-    async def test_len(self):
+    async def test_len(self: Self) -> None:
         assert len(self.mongo_cache) == 1
 
-    async def test_del(self):
+    async def test_del(self: Self) -> None:
         del self.mongo_cache[self.test_key]
         assert (self.test_key in self.mongo_cache) is False
 
-    async def test_contains(self):
+    async def test_contains(self: Self) -> None:
         assert (self.test_key in self.mongo_cache) is True
 
-    async def test_items(self):
+    async def test_items(self: Self) -> None:
         for key, value in self.mongo_cache.items():
             assert key == self.test_key
             assert value == self.test_value
 
-    async def test_keys(self):
+    async def test_keys(self: Self) -> None:
         for key in self.mongo_cache.keys():
             assert key == self.test_key
 
-    async def test_values(self):
+    async def test_values(self: Self) -> None:
         for value in self.mongo_cache.values():
             assert value == self.test_value
 
-    async def test_pop(self):
+    async def test_pop(self: Self) -> None:
         item = self.mongo_cache.pop(self.test_key)
         assert item == self.test_value
         with pytest.raises(KeyError):
@@ -172,7 +172,7 @@ class TestMongoCache(IsolatedAsyncioTestCase):
         item = self.mongo_cache.pop(self.test_key, default)
         assert item == default
 
-    async def test_update_modified_ts(self):
+    async def test_update_modified_ts(self: Self) -> None:
         modified_ts_before = next(
             self.mongo_cache._db._get_documents_by_filter(
                 spec={"lookup_key": self.test_key}, fields={"_id": False, "modified_ts": True}
@@ -193,7 +193,7 @@ class TestMongoCache(IsolatedAsyncioTestCase):
 
 
 class TestTransactionStateDB(IsolatedAsyncioTestCase):
-    async def asyncSetUp(self) -> None:
+    async def asyncSetUp(self: Self) -> None:
         self.mongo_db = MongoTemporaryInstance.get_instance()
         self.db_client = AsyncIOMotorClient(self.mongo_db.uri, tz_aware=True)
         self.transaction_state_db = TransactionStateDB(db_client=self.db_client)

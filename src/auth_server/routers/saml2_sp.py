@@ -1,10 +1,8 @@
-# -*- coding: utf-8 -*-
 __author__ = "lundberg"
 
 import logging
 import uuid
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, Form, HTTPException, Query, Response
 from saml2.metadata import entity_descriptor
@@ -35,7 +33,7 @@ templates = Jinja2Templates(directory=str(Path(__file__).with_name("templates"))
 async def authenticate(
     request: ContextRequest,
     transaction_id: str,
-):
+) -> HTMLResponse:
     saml2_sp = await get_saml2_sp()
     if saml2_sp is None:
         # there is no pysaml2 config or any database available
@@ -67,8 +65,8 @@ async def authenticate(
 
 @saml2_router.get("/sp/discovery-response", response_class=HTMLResponse)
 async def discovery_service_response(
-    target: Optional[str] = None, entity_id: Optional[str] = Query(default=None, alias="entityID")
-):
+    target: str | None = None, entity_id: str | None = Query(default=None, alias="entityID")
+) -> HTMLResponse:
     saml2_sp = await get_saml2_sp()
     if saml2_sp is None:
         # there is no pysaml2 config or any database available
@@ -127,7 +125,9 @@ async def redirect_to_idp(saml2_sp: SAML2SP, authn_id: AuthnRequestRef, idp_enti
 
 
 @saml2_router.post("/sp/saml2-acs", response_class=HTMLResponse)
-async def assertion_consumer_service(request: ContextRequest, saml_response: str = Form(alias="SAMLResponse")):
+async def assertion_consumer_service(
+    request: ContextRequest, saml_response: str = Form(alias="SAMLResponse")
+) -> HTMLResponse:
     """
     Assertion consumer service, receives POSTs from SAML2 IdP's
     """
@@ -171,16 +171,6 @@ async def assertion_consumer_service(request: ContextRequest, saml_response: str
             logger.error(f"Asserted: {assertion_data.session_info.authn_info}")
             raise HTTPException(status_code=401, detail="authentication context mismatch")
 
-    # TODO: do we want this? shouldn't scope from the user identifier be used anyway?
-    ## get the scopes from metadata
-    # scopes = []
-    # metadata_scopes = saml2_sp.client.metadata.shibmd_scopes(entity_id=assertion_data.session_info.issuer)
-    # for item in metadata_scopes:
-    #    if item.get("regexp") is True:
-    #        # Let's not open this can of regex if we don't have to
-    #        continue
-    #    scopes.append(item.get("text"))
-
     transaction_state.saml_session_info = assertion_data.session_info
     await transaction_db.save(transaction_state, expires_in=config.transaction_state_expires_in)
     logger.debug(f"saml_assertion added to transaction state with id: {transaction_id}")
@@ -192,7 +182,7 @@ async def assertion_consumer_service(request: ContextRequest, saml_response: str
 
 
 @saml2_router.get("/sp/metadata", response_class=Response, responses={200: {"content": {"text/xml": {}}}})
-async def metadata():
+async def metadata() -> Response:
     saml2_sp = await get_saml2_sp()
     if not saml2_sp:
         raise HTTPException(status_code=400, detail="SAML SP not configured")

@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 import argparse
 import json
 import sys
@@ -12,13 +10,13 @@ from jwcrypto import jwk, jws
 __author__ = "lundberg"
 
 
-def main(args: argparse.Namespace):
+def main(args: argparse.Namespace) -> None:
     # Load jwks
     try:
-        with open(args.jwks, "r") as f:
+        with open(args.jwks) as f:
             key_json = f.read()
             jwks = jwk.JWKSet.from_json(key_json)
-    except IOError as e:
+    except OSError as e:
         print(f"Could not open {args.jwks}: {e}")
         sys.exit(1)
     except jwk.InvalidJWKValue as e:

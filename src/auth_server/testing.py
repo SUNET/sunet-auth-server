@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Copyright (c) 2020 SUNET
 # All rights reserved.
@@ -37,7 +36,8 @@ import subprocess
 import tempfile
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Optional, Sequence, Type, cast
+from collections.abc import Sequence
+from typing import Any, Self, cast
 
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
@@ -58,8 +58,8 @@ class TemporaryInstance(ABC):
 
     _instance = None
 
-    def __init__(self, max_retry_seconds: int):
-        self._conn: Optional[Any] = None  # self._conn should be initialised by subclasses in `setup_conn'
+    def __init__(self: Self, max_retry_seconds: int) -> None:
+        self._conn: Any | None = None  # self._conn should be initialised by subclasses in `setup_conn'
         self._tmpdir = tempfile.mkdtemp()
         self._port = random.randint(40000, 65535)
         self._logfile = open(f"/tmp/{self.__class__.__name__}-{self.port}.log", "w")
@@ -91,7 +91,7 @@ class TemporaryInstance(ABC):
                 interval += interval
 
     @classmethod
-    def get_instance(cls: Type[TemporaryInstance], max_retry_seconds: int = 60) -> TemporaryInstance:
+    def get_instance(cls: type[TemporaryInstance], max_retry_seconds: int = 60) -> TemporaryInstance:
         """
         Start a new temporary instance, or retrieve an already started one.
 
@@ -104,7 +104,7 @@ class TemporaryInstance(ABC):
         return cls._instance
 
     @abstractmethod
-    def setup_conn(self) -> bool:
+    def setup_conn(self: Self) -> bool:
         """
         Initialise and test a connection of the instance in self._conn.
 
@@ -114,31 +114,31 @@ class TemporaryInstance(ABC):
 
     @property
     @abstractmethod
-    def conn(self) -> Any:
+    def conn(self: Self) -> Any:  # noqa: ANN401
         """Return the initialised _conn instance. No default since it ought to be typed in the subclasses."""
         raise NotImplementedError("All subclasses of TemporaryInstance should implement the conn property")
 
     @property
     @abstractmethod
-    def command(self) -> Sequence[str]:
+    def command(self: Self) -> Sequence[str]:
         """This is the shell command to start the temporary instance."""
         raise NotImplementedError("All subclasses of TemporaryInstance must implement the command property")
 
     @property
-    def port(self) -> int:
+    def port(self: Self) -> int:
         return self._port
 
     @property
-    def tmpdir(self) -> str:
+    def tmpdir(self: Self) -> str:
         return self._tmpdir
 
     @property
-    def output(self) -> str:
-        with open(self._logfile.name, "r") as fd:
+    def output(self: Self) -> str:
+        with open(self._logfile.name) as fd:
             _output = "".join(fd.readlines())
         return _output
 
-    def shutdown(self):
+    def shutdown(self: Self) -> None:
         logger.debug(f"{self} output at shutdown:\n{self.output}")
         if self._process:
             self._process.terminate()
@@ -157,10 +157,10 @@ class MongoTemporaryInstance(TemporaryInstance):
     """
 
     @property
-    def command(self) -> Sequence[str]:
+    def command(self: Self) -> Sequence[str]:
         return ["docker", "run", "--rm", "-p", f"{self._port!s}:27017", "docker.sunet.se/eduid/mongodb:latest"]
 
-    def setup_conn(self) -> bool:
+    def setup_conn(self: Self) -> bool:
         try:
             self._conn = MongoClient("localhost", self._port)
             logger.info(f"Connected to temporary mongodb instance: {self._conn}")
@@ -169,16 +169,16 @@ class MongoTemporaryInstance(TemporaryInstance):
         return True
 
     @property
-    def conn(self) -> MongoClient:
+    def conn(self: Self) -> MongoClient:
         if self._conn is None:
             raise RuntimeError("Missing temporary MongoDB instance")
         return self._conn
 
     @property
-    def uri(self):
+    def uri(self: Self) -> str:
         return f"mongodb://localhost:{self.port}"
 
-    def shutdown(self):
+    def shutdown(self: Self) -> None:
         if self._conn:
             logger.info(f"Closing connection {self._conn}")
             self._conn.close()
@@ -186,5 +186,5 @@ class MongoTemporaryInstance(TemporaryInstance):
         super().shutdown()
 
     @classmethod
-    def get_instance(cls: Type[MongoTemporaryInstance], max_retry_seconds: int = 20) -> MongoTemporaryInstance:
+    def get_instance(cls: type[MongoTemporaryInstance], max_retry_seconds: int = 20) -> MongoTemporaryInstance:
         return cast(MongoTemporaryInstance, super().get_instance(max_retry_seconds=max_retry_seconds))

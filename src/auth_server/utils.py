@@ -1,11 +1,11 @@
-# -*- coding: utf-8 -*-
 import importlib
 import json
 import logging
 from base64 import urlsafe_b64encode
-from datetime import datetime, timezone
+from collections.abc import Callable, Generator, Mapping, Sequence
+from datetime import UTC, datetime
 from functools import lru_cache
-from typing import Any, Callable, Generator, Mapping, Sequence, Union
+from typing import Any
 from uuid import uuid4
 
 import aiohttp
@@ -22,14 +22,14 @@ logger = logging.getLogger(__name__)
 
 
 def utc_now() -> datetime:
-    return datetime.now(tz=timezone.utc)
+    return datetime.now(tz=UTC)
 
 
-@lru_cache()
+@lru_cache
 def load_jwks() -> jwk.JWKSet:
     config = load_config()
     if config.keystore_path.exists():
-        with open(config.keystore_path, "r") as f:
+        with open(config.keystore_path) as f:
             jwks = jwk.JWKSet.from_json(f.read())
             logger.info(f"jwks loaded from {config.keystore_path}")
     else:
@@ -43,7 +43,7 @@ def load_jwks() -> jwk.JWKSet:
     return jwks
 
 
-@lru_cache()
+@lru_cache
 def get_signing_key() -> jwk.JWK:
     config = load_config()
     jwks = load_jwks()
@@ -62,7 +62,7 @@ def import_class(class_path: str) -> Callable:
     return klass
 
 
-def get_values(key: str, obj: Union[Mapping, Sequence]) -> Generator[Any, None, None]:
+def get_values(key: str, obj: Mapping | Sequence) -> Generator[Any, None, None]:
     """
     Recurse through a dict-like object and return all values for the specified key
 
@@ -82,7 +82,7 @@ def get_values(key: str, obj: Union[Mapping, Sequence]) -> Generator[Any, None, 
                 yield hit
 
 
-def get_hex_uuid4(length=32) -> str:
+def get_hex_uuid4(length: int = 32) -> str:
     if length > 32:
         raise ValueError("Max length is 32")
     return uuid4().hex[:length]

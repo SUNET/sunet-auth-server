@@ -1,6 +1,5 @@
-# -*- coding: utf-8 -*-
 import logging
-from typing import Dict, Type, cast
+from typing import Self, cast
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -27,13 +26,13 @@ logger = logging.getLogger(__name__)
 
 
 class AuthServer(FastAPI):
-    def __init__(self) -> None:
+    def __init__(self: Self) -> None:
         config = load_config()
         super().__init__(root_path=config.application_root)
         init_logging(config=config)
 
         # Load flows
-        self.builtin_flow: Dict[FlowName, Type[BaseAuthFlow]] = {
+        self.builtin_flow: dict[FlowName, type[BaseAuthFlow]] = {
             FlowName.CAFLOW: CAFlow,
             FlowName.CONFIGFLOW: ConfigFlow,
             FlowName.INTERACTIONFLOW: InteractionFlow,
@@ -43,8 +42,8 @@ class AuthServer(FastAPI):
         }
         self.auth_flows = self.load_flows(config=config)
 
-    def load_flows(self, config: AuthServerConfig) -> Dict[str, Type[BaseAuthFlow]]:
-        flows: Dict[str, Type[BaseAuthFlow]] = {}
+    def load_flows(self: Self, config: AuthServerConfig) -> dict[str, type[BaseAuthFlow]]:
+        flows: dict[str, type[BaseAuthFlow]] = {}
         for flow in config.auth_flows:
             try:
                 builtin_flow = self.builtin_flow.get(FlowName(flow))
@@ -53,7 +52,7 @@ class AuthServer(FastAPI):
                     logger.debug(f"Loaded built-in flow {flow}")
             except ValueError:  # Not a registered flow
                 try:
-                    custom_flow = cast(Type[BaseAuthFlow], import_class(flow))
+                    custom_flow = cast(type[BaseAuthFlow], import_class(flow))
                     custom_flow_name = custom_flow.get_name()
                     if custom_flow_name in flows:
                         # reject a custom flow that tries to overwrite another flow
@@ -89,8 +88,7 @@ def init_auth_server_api() -> AuthServer:
     if config.debug or config.testing:
         # log more info about 422 errors to ease fault tracing
         @app.exception_handler(RequestValidationError)
-        async def validation_exception_handler(request: Request, exc: RequestValidationError):
-
+        async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
             exc_str = f"{exc}".replace("\n", " ").replace("   ", " ")
             logger.exception(f"{exc}")
             content = {"status_code": 422, "message": exc_str, "data": None}

@@ -1,13 +1,12 @@
-# -*- coding: utf-8 -*-
-import asyncio
 import json
 import logging
+from collections.abc import Mapping
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Mapping, Optional
 from uuid import uuid4
 
 import aiohttp
+import anyio
 from aiofiles import open as async_open
 from async_lru import alru_cache
 from cryptography.x509 import load_pem_x509_certificate
@@ -17,9 +16,8 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from auth_server.cert_utils import rfc8705_fingerprint
 from auth_server.config import load_config
 from auth_server.models.gnap import Key, Proof, ProofMethod
-from auth_server.models.tls_fed_metadata import Entity
+from auth_server.models.tls_fed_metadata import Entity, TLSFEDJOSEHeader
 from auth_server.models.tls_fed_metadata import Model as TLSFEDMetadataModel
-from auth_server.models.tls_fed_metadata import TLSFEDJOSEHeader
 from auth_server.time_utils import utc_now
 
 __author__ = "lundberg"
@@ -36,10 +34,12 @@ class MetadataSource(BaseModel):
 
 class MetadataEntity(Entity):
     issuer: str
+    expires_at: datetime
     model_config = ConfigDict(frozen=True)
 
 
 class IssuerMetadata(BaseModel):
+    issuer: str
     issued_at: datetime
     renew_at: datetime
     expires_at: datetime
@@ -52,24 +52,24 @@ class Metadata(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
-async def load_jwks(path: Path) -> Optional[jwk.JWKSet]:
+async def load_jwks(path: Path) -> jwk.JWKSet | None:
     try:
-        with open(path, "r") as f:
-            jwks = jwk.JWKSet.from_json(f.read())
+        async with await anyio.open_file(path) as f:
+            jwks = jwk.JWKSet.from_json(await f.read())
         logger.info(f"jwks loaded from {path}")
         return jwks
-    except IOError as e:
+    except OSError as e:
         logger.error(f"Could not open {path}: {e}")
     return None
 
 
-async def get_remote_metadata(url: str) -> Optional[str]:
+async def get_remote_metadata(url: str) -> str | None:
     # Get remote metadata jws
     session = aiohttp.ClientSession()
     logger.debug(f"Trying {url}")
     try:
         response = await session.get(url=url)
-    except (aiohttp.ClientError, asyncio.TimeoutError):
+    except (aiohttp.ClientError, TimeoutError):
         logger.exception(f"Failed to get remote metadata from {url}")
         return None
     if response.status != 200:
@@ -81,19 +81,19 @@ async def get_remote_metadata(url: str) -> Optional[str]:
     return text
 
 
-async def get_local_metadata(path: Path) -> Optional[str]:
+async def get_local_metadata(path: Path) -> str | None:
     # Open local jws file
     try:
         async with async_open(path, "r") as f:
             return await f.read()
-    except IOError as e:
+    except OSError as e:
         logger.error(f"Could not open {path}: {e}")
     return None
 
 
 async def load_metadata_source(
-    raw_jws: Optional[str], jwks: Optional[jwk.JWKSet], strict: bool = True
-) -> Optional[MetadataSource]:
+    raw_jws: str | None, jwks: jwk.JWKSet | None, strict: bool = True
+) -> MetadataSource | None:
     if raw_jws is None:
         logger.warning("could not load metadata. missing jws")
         return None
@@ -111,11 +111,10 @@ async def load_metadata_source(
         return None
 
     # load JOSE headers
-    headers = []
+    headers = list()
     logger.debug(f"jose_header: {_jws.jose_header}")
     if isinstance(_jws.jose_header, list):
-        for item in _jws.jose_header:
-            headers.append(item)
+        headers = list(_jws.jose_header)
     elif isinstance(_jws.jose_header, dict):
         headers.append(_jws.jose_header)
 
@@ -184,7 +183,7 @@ async def load_metadata_source(
     )
 
 
-async def load_metadata(metadata_sources: List[MetadataSource], cache_ttl: timedelta) -> Metadata:
+async def load_metadata(metadata_sources: list[MetadataSource], cache_ttl: timedelta) -> Metadata:
     now = utc_now()
     renew_at = now + cache_ttl  # Set default renew time
     loaded_metadata: dict[str, IssuerMetadata] = {}
@@ -237,7 +236,7 @@ async def get_tls_fed_metadata() -> Metadata:
     return await load_metadata(metadata_sources=metadata_sources, cache_ttl=config.tls_fed_metadata_cache_ttl)
 
 
-async def get_entity(entity_id: str) -> Optional[MetadataEntity]:
+async def get_entity(entity_id: str) -> MetadataEntity | None:
     metadata = await get_tls_fed_metadata()
     now = utc_now()
 
@@ -271,7 +270,7 @@ async def get_entity(entity_id: str) -> Optional[MetadataEntity]:
     return None
 
 
-async def entity_to_keys(entity: Optional[MetadataEntity]) -> list[Key]:
+async def entity_to_keys(entity: MetadataEntity | None) -> list[Key]:
     keys: list[Key] = []
     if entity is None:
         return keys

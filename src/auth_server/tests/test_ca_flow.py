@@ -1,8 +1,7 @@
-# -*- coding: utf-8 -*-
 import json
 from os import environ
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Self
 from unittest import IsolatedAsyncioTestCase, TestCase
 
 from cryptography import x509
@@ -33,28 +32,28 @@ __author__ = "lundberg"
 
 
 class MockResponse:
-    def __init__(self, content: bytes = b"", status_code: int = 200):
+    def __init__(self: Self, content: bytes = b"", status_code: int = 200) -> None:
         self._content = content
         self._status_code = status_code
         self.accessed_status = 0
 
     @property
-    def content(self):
+    def content(self: Self) -> bytes:
         return self._content
 
     @property
-    def status(self):
+    def status(self: Self) -> int:
         self.accessed_status += 1
         return self._status_code
 
-    async def text(self):
+    async def text(self: Self) -> str:
         return self._content.decode("utf-8")
 
 
 class TestAuthServer(TestCase):
-    def setUp(self) -> None:
+    def setUp(self: Self) -> None:
         self.datadir = Path(__file__).with_name("data")
-        self.config: Dict[str, Any] = {
+        self.config: dict[str, Any] = {
             "testing": "true",
             "log_level": "DEBUG",
             "keystore_path": f"{self.datadir}/testing_jwks.json",
@@ -68,7 +67,7 @@ class TestAuthServer(TestCase):
         self.app = init_auth_server_api()
         self.client = TestClient(self.app)
 
-    def _update_app_config(self, config: Optional[Dict] = None):
+    def _update_app_config(self: Self, config: dict | None = None) -> None:
         if config is not None:
             environ.clear()
             environ.update(config)
@@ -76,12 +75,12 @@ class TestAuthServer(TestCase):
         self.app = init_auth_server_api()
         self.client = TestClient(self.app)
 
-    def _load_cert(self, filename: str) -> Certificate:
+    def _load_cert(self: Self, filename: str) -> Certificate:
         with open(f"{self.datadir}/ca/{filename}", "rb") as f:
             cert = x509.load_pem_x509_certificate(data=f.read())
         return cert
 
-    def _get_access_token_claims(self, access_token: Dict, client: Optional[TestClient]) -> Dict[str, Any]:
+    def _get_access_token_claims(self: Self, access_token: dict, client: TestClient | None) -> dict[str, Any]:
         if client is None:
             client = self.client
         response = client.get("/.well-known/jwk.json")
@@ -90,25 +89,25 @@ class TestAuthServer(TestCase):
         return json.loads(token.claims)
 
     @staticmethod
-    def _clear_lru_cache():
+    def _clear_lru_cache() -> None:
         # Clear lru_cache to allow config update
         load_config.cache_clear()
         load_jwks.cache_clear()
         get_signing_key.cache_clear()
         get_tls_fed_metadata.cache_clear()
 
-    def tearDown(self) -> None:
+    def tearDown(self: Self) -> None:
         self.app = None  # type: ignore
         self.client = None  # type: ignore
         self._clear_lru_cache()
         # Clear environment variables
         environ.clear()
 
-    def test_load_ca_certs(self):
+    def test_load_ca_certs(self: Self) -> None:
         ca_certs = load_ca_certs()
         assert len(ca_certs) == 3
 
-    def test_cert_signed_by_ca(self):
+    def test_cert_signed_by_ca(self: Self) -> None:
         parameters = [
             ("bolag_a.crt", "CN=ExpiTrust Test CA v8,O=Expisoft AB,C=SE"),
             ("bolag_b.crt", "CN=ExpiTrust Test CA v8,O=Expisoft AB,C=SE"),
@@ -120,7 +119,7 @@ class TestAuthServer(TestCase):
             ca_name = cert_signed_by_ca(cert)
             assert ca_name == expected_ca_name
 
-    def test_cert_within_validity_period(self):
+    def test_cert_within_validity_period(self: Self) -> None:
         parameters = [
             ("bolag_a.crt", True),
             ("bolag_b.crt", True),
@@ -133,7 +132,7 @@ class TestAuthServer(TestCase):
                 cert_within_validity_period(cert) is within_validity_period
             ), f"{cert_name} should be {not within_validity_period}"
 
-    def _do_mtls_transaction(self, cert: Certificate) -> Response:
+    def _do_mtls_transaction(self: Self, cert: Certificate) -> Response:
         client_cert_str = serialize_certificate(cert=cert)
         req = GrantRequest(
             client=Client(key=Key(proof=Proof(method=ProofMethod.MTLS), cert_S256=rfc8705_fingerprint(cert=cert))),
@@ -142,7 +141,7 @@ class TestAuthServer(TestCase):
         client_header = {"Client-Cert": client_cert_str}
         return self.client.post("/transaction", json=req.model_dump(exclude_none=True), headers=client_header)
 
-    def test_mtls_transaction(self):
+    def test_mtls_transaction(self: Self) -> None:
         parameters = [
             ("bolag_a.crt", True, "SE5560000167"),
             ("bolag_b.crt", False, "client certificate revoked"),
@@ -174,9 +173,9 @@ class TestAuthServer(TestCase):
 
 
 class TestAuthServerAsync(IsolatedAsyncioTestCase):
-    def setUp(self) -> None:
+    def setUp(self: Self) -> None:
         self.datadir = Path(__file__).with_name("data")
-        self.config: Dict[str, Any] = {
+        self.config: dict[str, Any] = {
             "testing": "true",
             "log_level": "DEBUG",
             "keystore_path": f"{self.datadir}/testing_jwks.json",
@@ -190,12 +189,12 @@ class TestAuthServerAsync(IsolatedAsyncioTestCase):
         self.app = init_auth_server_api()
         self.client = TestClient(self.app)
 
-    def _load_cert(self, filename: str) -> Certificate:
+    def _load_cert(self: Self, filename: str) -> Certificate:
         with open(f"{self.datadir}/ca/{filename}", "rb") as f:
             cert = x509.load_pem_x509_certificate(data=f.read())
         return cert
 
-    async def test_cert_is_revoked(self):
+    async def test_cert_is_revoked(self: Self) -> None:
         parameters = [
             ("bolag_a.crt", False),
             ("bolag_b.crt", True),

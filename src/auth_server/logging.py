@@ -1,9 +1,10 @@
 import logging
 import logging.config
 import time
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 from pprint import pformat
-from typing import Any, Sequence
+from typing import Any, Self
 
 from auth_server.config import AuthServerConfig, ConfigurationError, LoggingFilters
 
@@ -15,11 +16,11 @@ DEFAULT_FORMAT = "{asctime} | {levelname:7} | {name:35} | {module:10} | {message
 
 # Default to RFC3339/ISO 8601 with tz
 class CustomFormatter(logging.Formatter):
-    def __init__(self, relative_time: bool = False, fmt=None):
+    def __init__(self: Self, relative_time: bool = False, fmt: str | None = None) -> None:
         super().__init__(fmt=fmt, style="{")
         self._relative_time = relative_time
 
-    def formatTime(self, record: logging.LogRecord, datefmt=None) -> str:
+    def formatTime(self: Self, record: logging.LogRecord, datefmt: str | None = None) -> str:
         if self._relative_time:
             # Relative time makes much more sense than absolute time when running tests for example
             _seconds = record.relativeCreated / 1000
@@ -41,29 +42,29 @@ class CustomFormatter(logging.Formatter):
 class RequireDebugTrue(logging.Filter):
     """A filter to discard log records if config.debug is not True. Generally not used."""
 
-    def __init__(self, app_debug: bool):
+    def __init__(self: Self, app_debug: bool) -> None:
         super().__init__()
         self.app_debug = app_debug
 
-    def filter(self, record: logging.LogRecord) -> bool:
+    def filter(self: Self, record: logging.LogRecord) -> bool:
         return self.app_debug
 
 
 class RequireDebugFalse(logging.Filter):
     """A filter to discard log records if config.debug is not False. Generally not used."""
 
-    def __init__(self, app_debug: bool):
+    def __init__(self: Self, app_debug: bool) -> None:
         super().__init__()
         self.app_debug = app_debug
 
-    def filter(self, record: logging.LogRecord) -> bool:
+    def filter(self: Self, record: logging.LogRecord) -> bool:
         return not self.app_debug
 
 
 def merge_config(base_config: dict[str, Any], new_config: dict[str, Any]) -> dict[str, Any]:
     """Recursively merge two dictConfig dicts."""
 
-    def merge(node, key, value):
+    def merge(node: dict[str, Any], key: str, value: object) -> None:
         if isinstance(value, dict):
             for item in value:
                 try:
@@ -107,7 +108,7 @@ class LocalContext:
     filters: Sequence[LoggingFilters] = field(default_factory=list)  # filters to activate
     relative_time: bool = False  # use relative time as {asctime}
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self: Self) -> dict[str, Any]:
         res = asdict(self)
         res["level"] = logging.getLevelName(self.level)
         return res

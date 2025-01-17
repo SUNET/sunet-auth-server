@@ -1,6 +1,4 @@
-# -*- coding: utf-8 -*-
 import logging
-from typing import Optional, Union
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from jwcrypto.jwk import JWK, JWKSet
@@ -22,22 +20,22 @@ root_router = APIRouter(route_class=ContextRequestRoute, prefix="")
 
 
 @root_router.get("/.well-known/jwks.json", response_model=JWKS, response_model_exclude_unset=True)
-async def get_jwks(jwks: JWKSet = Depends(load_jwks)):
+async def get_jwks(jwks: JWKSet = Depends(load_jwks)) -> dict:
     jwks = jwks.export(private_keys=False, as_dict=True)
     return jwks
 
 
 @root_router.get(
-    "/.well-known/jwk.json", response_model=Union[ECJWK, RSAJWK, SymmetricJWK], response_model_exclude_unset=True
+    "/.well-known/jwk.json", response_model=ECJWK | RSAJWK | SymmetricJWK, response_model_exclude_unset=True
 )
-async def get_jwk(signing_key: JWK = Depends(get_signing_key)):
+async def get_jwk(signing_key: JWK = Depends(get_signing_key)) -> dict:
     return signing_key.export(private_key=False, as_dict=True)
 
 
 @root_router.get(
     "/.well-known/public.pem", response_class=Response, responses={200: {"content": {"application/x-pem-file": {}}}}
 )
-async def get_public_pem(signing_key: JWK = Depends(get_signing_key)):
+async def get_public_pem(signing_key: JWK = Depends(get_signing_key)) -> Response:
     data = signing_key.export_to_pem(private_key=False)
     return Response(content=data, media_type="application/x-pem-file")
 
@@ -47,11 +45,11 @@ async def get_public_pem(signing_key: JWK = Depends(get_signing_key)):
 async def transaction(
     request: ContextRequest,
     grant_req: GrantRequest,
-    client_cert: Optional[str] = Header(None),
-    detached_jws: Optional[str] = Header(None),
+    client_cert: str | None = Header(None),
+    detached_jws: str | None = Header(None),
     config: AuthServerConfig = Depends(load_config),
     signing_key: JWK = Depends(get_signing_key),
-):
+) -> GrantResponse:
     logger.debug(f"grant_req: {grant_req}")
     logger.debug(f"client_cert: {client_cert}")
     logger.debug(f"detached_jws: {detached_jws}")
@@ -97,14 +95,14 @@ async def transaction(
 @root_router.post("/continue", response_model=GrantResponse, response_model_exclude_none=True)
 async def continue_transaction(
     request: ContextRequest,
-    continue_req: Optional[ContinueRequest] = None,
-    continue_reference: Optional[str] = None,
-    client_cert: Optional[str] = Header(None),
-    detached_jws: Optional[str] = Header(None),
-    authorization: Optional[str] = Header(None),  # TODO: should not really be optional?
+    continue_req: ContinueRequest | None = None,
+    continue_reference: str | None = None,
+    client_cert: str | None = Header(None),
+    detached_jws: str | None = Header(None),
+    authorization: str | None = Header(None),  # TODO: should not really be optional?
     config: AuthServerConfig = Depends(load_config),
     signing_key: JWK = Depends(get_signing_key),
-):
+) -> GrantResponse:
     logger.debug(f"continue_req: {continue_req}")
     logger.debug(f"client_cert: {client_cert}")
     logger.debug(f"detached_jws: {detached_jws}")

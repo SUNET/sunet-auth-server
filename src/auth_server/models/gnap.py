@@ -1,7 +1,6 @@
-# -*- coding: utf-8 -*-
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -41,13 +40,13 @@ class Proof(GnapBaseModel):
 
 class Key(GnapBaseModel):
     proof: Proof
-    jwk: Optional[Union[ECJWK, RSAJWK, SymmetricJWK]] = None
-    cert: Optional[str] = None
-    cert_S256: Optional[str] = Field(default=None, alias="cert#S256")
+    jwk: ECJWK | RSAJWK | SymmetricJWK | None = None
+    cert: str | None = None
+    cert_S256: str | None = Field(default=None, alias="cert#S256")
 
     @field_validator("proof", mode="before")
     @classmethod
-    def expand_proof(cls, v: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
+    def expand_proof(cls: "Key", v: str | dict[str, Any]) -> dict[str, Any]:
         # If additional parameters are not required or used for a specific method,
         # the method MAY be passed as a string instead of an object.
         if isinstance(v, str):
@@ -68,24 +67,24 @@ class Access(GnapBaseModel):
     # The types of actions the client instance will take at the RS as an
     # array of strings.  For example, a client instance asking for a
     # combination of "read" and "write" access.
-    actions: Optional[List[str]] = None
+    actions: list[str] | None = None
     # The location of the RS as an array of strings. These strings are
     # typically URIs identifying the location of the RS.
-    locations: Optional[List[str]] = None
+    locations: list[str] | None = None
     # The kinds of data available to the client instance at the RS's API
     # as an array of strings.  For example, a client instance asking for
     # access to raw "image" data and "metadata" at a photograph API.
-    datatypes: Optional[List[str]] = None
+    datatypes: list[str] | None = None
     # A string identifier indicating a specific resource at the RS. For
     # example, a patient identifier for a medical API or a bank account
     # number for a financial API.
-    identifier: Optional[str] = None
+    identifier: str | None = None
     # The types or levels of privilege being requested at the resource.
     # For example, a client instance asking for administrative level
     # access, or access when the resource owner is no longer online.
-    privileges: Optional[List[str]] = None
+    privileges: list[str] | None = None
     # Sunet addition for requesting access to a specified scope
-    scope: Optional[str] = None
+    scope: str | None = None
 
 
 class AccessTokenFlags(str, Enum):
@@ -94,10 +93,10 @@ class AccessTokenFlags(str, Enum):
 
 
 class AccessTokenRequest(GnapBaseModel):
-    access: Optional[List[Union[str, Access]]] = None
+    access: list[str | Access] | None = None
     # TODO: label is REQUIRED if used as part of a multiple access token request
-    label: Optional[str] = None
-    flags: Optional[List[AccessTokenFlags]] = None
+    label: str | None = None
+    flags: list[AccessTokenFlags] | None = None
 
 
 class SubjectIdentifierFormat(str, Enum):
@@ -116,26 +115,26 @@ class SubjectAssertionFormat(str, Enum):
 
 
 class SubjectRequest(GnapBaseModel):
-    sub_id_formats: Optional[List[SubjectIdentifierFormat]] = None
-    assertion_formats: Optional[List[SubjectAssertionFormat]] = None
-    authentication_context: Optional[List[str]] = None
+    sub_id_formats: list[SubjectIdentifierFormat] | None = None
+    assertion_formats: list[SubjectAssertionFormat] | None = None
+    authentication_context: list[str] | None = None
 
 
 class Display(GnapBaseModel):
-    name: Optional[str] = None
-    uri: Optional[str] = None
-    logo_uri: Optional[str] = None
+    name: str | None = None
+    uri: str | None = None
+    logo_uri: str | None = None
 
 
 class Client(GnapBaseModel):
-    key: Union[str, Key]
-    class_id: Optional[str] = None
-    display: Optional[Display] = None
+    key: str | Key
+    class_id: str | None = None
+    display: Display | None = None
 
 
 class SubjectIdentifier(GnapBaseModel):
     # sub_ids should contain objects as {"format": "opaque", "id": "J2G8G8O4AZ"} or
-    # {"format": "email", "email": "user@example.com"}
+    # {"format": "email", "email": "user@example.com"} #  noqa: ERA001
     # see ietf-secevent-subject-identifiers
     format: SubjectIdentifierFormat
     model_config = ConfigDict(extra="allow")
@@ -147,10 +146,10 @@ class SubjectAssertion(GnapBaseModel):
 
 
 class User(GnapBaseModel):
-    sub_ids: Optional[List[SubjectIdentifier]] = None
+    sub_ids: list[SubjectIdentifier] | None = None
     # An object containing assertions as values keyed on the assertion type.
     # Possible keys include "id_token" for an [OIDC] ID Token and "saml2" for a SAML 2 assertion.
-    assertions: Optional[List[SubjectAssertion]] = None
+    assertions: list[SubjectAssertion] | None = None
 
 
 class TokenManagementInfo(GnapBaseModel):
@@ -172,8 +171,8 @@ class TokenManagementInfo(GnapBaseModel):
     #       the token it is managing.  The client instance MUST present the
     #       continuation access token in all requests to the continuation URI
     #       as described in Section 7.2.  REQUIRED.
-    uri: Optional[str] = None
-    access_token: Optional[Any] = None
+    uri: str | None = None
+    access_token: Any | None = None
 
 
 class StartInteractionMethod(str, Enum):
@@ -201,25 +200,25 @@ class FinishInteraction(GnapBaseModel):
     method: FinishInteractionMethod
     uri: str
     nonce: str
-    hash_method: Optional[HashMethod] = None
+    hash_method: HashMethod | None = None
 
 
 class Hints(GnapBaseModel):
-    ui_locales: Optional[List[str]] = None
+    ui_locales: list[str] | None = None
 
 
 class InteractionRequest(GnapBaseModel):
-    start: List[StartInteractionMethod]
-    finish: Optional[FinishInteraction] = None
-    hints: Optional[Hints] = None
+    start: list[StartInteractionMethod]
+    finish: FinishInteraction | None = None
+    hints: Hints | None = None
 
 
 class GrantRequest(GnapBaseModel):
-    access_token: Union[AccessTokenRequest, List[AccessTokenRequest]]
-    subject: Optional[SubjectRequest] = None
-    client: Union[str, Client]
-    user: Optional[Union[str, User]] = None
-    interact: Optional[InteractionRequest] = None
+    access_token: AccessTokenRequest | list[AccessTokenRequest]
+    subject: SubjectRequest | None = None
+    client: str | Client
+    user: str | User | None = None
+    interact: InteractionRequest | None = None
 
 
 class ContinueAccessToken(GnapBaseModel):
@@ -229,7 +228,7 @@ class ContinueAccessToken(GnapBaseModel):
 
 class Continue(GnapBaseModel):
     uri: str
-    wait: Optional[int] = None
+    wait: int | None = None
     access_token: ContinueAccessToken
 
 
@@ -239,28 +238,28 @@ class UserCodeURI(GnapBaseModel):
 
 
 class InteractionResponse(GnapBaseModel):
-    redirect: Optional[str] = None
-    app: Optional[str] = None
-    user_code: Optional[str] = None
-    user_code_uri: Optional[UserCodeURI] = None
-    finish: Optional[str] = None
-    expires_in: Optional[int] = None
+    redirect: str | None = None
+    app: str | None = None
+    user_code: str | None = None
+    user_code_uri: UserCodeURI | None = None
+    finish: str | None = None
+    expires_in: int | None = None
 
 
 class AccessTokenResponse(GnapBaseModel):
     value: str
-    label: Optional[str] = None
-    manage: Optional[TokenManagementInfo] = None
-    access: Optional[List[Union[str, Access]]] = None
-    expires_in: Optional[int] = Field(default=None, description="seconds until expiry")
-    key: Optional[Union[str, Key]] = None
-    flags: Optional[List[AccessTokenFlags]] = None
+    label: str | None = None
+    manage: TokenManagementInfo | None = None
+    access: list[str | Access] | None = None
+    expires_in: int | None = Field(default=None, description="seconds until expiry")
+    key: str | Key | None = None
+    flags: list[AccessTokenFlags] | None = None
 
 
 class SubjectResponse(GnapBaseModel):
-    sub_ids: Optional[List[SubjectIdentifier]] = None
-    assertions: Optional[List[SubjectAssertion]] = None
-    updated_at: Optional[datetime] = Field(default=None, description="ISO8610 date string")
+    sub_ids: list[SubjectIdentifier] | None = None
+    assertions: list[SubjectAssertion] | None = None
+    updated_at: datetime | None = Field(default=None, description="ISO8610 date string")
 
 
 class ErrorCode(str, Enum):
@@ -282,27 +281,27 @@ class ErrorCode(str, Enum):
 # TODO: Change FastApi HTTPException responses to ErrorResponse
 class ErrorResponse(BaseModel):
     code: ErrorCode
-    error_description: Optional[str] = None
-    continue_: Optional[Continue] = Field(default=None, alias="continue")
+    error_description: str | None = None
+    continue_: Continue | None = Field(default=None, alias="continue")
 
 
 class ContinueRequest(GnapBaseModel):
-    interact_ref: Optional[str] = None
+    interact_ref: str | None = None
 
 
 class GrantResponse(GnapBaseModel):
-    continue_: Optional[Continue] = Field(default=None, alias="continue")
-    access_token: Optional[AccessTokenResponse] = None
-    interact: Optional[InteractionResponse] = None
-    subject: Optional[SubjectResponse] = None
-    instance_id: Optional[str] = None
-    user_handle: Optional[str] = None
+    continue_: Continue | None = Field(default=None, alias="continue")
+    access_token: AccessTokenResponse | None = None
+    interact: InteractionResponse | None = None
+    subject: SubjectResponse | None = None
+    instance_id: str | None = None
+    user_handle: str | None = None
 
 
 class GNAPJOSEHeader(JOSEHeader):
     kid: str
     alg: SupportedAlgorithms
-    typ: Union[SupportedJWSType, SupportedJWSTypeLegacy]
+    typ: SupportedJWSType | SupportedJWSTypeLegacy
     htm: SupportedHTTPMethods
     # The HTTP URI used for this request, including all path and query components.
     uri: str
@@ -311,4 +310,4 @@ class GNAPJOSEHeader(JOSEHeader):
     # When a request is bound to an access token, the access token hash value. The value MUST be the result of
     # Base64url encoding (with no padding) the SHA-256 digest of the ASCII encoding of the associated access
     # token's value.  REQUIRED if the request protects an access token.
-    ath: Optional[str] = None
+    ath: str | None = None

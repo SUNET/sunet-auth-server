@@ -1,10 +1,9 @@
-# -*- coding: utf-8 -*-
 import base64
 import copy
 import json
 from datetime import timedelta
 from pathlib import Path
-from typing import Optional, Union
+from typing import Self
 from unittest import IsolatedAsyncioTestCase
 
 from cryptography import x509
@@ -22,7 +21,7 @@ __author__ = "lundberg"
 
 
 class TestTLSMetadata(IsolatedAsyncioTestCase):
-    def setUp(self) -> None:
+    def setUp(self: Self) -> None:
         self.datadir = Path(__file__).with_name("data")
         self.entity_id = "https://test.localhost"
         self.issuer = "metadata.example.com"
@@ -32,7 +31,7 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
         self.scopes = ["test.localhost"]
 
         # Create metadata jws and save it as a temporary file
-        with open(f"{self.datadir}/tls_fed_jwks.json", "r") as f:
+        with open(f"{self.datadir}/tls_fed_jwks.json") as f:
             self.tls_fed_jwks = jwk.JWKSet()
             self.tls_fed_jwks.import_keyset(f.read())
 
@@ -41,8 +40,8 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
         self.client_cert_str = base64.b64encode(self.client_cert.public_bytes(encoding=Encoding.DER)).decode("utf-8")
 
     async def _load_metadata(
-        self, metadata: Optional[Union[TLSFEDMetadata, str]] = None, strict: bool = True
-    ) -> Optional[Metadata]:
+        self: Self, metadata: TLSFEDMetadata | str | None = None, strict: bool = True
+    ) -> Metadata | None:
         if metadata is None:
             metadata = create_tls_fed_metadata(
                 entity_id=self.entity_id,
@@ -65,22 +64,25 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
             return None
         return await load_metadata(metadata_sources=[metadata_source], cache_ttl=self.cache_ttl)
 
-    async def test_parse_metadata(self):
+    async def test_parse_metadata(self: Self) -> None:
         metadata = await self._load_metadata()
+        assert metadata is not None  # please mypy
         issuer_metadata = list(metadata.issuer_metadata.values())[0]
         assert issuer_metadata is not None
         assert issuer_metadata.renew_at.replace(microsecond=0) == (self.about_now + self.cache_ttl).replace(
             microsecond=0
         )
         assert len(issuer_metadata.entities) == 1
-        for entity_id, entity in issuer_metadata.entities.items():
+        for entity in issuer_metadata.entities.values():
             assert isinstance(entity, MetadataEntity) is True
             assert entity.issuer == self.issuer
             assert entity.entity_id == self.entity_id
             assert entity.expires_at == (self.about_now + self.expires).replace(microsecond=0)
+            assert entity.extensions is not None
+            assert entity.extensions.saml_scope is not None
             assert entity.extensions.saml_scope.scope == self.scopes
 
-    async def test_parse_faulty_metadata(self):
+    async def test_parse_faulty_metadata(self: Self) -> None:
         serialized_metadata = create_tls_fed_metadata(
             entity_id=self.entity_id,
             cache_ttl=self.cache_ttl.seconds,
@@ -108,11 +110,12 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
 
         # valid entities should be returned when using non-strict mode
         metadata = await self._load_metadata(metadata=modified_metadata, strict=False)
+        assert metadata is not None  # please mypy
         for issuer_metadata in metadata.issuer_metadata.values():
             assert issuer_metadata is not None
             assert len(issuer_metadata.entities) == 1
 
-    async def test_parse_unregistered_extension_in_metadata(self):
+    async def test_parse_unregistered_extension_in_metadata(self: Self) -> None:
         serialized_metadata = create_tls_fed_metadata(
             entity_id=self.entity_id,
             cache_ttl=self.cache_ttl.seconds,
@@ -129,6 +132,7 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
         modified_metadata = json.dumps(deserialized_metadata)
         # both entities should be returned when using strict mode
         metadata = await self._load_metadata(metadata=modified_metadata, strict=True)
+        assert metadata is not None  # please mypy
 
         issuer_metadata = list(metadata.issuer_metadata.values())[0]
         assert issuer_metadata is not None

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import argparse
 import os
 import sys
@@ -6,15 +5,15 @@ from base64 import b64encode
 from datetime import datetime, timedelta
 
 from cryptography import x509
-from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.x509 import NameOID
 
-__author__ = 'lundberg'
+__author__ = "lundberg"
 
 
-def main(args: argparse.Namespace):
+def main(args: argparse.Namespace) -> None:
     # Generate key
     key = rsa.generate_private_key(public_exponent=65537, key_size=4096)
     passphrase = serialization.NoEncryption()
@@ -28,16 +27,16 @@ def main(args: argparse.Namespace):
 
     # Write key
     if args.out is not None:
-        key_path = f'{args.out}{os.sep}{args.common_name}.key'
+        key_path = f"{args.out}{os.sep}{args.common_name}.key"
         if os.path.exists(key_path):
-            sys.stderr.write(f'{key_path} already exists\n')
+            sys.stderr.write(f"{key_path} already exists\n")
             sys.exit(1)
-        with open(key_path, 'wb') as f:
+        with open(key_path, "wb") as f:
             f.write(private_bytes)
     else:
-        sys.stdout.writelines(f'Private key for {args.common_name}:\n')
-        sys.stdout.writelines(private_bytes.decode('utf-8'))
-        sys.stdout.writelines('\n')
+        sys.stdout.writelines(f"Private key for {args.common_name}:\n")
+        sys.stdout.writelines(private_bytes.decode("utf-8"))
+        sys.stdout.writelines("\n")
 
     # Various details about who we are. For a self-signed certificate the
     # subject and issuer are always the same.
@@ -69,32 +68,32 @@ def main(args: argparse.Namespace):
     public_bytes = cert.public_bytes(serialization.Encoding.PEM)
     # Write certificate
     if args.out is not None:
-        cert_path = f'{args.out}{os.sep}{args.common_name}.crt'
+        cert_path = f"{args.out}{os.sep}{args.common_name}.crt"
         if os.path.exists(cert_path):
-            sys.stderr.write(f'{cert_path} already exists\n')
+            sys.stderr.write(f"{cert_path} already exists\n")
             sys.exit(1)
-        with open(cert_path, 'wb') as f:
+        with open(cert_path, "wb") as f:
             f.write(public_bytes)
     else:
-        sys.stdout.writelines(f'Certificate for {args.common_name}:\n')
-        sys.stdout.writelines(public_bytes.decode('utf-8'))
-        sys.stdout.writelines('\n')
+        sys.stdout.writelines(f"Certificate for {args.common_name}:\n")
+        sys.stdout.writelines(public_bytes.decode("utf-8"))
+        sys.stdout.writelines("\n")
 
     # Print additional info
-    sys.stdout.writelines('cert#S256 fingerprint:\n')
-    sys.stdout.writelines(b64encode(cert.fingerprint(algorithm=SHA256())).decode('utf-8'))
-    sys.stdout.writelines('\n')
+    sys.stdout.writelines("cert#S256 fingerprint:\n")
+    sys.stdout.writelines(b64encode(cert.fingerprint(algorithm=SHA256())).decode("utf-8"))
+    sys.stdout.writelines("\n")
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Generate key and cert')
-    parser.add_argument('--country', '-c', default='SE', help='country (default: SE)', type=str)
-    parser.add_argument('--province', '-p', default='Stockholm', help='province (default: Stockholm)', type=str)
-    parser.add_argument('--locality', '-l', default='Stockholm', help='locality (default: Stockholm)', type=str)
-    parser.add_argument('--organization', '-o', default='Sunet', help='organization (default: Sunet)', type=str)
-    parser.add_argument('--common-name', '-cn', help='common name', type=str, required=True)
-    parser.add_argument('--expires', '-e', default=365, help='expires in X days (default: 365)', type=int)
-    parser.add_argument('--alt-names', help='alternative names', nargs='*', default=[], type=str)
-    parser.add_argument('--passphrase', help='passphrase for key', nargs='?', default=None, type=str)
-    parser.add_argument('--out', help='output directory', nargs='?', default=None, type=str)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Generate key and cert")
+    parser.add_argument("--country", "-c", default="SE", help="country (default: SE)", type=str)
+    parser.add_argument("--province", "-p", default="Stockholm", help="province (default: Stockholm)", type=str)
+    parser.add_argument("--locality", "-l", default="Stockholm", help="locality (default: Stockholm)", type=str)
+    parser.add_argument("--organization", "-o", default="Sunet", help="organization (default: Sunet)", type=str)
+    parser.add_argument("--common-name", "-cn", help="common name", type=str, required=True)
+    parser.add_argument("--expires", "-e", default=365, help="expires in X days (default: 365)", type=int)
+    parser.add_argument("--alt-names", help="alternative names", nargs="*", default=[], type=str)
+    parser.add_argument("--passphrase", help="passphrase for key", nargs="?", default=None, type=str)
+    parser.add_argument("--out", help="output directory", nargs="?", default=None, type=str)
     main(args=parser.parse_args())

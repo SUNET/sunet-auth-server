@@ -1,9 +1,7 @@
-# -*- coding: utf-8 -*-
 __author__ = "lundberg"
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Form, HTTPException
 from starlette.responses import HTMLResponse, RedirectResponse, Response
@@ -49,12 +47,12 @@ async def redirect(request: ContextRequest, transaction_id: str, background_task
 
 
 @interaction_router.get("/code", response_class=HTMLResponse)
-async def user_code_input(request: ContextRequest):
+async def user_code_input(request: ContextRequest) -> templates.TemplateResponse:
     return templates.TemplateResponse("user_code.jinja2", context={"request": request})
 
 
 @interaction_router.post("/code", response_class=HTMLResponse)
-async def user_code_finish(request: ContextRequest, user_code: Optional[str] = Form(...)) -> Response:
+async def user_code_finish(request: ContextRequest, user_code: str | None = Form(...)) -> Response:
     transaction_db = await get_transaction_state_db()
     if transaction_db is None:
         # if there is no database available no requests should get here
@@ -117,7 +115,10 @@ async def finish_interaction(
 
         # redirect method
         if transaction_state.grant_request.interact.finish.method is FinishInteractionMethod.REDIRECT:
-            redirect_url = f"{transaction_state.grant_request.interact.finish.uri}?hash={interaction_hash}&interact_ref={interact_ref}"
+            redirect_url = (
+                f"{transaction_state.grant_request.interact.finish.uri}?"
+                f"hash={interaction_hash}&interact_ref={interact_ref}"
+            )
             return RedirectResponse(redirect_url)
         # push method
         elif transaction_state.grant_request.interact.finish.method is FinishInteractionMethod.PUSH:

@@ -1,0 +1,6 @@
+extend = "./ruff.toml"
+
+[lint]
+# Some rules are marked as incompatible with the formatter so use them in an extended check instead.
+# See: https://docs.astral.sh/ruff/formatter/#conflicting-lint-rules
+extend-select = ["E501", "ISC"]

@@ -1,10 +1,9 @@
-# -*- coding: utf-8 -*-
 __author__ = "lundberg"
 
-from collections.abc import MutableMapping
+from collections.abc import ItemsView, Iterator, KeysView, MutableMapping, ValuesView
 from datetime import timedelta
 from logging import getLogger
-from typing import Any, Dict, ItemsView, Iterator, KeysView, List, Optional, Tuple, Union, ValuesView
+from typing import Any, Self
 
 from pymongo import MongoClient, WriteConcern
 
@@ -17,10 +16,15 @@ class CacheWriteException(Exception):
     pass
 
 
-class MongoCacheDB(object):
+class MongoCacheDB:
     def __init__(
-        self, db_client: MongoClient, db_name: str, collection: str, expire_after: timedelta, safe_writes: bool = False
-    ):
+        self: Self,
+        db_client: MongoClient,
+        db_name: str,
+        collection: str,
+        expire_after: timedelta,
+        safe_writes: bool = False,
+    ) -> None:
         self._conn = db_client
         self._db_name = db_name
         self._coll_name = collection
@@ -32,11 +36,11 @@ class MongoCacheDB(object):
             self._coll = self._coll.with_options(write_concern=WriteConcern(w="majority"))
 
     def _get_documents_by_filter(
-        self,
-        spec: Dict[str, Any],
-        fields: Optional[Union[Dict[str, bool], List[str]]] = None,
-        skip: Optional[int] = None,
-        limit: Optional[int] = None,
+        self: Self,
+        spec: dict[str, Any],
+        fields: dict[str, bool] | list[str] | None = None,
+        skip: int | None = None,
+        limit: int | None = None,
     ) -> Iterator[MutableMapping]:
         """
         Locate documents in the db using a custom search filter.
@@ -57,97 +61,95 @@ class MongoCacheDB(object):
         if limit is not None:
             cursor = cursor.limit(limit=limit)
 
-        for doc in cursor:
-            yield doc
+        yield from cursor
 
-    def _drop_whole_collection(self):
+    def _drop_whole_collection(self: Self) -> None:
         """
         Drop the whole collection. Should ONLY be used in testing, obviously.
         :return:
         """
-        logger.warning("{!s} Dropping collection {!r}".format(self, self._coll_name))
+        logger.warning(f"{self!s} Dropping collection {self._coll_name!r}")
         return self._coll.drop()
 
-    def db_count(self, spec: Optional[dict] = None, limit: Optional[int] = None) -> int:
+    def db_count(self: Self, spec: dict | None = None, limit: int | None = None) -> int:
         """
         Return number of entries in the collection.
 
         :return: Document count
         """
-        args: Dict[Any, Any] = {"filter": {}}
+        args: dict[Any, Any] = {"filter": {}}
         if spec:
             args["filter"] = spec
         if limit:
             args["limit"] = limit
         return self._coll.count_documents(**args)
 
-    def all_items(self, fields: Optional[Union[Dict[str, bool], List[str]]]) -> Iterator[MutableMapping]:
+    def all_items(self: Self, fields: dict[str, bool] | list[str] | None) -> Iterator[MutableMapping]:
         """
         Return all the items in the database.
         """
-        for doc in self._get_documents_by_filter(spec={}, fields=fields):
-            yield doc
+        yield from self._get_documents_by_filter(spec={}, fields=fields)
 
-    def update_item(self, key: str, value: Any) -> None:
+    def update_item(self: Self, key: str, value: str | int | bool | list | dict) -> None:
         doc = {"lookup_key": key, "data": value, "modified_ts": utc_now()}
         res = self._coll.replace_one({"lookup_key": key}, doc, upsert=True)
         if not res.acknowledged or (res.matched_count != res.modified_count):
             raise CacheWriteException(f"Failed to UPDATE item {key} in collection {self._coll.name}")
 
-    def get_item(self, key: str) -> MutableMapping:
+    def get_item(self: Self, key: str) -> MutableMapping:
         docs = self._get_documents_by_filter(spec={"lookup_key": key}, fields={"_id": False, "data": True}, limit=1)
         for doc in docs:
             return doc["data"]
         raise KeyError(key)
 
-    def get_items(self) -> Iterator[Tuple[str, Any]]:
+    def get_items(self: Self) -> Iterator[tuple[str, Any]]:
         docs = self.all_items(fields={"_id": False, "lookup_key": True, "data": True})
         for doc in docs:
             yield doc["lookup_key"], doc["data"]
 
-    def get_values(self) -> Iterator[Any]:
+    def get_values(self: Self) -> Iterator[Any]:
         docs = self.all_items(fields={"_id": False, "data": True})
         for doc in docs:
             yield doc["data"]
 
-    def remove_item(self, key: str) -> None:
+    def remove_item(self: Self, key: str) -> None:
         res = self._coll.delete_one(filter={"lookup_key": key})
         if not res.acknowledged or (res.deleted_count != 1):
             raise CacheWriteException(f"Failed to DELETE item {key} in collection {self._coll.name}")
 
-    def contains_item(self, key: str) -> bool:
+    def contains_item(self: Self, key: str) -> bool:
         return bool(self.db_count(spec={"lookup_key": key}, limit=1))
 
 
 class MongoCache(MutableMapping):
-    def __init__(self, db_client: MongoClient, db_name: str, collection: str, expire_after: timedelta):
+    def __init__(self: Self, db_client: MongoClient, db_name: str, collection: str, expire_after: timedelta) -> None:
         self._db = MongoCacheDB(
             db_client=db_client, db_name=db_name, collection=collection, expire_after=expire_after, safe_writes=True
         )
 
-    def __iter__(self) -> Iterator[Any]:
+    def __iter__(self: Self) -> Iterator[Any]:
         return self._db.get_values()
 
-    def __len__(self) -> int:
+    def __len__(self: Self) -> int:
         return self._db.db_count()
 
-    def __setitem__(self, key: str, value: Any) -> None:
+    def __setitem__(self: Self, key: str, value: MutableMapping[str, Any]) -> None:
         self._db.update_item(key, value)
 
-    def __getitem__(self, key: str) -> Any:
+    def __getitem__(self: Self, key: str) -> MutableMapping[str, Any]:
         return self._db.get_item(key)
 
-    def __delitem__(self, key: str) -> None:
+    def __delitem__(self: Self, key: str) -> None:
         self._db.remove_item(key)
 
-    def __contains__(self, key: Any) -> bool:
+    def __contains__(self: Self, key: str | int | bool | dict | list) -> bool:
         return self._db.contains_item(key)
 
-    def items(self) -> ItemsView[Any, Any]:
+    def items(self: Self) -> ItemsView[Any, Any]:
         return ItemsView({key: value for key, value in self._db.get_items()})
 
-    def keys(self) -> KeysView[Any]:
+    def keys(self: Self) -> KeysView[Any]:
         return KeysView({key: value for key, value in self._db.get_items()})
 
-    def values(self) -> ValuesView[Any]:
+    def values(self: Self) -> ValuesView[Any]:
         return ValuesView({key: value for key, value in self._db.get_items()})

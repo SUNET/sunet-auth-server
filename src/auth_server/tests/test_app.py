@@ -1,11 +1,11 @@
-# -*- coding: utf-8 -*-
 import base64
 import json
+from collections.abc import Mapping
 from datetime import timedelta
 from os import environ
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Self
 from unittest import TestCase, mock
 from unittest.mock import AsyncMock
 from urllib.parse import parse_qs, urlparse
@@ -55,29 +55,29 @@ __author__ = "lundberg"
 
 
 class MockResponse:
-    def __init__(self, content: bytes = b"", status_code: int = 200):
+    def __init__(self: Self, content: bytes = b"", status_code: int = 200) -> None:
         self._content = content
         self._status_code = status_code
         self.accessed_status = 0
 
     @property
-    def content(self):
+    def content(self: Self) -> bytes:
         return self._content
 
     @property
-    def status(self):
+    def status(self: Self) -> int:
         self.accessed_status += 1
         return self._status_code
 
-    async def text(self):
+    async def text(self: Self) -> str:
         return self._content.decode("utf-8")
 
 
 class TestAuthServer(TestCase):
-    def setUp(self) -> None:
+    def setUp(self: Self) -> None:
         self.datadir = Path(__file__).with_name("data")
         self.mongo_db = MongoTemporaryInstance.get_instance()
-        self.config: Dict[str, Any] = {
+        self.config: dict[str, Any] = {
             "testing": "true",
             "log_level": "DEBUG",
             "keystore_path": f"{self.datadir}/testing_jwks.json",
@@ -112,7 +112,7 @@ class TestAuthServer(TestCase):
             self.mdq_response = f.read()
         self.client_jwk = jwk.JWK.generate(kid="default", kty="EC", crv="P-256")
 
-    def _update_app_config(self, config: Optional[Dict] = None):
+    def _update_app_config(self: Self, config: dict | None = None) -> None:
         if config is not None:
             environ.clear()
             environ.update(config)
@@ -121,14 +121,14 @@ class TestAuthServer(TestCase):
         self.client = TestClient(self.app)
 
     @staticmethod
-    def _clear_lru_cache():
+    def _clear_lru_cache() -> None:
         # Clear lru_cache to allow config update
         load_config.cache_clear()
         load_jwks.cache_clear()
         get_signing_key.cache_clear()
         get_tls_fed_metadata.cache_clear()
 
-    def tearDown(self) -> None:
+    def tearDown(self: Self) -> None:
         self.app = None  # type: ignore
         self.client = None  # type: ignore
         self._clear_lru_cache()
@@ -137,7 +137,7 @@ class TestAuthServer(TestCase):
         # Clear environment variables
         environ.clear()
 
-    def _get_access_token_claims(self, access_token: Dict, client: Optional[TestClient]) -> Dict[str, Any]:
+    def _get_access_token_claims(self: Self, access_token: dict, client: TestClient | None) -> dict[str, Any]:
         if client is None:
             client = self.client
         response = client.get("/.well-known/jwk.json")
@@ -146,18 +146,18 @@ class TestAuthServer(TestCase):
         assert json.loads(token.header)["kid"] == response.json()["kid"]
         return json.loads(token.claims)
 
-    def _get_transaction_state_by_id(self, transaction_id) -> TransactionState:
+    def _get_transaction_state_by_id(self: Self, transaction_id: str) -> TransactionState:
         doc = self.transaction_states.find_one({"transaction_id": transaction_id})
         assert doc is not None  # please mypy
         assert isinstance(doc, Mapping) is True  # please mypy
         return TransactionState(**doc)
 
-    def _save_transaction_state(self, transaction_state: TransactionState) -> None:
+    def _save_transaction_state(self: Self, transaction_state: TransactionState) -> None:
         self.transaction_states.replace_one(
             {"transaction_id": transaction_state.transaction_id}, transaction_state.dict(exclude_none=True)
         )
 
-    def _fake_saml_authentication(self, transaction_id: str):
+    def _fake_saml_authentication(self: Self, transaction_id: str) -> None:
         transaction_state = self._get_transaction_state_by_id(transaction_id)
         # seems like mypy no longer understands allow_population_by_field_name
         attributes = SAMLAttributes(
@@ -190,17 +190,16 @@ class TestAuthServer(TestCase):
             attributes=attributes,
             name_id=name_id,
             authn_info=authn_info,
-            # raw_assertion="mock_raw_assertion",
         )
         self._save_transaction_state(transaction_state)
 
-    def test_get_status_healty(self):
+    def test_get_status_healty(self: Self) -> None:
         response = self.client.get("/status/healthy")
         assert response.status_code == 200
         assert "status" in response.json()
         assert response.json()["status"] == Status.OK.value
 
-    def test_read_jwks(self):
+    def test_read_jwks(self: Self) -> None:
         response = self.client.get("/.well-known/jwks.json")
         assert response.status_code == 200
         assert "keys" in response.json()
@@ -208,7 +207,7 @@ class TestAuthServer(TestCase):
         assert 1 == len(keys)
         assert ECJWK(**keys[0]).dict(exclude_none=True) == keys[0]
 
-    def test_read_jwk(self):
+    def test_read_jwk(self: Self) -> None:
         response = self.client.get("/.well-known/jwk.json")
         assert response.status_code == 200
         jwk = ECJWK(**response.json())
@@ -219,11 +218,11 @@ class TestAuthServer(TestCase):
         assert jwk.x == "RQ4UriZV8y1g97KSZEDzrEAHeN0K0yvfiNjyNjBsqo8"
         assert jwk.y == "eRmcA40T-NIFxostV1E7-GDsavCZ3PVAmzDou-uIpvo"
 
-    def test_read_pem(self):
+    def test_read_pem(self: Self) -> None:
         response = self.client.get("/.well-known/public.pem")
         assert response.status_code == 200
 
-    def test_transaction_test_mode(self):
+    def test_transaction_test_mode(self: Self) -> None:
         req = GrantRequest(
             client=Client(key=Key(proof=Proof(method=ProofMethod.TEST))),
             access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
@@ -239,10 +238,10 @@ class TestAuthServer(TestCase):
         assert claims["auth_source"] == AuthSource.TEST
         assert claims["aud"] == "some_audience"
 
-    def test_config_from_yaml(self):
+    def test_config_from_yaml(self: Self) -> None:
         # Set absolute path to testing_jwks.json
         config_file_path = f"{self.datadir}/test_config.yaml"
-        with open(config_file_path, "r") as f:
+        with open(config_file_path) as f:
             config = yaml.safe_load(f)
         with NamedTemporaryFile(mode="w") as tf:
             config["auth_server"]["keystore_path"] = f"{self.datadir}/testing_jwks.json"
@@ -268,7 +267,7 @@ class TestAuthServer(TestCase):
         assert claims["aud"] == "another_audience"
         assert claims["iss"] == "authserver.local"
 
-    def test_transaction_mtls(self):
+    def test_transaction_mtls(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["TestFlow"])
         self._update_app_config(config=self.config)
 
@@ -288,7 +287,7 @@ class TestAuthServer(TestCase):
         assert claims["auth_source"] == AuthSource.TEST
 
     @mock.patch("aiohttp.ClientSession.get", new_callable=AsyncMock)
-    def test_transaction_mtls_mdq_with_key_reference(self, mock_mdq):
+    def test_transaction_mtls_mdq_with_key_reference(self: Self, mock_mdq: AsyncMock) -> None:
         self.config["auth_flows"] = json.dumps(["TestFlow", "MDQFlow"])
         self._update_app_config(config=self.config)
 
@@ -309,7 +308,7 @@ class TestAuthServer(TestCase):
         claims = self._get_access_token_claims(access_token=access_token, client=self.client)
         assert claims["auth_source"] == AuthSource.MDQ
 
-    def test_transaction_jws(self):
+    def test_transaction_jws(self: Self) -> None:
         client_key_dict = self.client_jwk.export_public(as_dict=True)
         client_jwk = ECJWK(**client_key_dict)
         req = GrantRequest(
@@ -343,7 +342,7 @@ class TestAuthServer(TestCase):
         claims = self._get_access_token_claims(access_token=access_token, client=self.client)
         assert claims["auth_source"] == AuthSource.TEST
 
-    def test_transaction_jws_legacy_typ(self):
+    def test_transaction_jws_legacy_typ(self: Self) -> None:
         client_key_dict = self.client_jwk.export_public(as_dict=True)
         client_jwk = ECJWK(**client_key_dict)
         req = GrantRequest(
@@ -377,13 +376,13 @@ class TestAuthServer(TestCase):
         claims = self._get_access_token_claims(access_token=access_token, client=self.client)
         assert claims["auth_source"] == AuthSource.TEST
 
-    def test_deserialize_bad_jws(self):
+    def test_deserialize_bad_jws(self: Self) -> None:
         client_header = {"Content-Type": "application/jose"}
         response = self.client.post("/transaction", content=b"bogus_jws", headers=client_header)
         assert response.status_code == 400
         assert response.json()["detail"] == "JWS could not be deserialized"
 
-    def test_transaction_jwsd(self):
+    def test_transaction_jwsd(self: Self) -> None:
         client_key_dict = self.client_jwk.export_public(as_dict=True)
         client_jwk = ECJWK(**client_key_dict)
         req = GrantRequest(
@@ -430,7 +429,7 @@ class TestAuthServer(TestCase):
         claims = self._get_access_token_claims(access_token=access_token, client=self.client)
         assert claims["auth_source"] == AuthSource.TEST
 
-    def test_transaction_jwsd_legacy_typ(self):
+    def test_transaction_jwsd_legacy_typ(self: Self) -> None:
         client_key_dict = self.client_jwk.export_public(as_dict=True)
         client_jwk = ECJWK(**client_key_dict)
         req = GrantRequest(
@@ -478,7 +477,7 @@ class TestAuthServer(TestCase):
         assert claims["auth_source"] == AuthSource.TEST
 
     @mock.patch("aiohttp.ClientSession.get", new_callable=AsyncMock)
-    def test_mdq_flow(self, mock_mdq):
+    def test_mdq_flow(self: Self, mock_mdq: AsyncMock) -> None:
         self.config["auth_flows"] = json.dumps(["TestFlow", "MDQFlow"])
         self._update_app_config(config=self.config)
 
@@ -504,7 +503,7 @@ class TestAuthServer(TestCase):
         assert claims["source"] == "http://www.swamid.se/"
 
     def _setup_remote_tls_fed_test(
-        self, entity_id: str, scopes: list[str] | None = None, client_certs: list[str] | None = None
+        self: Self, entity_id: str, scopes: list[str] | None = None, client_certs: list[str] | None = None
     ) -> bytes:
         if scopes is None:
             scopes = ["test.localhost"]
@@ -518,7 +517,7 @@ class TestAuthServer(TestCase):
         self._update_app_config(config=self.config)
 
         # Create metadata jws and set it as mock response
-        with open(f"{self.datadir}/tls_fed_jwks.json", "r") as f:
+        with open(f"{self.datadir}/tls_fed_jwks.json") as f:
             tls_fed_jwks = jwk.JWKSet()
             tls_fed_jwks.import_keyset(f.read())
 
@@ -533,7 +532,7 @@ class TestAuthServer(TestCase):
         return metadata_jws
 
     @mock.patch("aiohttp.ClientSession.get", new_callable=AsyncMock)
-    def test_tls_fed_flow_remote_metadata(self, mock_metadata):
+    def test_tls_fed_flow_remote_metadata(self: Self, mock_metadata: AsyncMock) -> None:
         entity_id = "https://test.localhost"
         metadata_jws = self._setup_remote_tls_fed_test(entity_id=entity_id)
         mock_metadata.return_value = MockResponse(content=metadata_jws)
@@ -560,7 +559,7 @@ class TestAuthServer(TestCase):
         assert claims["source"] == "metadata.example.com"
 
     @mock.patch("aiohttp.ClientSession.get", new_callable=AsyncMock)
-    def test_tls_fed_flow_remote_metadata_multi_certs(self, mock_metadata):
+    def test_tls_fed_flow_remote_metadata_multi_certs(self: Self, mock_metadata: AsyncMock) -> None:
         entity_id = "https://test.localhost"
         new_client_key, new_client_cert = create_cert(common_name="test.localhost")
         new_client_cert_str = serialize_certificate(cert=new_client_cert)
@@ -589,9 +588,9 @@ class TestAuthServer(TestCase):
         assert claims["organization_id"] == "SE0123456789"
         assert claims["source"] == "metadata.example.com"
 
-    def test_tls_fed_flow_local_metadata(self):
+    def test_tls_fed_flow_local_metadata(self: Self) -> None:
         # Create metadata jws and save it as a temporary file
-        with open(f"{self.datadir}/tls_fed_jwks.json", "r") as f:
+        with open(f"{self.datadir}/tls_fed_jwks.json") as f:
             tls_fed_jwks = jwk.JWKSet()
             tls_fed_jwks.import_keyset(f.read())
 
@@ -639,7 +638,7 @@ class TestAuthServer(TestCase):
             assert claims["source"] == "metadata.example.com"
 
     @mock.patch("aiohttp.ClientSession.get", new_callable=AsyncMock)
-    def test_tls_fed_flow_expired_entity(self, mock_metadata):
+    def test_tls_fed_flow_expired_entity(self: Self, mock_metadata: AsyncMock) -> None:
         self.config["auth_flows"] = json.dumps(["TLSFEDFlow"])
         self.config["tls_fed_metadata"] = json.dumps(
             [{"remote": "https://metadata.example.com/metadata.jws", "jwks": f"{self.datadir}/tls_fed_jwks.json"}]
@@ -647,7 +646,7 @@ class TestAuthServer(TestCase):
         self._update_app_config(config=self.config)
 
         # Create metadata jws and set it as mock response
-        with open(f"{self.datadir}/tls_fed_jwks.json", "r") as f:
+        with open(f"{self.datadir}/tls_fed_jwks.json") as f:
             tls_fed_jwks = jwk.JWKSet()
             tls_fed_jwks.import_keyset(f.read())
 
@@ -673,7 +672,7 @@ class TestAuthServer(TestCase):
         response = self.client.post("/transaction", json=req.model_dump(exclude_none=True), headers=client_header)
         assert response.status_code == 401
 
-    def test_config_flow(self):
+    def test_config_flow(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["TestFlow", "ConfigFlow"])
         del self.config["auth_token_audience"]  # auth_token_audience defaults to None
         client_key = ClientKey(
@@ -701,7 +700,7 @@ class TestAuthServer(TestCase):
         assert claims["source"] == "config"
         assert "aud" not in claims
 
-    def test_requested_access_in_jwt(self):
+    def test_requested_access_in_jwt(self: Self) -> None:
         grant_request = {
             "access_token": {
                 "flags": ["bearer"],
@@ -732,7 +731,7 @@ class TestAuthServer(TestCase):
                 assert "scope" in item
                 assert item["scope"] == "a_scope"
 
-    def test_transaction_interact_start(self):
+    def test_transaction_interact_start(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["TestFlow"])
         self.config["pysaml2_config_path"] = str(Path(__file__).with_name("data") / "saml" / "saml2_settings.py")
         self.config["saml2_discovery_service_url"] = "https://disco.example.com/ds/"
@@ -777,7 +776,7 @@ class TestAuthServer(TestCase):
         assert response.status_code == 200
         assert "<h3>Interaction finished</h3>" in response.text
 
-    def test_transaction_interact_redirect_finish(self):
+    def test_transaction_interact_redirect_finish(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["TestFlow"])
         self.config["pysaml2_config_path"] = str(Path(__file__).with_name("data") / "saml" / "saml2_settings.py")
         self.config["saml2_discovery_service_url"] = "https://disco.example.com/ds/"
@@ -816,7 +815,7 @@ class TestAuthServer(TestCase):
         assert response.status_code == 307
 
     @mock.patch("aiohttp.ClientSession.post", new_callable=AsyncMock)
-    def test_transaction_interact_push_finish(self, mock_response):
+    def test_transaction_interact_push_finish(self: Self, mock_response: AsyncMock) -> None:
         mock_response.return_value = MockResponse()  # mock response to background push task
         assert mock_response.return_value.accessed_status == 0
 
@@ -857,7 +856,7 @@ class TestAuthServer(TestCase):
         assert response.status_code == 200
         assert mock_response.return_value.accessed_status == 1
 
-    def test_transaction_interact_user_code_start(self):
+    def test_transaction_interact_user_code_start(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["TestFlow"])
         self.config["pysaml2_config_path"] = str(Path(__file__).with_name("data") / "saml" / "saml2_settings.py")
         self.config["saml2_discovery_service_url"] = "https://disco.example.com/ds/"
@@ -897,7 +896,7 @@ class TestAuthServer(TestCase):
         assert response.status_code == 200
         assert "<h3>Interaction finished</h3>" in response.text
 
-    def test_transaction_interact_user_code_uri_start(self):
+    def test_transaction_interact_user_code_uri_start(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["TestFlow"])
         self.config["pysaml2_config_path"] = str(Path(__file__).with_name("data") / "saml" / "saml2_settings.py")
         self.config["saml2_discovery_service_url"] = "https://disco.example.com/ds/"
@@ -938,7 +937,7 @@ class TestAuthServer(TestCase):
         assert response.status_code == 200
         assert "<h3>Interaction finished</h3>" in response.text
 
-    def test_transaction_continue(self):
+    def test_transaction_continue(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["TestFlow"])
         self.config["pysaml2_config_path"] = str(Path(__file__).with_name("data") / "saml" / "saml2_settings.py")
         self.config["saml2_discovery_service_url"] = "https://disco.example.com/ds/"
@@ -994,7 +993,7 @@ class TestAuthServer(TestCase):
         assert claims["saml_assurance"] is not None
         assert claims["saml_entitlement"] is not None
 
-    def test_transaction_continue_check_progress(self):
+    def test_transaction_continue_check_progress(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["TestFlow"])
         self.config["pysaml2_config_path"] = str(Path(__file__).with_name("data") / "saml" / "saml2_settings.py")
         self.config["saml2_discovery_service_url"] = "https://disco.example.com/ds/"
@@ -1057,7 +1056,7 @@ class TestAuthServer(TestCase):
         assert claims["saml_issuer"] == "https://idp.example.com"
         assert claims["saml_eppn"] == "test@example.com"
 
-    def test_transaction_mtls_continue(self):
+    def test_transaction_mtls_continue(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["InteractionFlow"])
         self._update_app_config(config=self.config)
 
@@ -1117,7 +1116,7 @@ class TestAuthServer(TestCase):
         assert claims["saml_issuer"] == "https://idp.example.com"
         assert claims["saml_eppn"] == "test@example.com"
 
-    def test_transaction_jws_continue(self):
+    def test_transaction_jws_continue(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["InteractionFlow"])
         self._update_app_config(config=self.config)
 
@@ -1199,7 +1198,7 @@ class TestAuthServer(TestCase):
         assert claims["saml_issuer"] == "https://idp.example.com"
         assert claims["saml_eppn"] == "test@example.com"
 
-    def test_transaction_jws_continue_redirect_finish(self):
+    def test_transaction_jws_continue_redirect_finish(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["InteractionFlow"])
         self._update_app_config(config=self.config)
 
@@ -1303,7 +1302,7 @@ class TestAuthServer(TestCase):
         assert claims["saml_issuer"] == "https://idp.example.com"
         assert claims["saml_eppn"] == "test@example.com"
 
-    def test_transaction_jwsd_continue(self):
+    def test_transaction_jwsd_continue(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["InteractionFlow"])
         self._update_app_config(config=self.config)
 
@@ -1406,7 +1405,7 @@ class TestAuthServer(TestCase):
         assert claims["saml_issuer"] == "https://idp.example.com"
         assert claims["saml_eppn"] == "test@example.com"
 
-    def test_subject_request_response(self):
+    def test_subject_request_response(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["TestFlow"])
         self.config["pysaml2_config_path"] = str(Path(__file__).with_name("data") / "saml" / "saml2_settings.py")
         self.config["saml2_discovery_service_url"] = "https://disco.example.com/ds/"

@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 import json
 import os
 from datetime import timedelta
@@ -8,7 +6,7 @@ from functools import lru_cache
 from os import environ
 from pathlib import Path
 from sys import stderr
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import yaml
 from pydantic import AnyUrl, BaseModel, Field, ValidationError, field_validator
@@ -47,15 +45,15 @@ class FlowName(str, Enum):
 
 class ClientKey(BaseModel):
     proof: Proof
-    jwk: Optional[Union[ECJWK, RSAJWK, SymmetricJWK]] = None
-    cert: Optional[str] = None
-    cert_S256: Optional[str] = None
-    claims: Dict[str, Any] = {}
+    jwk: ECJWK | RSAJWK | SymmetricJWK | None = None
+    cert: str | None = None
+    cert_S256: str | None = None
+    claims: dict[str, Any] = {}
 
 
 class TLSFEDMetadata(BaseModel):
-    remote: Optional[AnyUrl] = None
-    local: Optional[Path] = None
+    remote: AnyUrl | None = None
+    local: Path | None = None
     jwks: Path
     strict: bool = True  # set to False to load partial metadata on entity errors
 
@@ -65,36 +63,36 @@ class AuthServerConfig(BaseSettings):
     environment: Environment = Field(default=Environment.PROD)
     debug: bool = False
     testing: bool = False
-    log_format: Optional[str] = None
+    log_format: str | None = None
     log_level: str = "INFO"
     log_filters: list[LoggingFilters] = Field(default_factory=list)
     logging_config: dict = Field(default_factory=dict)
     host: str = Field(default="0.0.0.0")
     port: int = Field(default=8080)
     application_root: str = Field(default="")
-    auth_flows: List[str] = Field(default_factory=list)
-    mdq_server: Optional[str] = Field(default=None)
-    tls_fed_metadata: List[TLSFEDMetadata] = Field(default_factory=list)
+    auth_flows: list[str] = Field(default_factory=list)
+    mdq_server: str | None = Field(default=None)
+    tls_fed_metadata: list[TLSFEDMetadata] = Field(default_factory=list)
     tls_fed_metadata_cache_ttl: timedelta = Field(default=timedelta(hours=1))
     keystore_path: Path = Field(default=Path("keystore.jwks"))
     signing_key_id: str = Field(default="default")
     auth_token_issuer: str
-    auth_token_audience: Optional[str] = Field(default=None)
+    auth_token_audience: str | None = Field(default=None)
     auth_token_expires_in: timedelta = Field(default=timedelta(hours=10))
     proof_jws_max_age: timedelta = Field(default=timedelta(minutes=5))
-    client_keys: Dict[str, ClientKey] = Field(default_factory=dict)
-    mongo_uri: Optional[str] = None
+    client_keys: dict[str, ClientKey] = Field(default_factory=dict)
+    mongo_uri: str | None = None
     transaction_state_expires_in: timedelta = Field(default=timedelta(minutes=10))
-    pysaml2_config_path: Optional[Path] = Field(default=None)
+    pysaml2_config_path: Path | None = Field(default=None)
     pysaml2_config_name: str = "SAML_CONFIG"
-    saml2_discovery_service_url: Optional[AnyUrl] = None
-    saml2_single_idp: Optional[str] = None
-    ca_certs_path: Optional[Path] = None  # all files ending with .c* will be loaded recursively. PEM and DER supported
+    saml2_discovery_service_url: AnyUrl | None = None
+    saml2_single_idp: str | None = None
+    ca_certs_path: Path | None = None  # all files ending with .c* will be loaded recursively. PEM and DER supported
     ca_certs_mandatory_org_id: bool = False  # fail grant requests where no org id is found in the certificate
 
     @field_validator("application_root")
     @classmethod
-    def application_root_must_not_end_with_slash(cls, v: str):
+    def application_root_must_not_end_with_slash(cls: "AuthServerConfig", v: str) -> str:
         if v.endswith("/"):
             v = v.removesuffix("/")
         return v
@@ -102,8 +100,8 @@ class AuthServerConfig(BaseSettings):
     model_config = SettingsConfigDict(frozen=True)
 
 
-def read_config_file(config_file: str, config_ns: str = "") -> Dict:
-    with open(config_file, "r") as f:
+def read_config_file(config_file: str, config_ns: str = "") -> dict:
+    with open(config_file) as f:
         data = yaml.safe_load(f)
     # traverse the loaded data to the right namespace, discarding everything else
     for this in config_ns.split("/"):

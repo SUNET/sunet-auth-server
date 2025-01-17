@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import importlib.util
@@ -7,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import lru_cache
 from logging import getLogger
-from typing import Annotated, Any, Dict, List, NewType, Optional, Tuple
+from typing import Annotated, Any, NewType, Self
 from xml.etree.ElementTree import ParseError
 
 from pydantic import AnyUrl, BaseModel, BeforeValidator, ConfigDict, Field
@@ -19,6 +18,7 @@ from saml2.config import SPConfig
 from saml2.response import AuthnResponse, StatusError, UnsolicitedResponse
 from saml2.saml import Subject
 from saml2.sigver import SignatureError
+from saml2.typing import SAMLHttpArgs
 
 from auth_server.config import load_config
 from auth_server.db.client import get_mongo_client
@@ -40,8 +40,8 @@ class SAML2SP:
     client: Saml2Client
     outstanding_queries_cache: OutstandingQueriesCache
     authn_req_cache: AuthenticationRequestCache
-    single_idp: Optional[str] = None
-    discovery_service_url: Optional[AnyUrl] = None
+    single_idp: str | None = None
+    discovery_service_url: AnyUrl | None = None
     authn_sign_alg: str = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
     authn_digest_alg: str = "http://www.w3.org/2001/04/xmlenc#sha256"
     authentication_context_map: dict[str, str] = Field(default_factory=dict)
@@ -49,15 +49,15 @@ class SAML2SP:
 
 class AuthnInfo(BaseModel):
     authn_class: str
-    authn_authority: List[str] = Field(default_factory=list)
+    authn_authority: list[str] = Field(default_factory=list)
     authn_instant: datetime
 
 
 class NameID(BaseModel):
     format: str
-    name_qualifier: Optional[str] = None
-    sp_name_qualifier: Optional[str] = None
-    sp_provided_id: Optional[str] = None
+    name_qualifier: str | None = None
+    sp_name_qualifier: str | None = None
+    sp_provided_id: str | None = None
     id: str
 
 
@@ -72,40 +72,38 @@ PySAMLStr = Annotated[str, BeforeValidator(unwind_pysaml_str)]
 
 
 class SAMLAttributes(BaseModel):
-    assurance: List[str] = Field(default_factory=list, alias="eduPersonAssurance")
-    common_name: Optional[PySAMLStr] = Field(default=None, alias="cn")
-    country_code: Optional[PySAMLStr] = Field(default=None, alias="c")
-    country_name: Optional[PySAMLStr] = Field(default=None, alias="co")
-    date_of_birth: Optional[PySAMLStr] = Field(default=None, alias="schacDateOfBirth")
-    display_name: Optional[PySAMLStr] = Field(default=None, alias="displayName")
-    entitlement: List[str] = Field(default_factory=list, alias="eduPersonEntitlement")
-    eppn: Optional[PySAMLStr] = Field(default=None, alias="eduPersonPrincipalName")
-    given_name: Optional[PySAMLStr] = Field(default=None, alias="givenName")
-    home_organization: Optional[PySAMLStr] = Field(default=None, alias="schacHomeOrganization")
-    home_organization_type: Optional[PySAMLStr] = Field(default=None, alias="schacHomeOrganizationType")
-    mail: Optional[PySAMLStr] = None
-    nin: Optional[PySAMLStr] = Field(default=None, alias="norEduPersonNIN")
-    organization_acronym: Optional[PySAMLStr] = Field(default=None, alias="norEduOrgAcronym")
-    organization_name: Optional[PySAMLStr] = Field(default=None, alias="o")
-    personal_identity_number: Optional[PySAMLStr] = Field(default=None, alias="personalIdentityNumber")
-    scoped_affiliation: Optional[PySAMLStr] = Field(default=None, alias="eduPersonScopedAffiliation")
-    surname: Optional[PySAMLStr] = Field(default=None, alias="sn")
-    targeted_id: Optional[PySAMLStr] = Field(default=None, alias="eduPersonTargetedID")
-    unique_id: Optional[PySAMLStr] = Field(default=None, alias="eduPersonUniqueId")
+    assurance: list[str] = Field(default_factory=list, alias="eduPersonAssurance")
+    common_name: PySAMLStr | None = Field(default=None, alias="cn")
+    country_code: PySAMLStr | None = Field(default=None, alias="c")
+    country_name: PySAMLStr | None = Field(default=None, alias="co")
+    date_of_birth: PySAMLStr | None = Field(default=None, alias="schacDateOfBirth")
+    display_name: PySAMLStr | None = Field(default=None, alias="displayName")
+    entitlement: list[str] = Field(default_factory=list, alias="eduPersonEntitlement")
+    eppn: PySAMLStr | None = Field(default=None, alias="eduPersonPrincipalName")
+    given_name: PySAMLStr | None = Field(default=None, alias="givenName")
+    home_organization: PySAMLStr | None = Field(default=None, alias="schacHomeOrganization")
+    home_organization_type: PySAMLStr | None = Field(default=None, alias="schacHomeOrganizationType")
+    mail: PySAMLStr | None = None
+    nin: PySAMLStr | None = Field(default=None, alias="norEduPersonNIN")
+    organization_acronym: PySAMLStr | None = Field(default=None, alias="norEduOrgAcronym")
+    organization_name: PySAMLStr | None = Field(default=None, alias="o")
+    personal_identity_number: PySAMLStr | None = Field(default=None, alias="personalIdentityNumber")
+    scoped_affiliation: PySAMLStr | None = Field(default=None, alias="eduPersonScopedAffiliation")
+    surname: PySAMLStr | None = Field(default=None, alias="sn")
+    targeted_id: PySAMLStr | None = Field(default=None, alias="eduPersonTargetedID")
+    unique_id: PySAMLStr | None = Field(default=None, alias="eduPersonUniqueId")
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
 
 class SessionInfo(BaseModel):
     issuer: str
-    authn_info: List[AuthnInfo] = Field(default_factory=list)
+    authn_info: list[AuthnInfo] = Field(default_factory=list)
     name_id: NameID
     attributes: SAMLAttributes
-    # TODO: raw assertion needed for spec compliant SubjectAssertion
-    # raw_assertion: str
+    # TODO: raw_assertion needed for spec compliant SubjectAssertion
 
     @classmethod
-    def from_pysaml2(cls, session_info: Dict[str, Any]) -> SessionInfo:
-        # session_info["raw_assertion"] = raw_assertion
+    def from_pysaml2(cls: SessionInfo, session_info: dict[str, Any]) -> SessionInfo:
         session_info["authn_info"] = [
             AuthnInfo(authn_class=item[0], authn_authority=item[1], authn_instant=item[2])
             for item in session_info["authn_info"]
@@ -132,23 +130,23 @@ class OutstandingQueriesCache(MongoCache):
     """
 
     def __init__(
-        self,
+        self: Self,
         db_client: MongoClient,
         db_name: str = "auth_server",
         collection: str = "pysaml2_outstanding_queries",
         expire_after: timedelta = timedelta(hours=1),
-    ):
+    ) -> None:
         super().__init__(db_client=db_client, db_name=db_name, collection=collection, expire_after=expire_after)
 
-    def get(self, saml2_session_id, default: Optional[Any] = None) -> Optional[Any]:
+    def get(self: Self, saml2_session_id: str, default: str | None = None) -> str | None:
         if saml2_session_id in self:
             return self[saml2_session_id]
         return default
 
-    def set(self, saml2_session_id, came_from) -> None:
+    def set(self: Self, saml2_session_id: str, came_from: str) -> None:
         self[saml2_session_id] = came_from
 
-    def delete(self, saml2_session_id) -> None:
+    def delete(self: Self, saml2_session_id: str) -> None:
         if saml2_session_id in self:
             del self[saml2_session_id]
 
@@ -162,12 +160,12 @@ class IdentityCache(Cache):
     """
 
     def __init__(
-        self,
+        self: Self,
         db_client: MongoClient,
         db_name: str = "auth_server",
         collection: str = "pysaml2_identity_cache",
         expire_after: timedelta = timedelta(days=10),
-    ):
+    ) -> None:
         super().__init__()  # just please pycharm as we set self._db again below
         self._db = MongoCache(db_client=db_client, db_name=db_name, collection=collection, expire_after=expire_after)
 
@@ -178,27 +176,27 @@ class StateCache(MongoCache):
     """
 
     def __init__(
-        self,
+        self: Self,
         db_client: MongoClient,
         db_name: str = "auth_server",
         collection: str = "pysaml2_state_cache",
         expire_after: timedelta = timedelta(days=10),
-    ):
+    ) -> None:
         super().__init__(db_client=db_client, db_name=db_name, collection=collection, expire_after=expire_after)
 
 
 class AuthenticationRequestCache(MongoCache):
     def __init__(
-        self,
+        self: Self,
         db_client: MongoClient,
         db_name: str = "auth_server",
         collection: str = "saml_authentications_cache",
         expire_after: timedelta = timedelta(days=10),
-    ):
+    ) -> None:
         super().__init__(db_client=db_client, db_name=db_name, collection=collection, expire_after=expire_after)
 
 
-async def get_saml2_sp() -> Optional[SAML2SP]:
+async def get_saml2_sp() -> SAML2SP | None:
     config = load_config()
     if not config.pysaml2_config_path or not config.mongo_uri:
         return None
@@ -220,7 +218,7 @@ async def get_saml2_sp() -> Optional[SAML2SP]:
 
 
 @lru_cache
-def get_pysaml2_sp_config(name) -> SPConfig:
+def get_pysaml2_sp_config(name: str) -> SPConfig:
     """
     Load SAML2 config file, in the form of a Python module
     """
@@ -236,7 +234,7 @@ def get_pysaml2_sp_config(name) -> SPConfig:
     return conf
 
 
-async def get_redirect_url(http_info):
+async def get_redirect_url(http_info: dict[str, str]) -> str:
     """Extract the redirect URL from a pysaml2 http_info object"""
     assert "headers" in http_info
     headers = http_info["headers"]
@@ -250,13 +248,13 @@ async def get_redirect_url(http_info):
 async def get_authn_request(
     relay_state: str,
     authn_id: AuthnRequestRef,
-    selected_idp: Optional[str],
+    selected_idp: str | None,
     force_authn: bool = False,
-    sign_alg: Optional[str] = None,
-    digest_alg: Optional[str] = None,
-    subject: Optional[Subject] = None,
-    required_loa: Optional[list[str]] = None,
-):
+    sign_alg: str | None = None,
+    digest_alg: str | None = None,
+    subject: Subject | None = None,
+    required_loa: list[str] | None = None,
+) -> SAMLHttpArgs | None:
     kwargs: dict[str, Any] = {
         "force_authn": str(force_authn).lower(),
     }
@@ -289,7 +287,7 @@ async def get_authn_request(
     return info
 
 
-async def process_assertion(saml_response: str) -> Optional[AssertionData]:
+async def process_assertion(saml_response: str) -> AssertionData | None:
     """
     Code to process a received SAML assertion.
     """
@@ -304,7 +302,6 @@ async def process_assertion(saml_response: str) -> Optional[AssertionData]:
         logger.info("Unknown response")
         raise BadSAMLResponse("Unknown response")
 
-    # raw_assertion = str(response.assertions[0])
     session_info = SessionInfo.from_pysaml2(response.session_info())
     assertion_data = AssertionData(session_info=session_info, authn_req_ref=authn_ref)
     # Fix eduPersonTargetedID
@@ -315,7 +312,7 @@ async def process_assertion(saml_response: str) -> Optional[AssertionData]:
     return assertion_data
 
 
-async def get_authn_response(raw_response: str) -> Tuple[AuthnResponse, AuthnRequestRef]:
+async def get_authn_response(raw_response: str) -> tuple[AuthnResponse, AuthnRequestRef]:
     """
     Check a SAML response and return the response.
 
