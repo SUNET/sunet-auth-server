@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat._oid import ExtensionOID
 from cryptography.hazmat.bindings._rust import ObjectIdentifier
 from cryptography.hazmat.primitives._serialization import Encoding
 from cryptography.hazmat.primitives.hashes import SHA256
@@ -143,17 +144,20 @@ def get_org_id_expitrust(cert: Certificate) -> Optional[str]:
     return serial_number.removeprefix("16")
 
 
-def get_org_id_siths(cert: Certificate) -> Optional[str]:
+def get_org_id_siths(cert: Certificate) -> str | None:
     """
     The org number is the first part of the serial number of the certificate with a prefix of SE.
     ex. SE5565594230-AAAA -> 5565594230
     """
     cert_fingerprint = rfc8705_fingerprint(cert)
-    # Check that the certificate has enhancedKeyUsage clientAuthentication
+    # Check that the certificate has enhancedKeyUsage clientAuth
     try:
-        cert.extensions.get_extension_for_oid(OID_ENHANCED_KEY_USAGE_CLIENT_AUTHENTICATION)
+        enhanced_key_usage = cert.extensions.get_extension_for_oid(ExtensionOID.EXTENDED_KEY_USAGE)
+        if OID_ENHANCED_KEY_USAGE_CLIENT_AUTHENTICATION not in enhanced_key_usage.value:
+            logger.error(f"certificate {cert_fingerprint} has no enhancedKeyUsage clientAuth")
+            return None
     except ExtensionNotFound:
-        logger.error(f"certificate {cert_fingerprint} has no enhancedKeyUsage clientAuthentication")
+        logger.error(f"certificate {cert_fingerprint} has no enhancedKeyUsage")
         return None
 
     # Check that the certificate has a subject serial number and parse the org id
