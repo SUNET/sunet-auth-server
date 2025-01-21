@@ -153,7 +153,7 @@ def get_org_id_siths(cert: Certificate) -> str | None:
     # Check that the certificate has enhancedKeyUsage clientAuth
     try:
         enhanced_key_usage = cert.extensions.get_extension_for_oid(ExtensionOID.EXTENDED_KEY_USAGE)
-        if OID_ENHANCED_KEY_USAGE_CLIENT_AUTHENTICATION not in enhanced_key_usage.value:
+        if OID_ENHANCED_KEY_USAGE_CLIENT_AUTHENTICATION not in enhanced_key_usage.value:  # type: ignore[operator]
             logger.error(f"certificate {cert_fingerprint} has no enhancedKeyUsage clientAuth")
             return None
     except ExtensionNotFound:
