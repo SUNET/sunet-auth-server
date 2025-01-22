@@ -102,6 +102,8 @@ def get_org_id_from_cert(cert: Certificate, ca_name: str) -> str | None:
         raise ConfigurationError(f"CA cert {ca_name} not found")
     try:
         ca_org_name = ca_cert.issuer.get_attributes_for_oid(OID_ORGANIZATION_NAME)[0].value
+        if isinstance(ca_org_name, bytes):
+            ca_org_name = ca_org_name.decode("utf-8")
     except IndexError:
         logger.error(f"CA certificate {ca_name} has no org name")
         return None
@@ -122,6 +124,7 @@ def get_org_id_from_cert(cert: Certificate, ca_name: str) -> str | None:
         return None
 
     if org_id is None:
+        logger.error(f"No org id found in certificate for CA {ca_name} / {ca_org_name}")
         return None
 
     # Add country code as prefix to org id as TLSFED does
