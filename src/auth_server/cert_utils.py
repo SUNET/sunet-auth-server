@@ -8,11 +8,11 @@ from functools import lru_cache
 from pathlib import Path
 
 from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat._oid import ExtensionOID
 from cryptography.hazmat.bindings._rust import ObjectIdentifier
 from cryptography.hazmat.primitives._serialization import Encoding
 from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.x509 import Certificate, ExtensionNotFound, Name, load_der_x509_certificate, load_pem_x509_certificate
+from cryptography.x509.oid import ExtensionOID
 from pki_tools import Certificate as PKIToolCertificate
 from pki_tools import Chain, is_revoked
 from pki_tools import Error as PKIToolsError
