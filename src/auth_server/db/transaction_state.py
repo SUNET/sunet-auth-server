@@ -158,7 +158,7 @@ class TransactionStateDB(BaseDB):
     async def remove_state(self: Self, transaction_id: str) -> None:
         await self.remove_document({"transaction_id": transaction_id})
 
-    async def save(self: Self, state: T, expires_in: timedelta) -> bool:
+    async def save(self: Self, state: TransactionState, expires_in: timedelta) -> bool:
         state.expires_at = state.expires_at + expires_in
         test_doc = {"transaction_id": state.transaction_id}
         res = await self._coll.replace_one(test_doc, state.to_dict(), upsert=True)

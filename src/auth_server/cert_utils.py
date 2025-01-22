@@ -169,7 +169,7 @@ def get_org_id_siths(cert: Certificate) -> str | None:
     return org_id.removeprefix("SE")
 
 
-def get_org_id_efos(cert: Certificate) -> str:
+def get_org_id_efos(cert: Certificate) -> str | None:
     """
     The org number is the first part of the serial number of the certificate with a prefix of EFOS16.
     ex. EFOS165565594230-012345 -> 5565594230

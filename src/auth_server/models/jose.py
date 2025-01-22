@@ -55,8 +55,8 @@ class RegisteredClaims(BaseModel):
     jti: str | None = None  # JWT ID
 
     def to_rfc7519(self: Self) -> dict:
-        d = self.dict(exclude_none=True)
-        if self.exp:
+        d = self.model_dump(exclude_none=True)
+        if self.iat and self.exp:
             d["exp"] = int((self.iat + self.exp).timestamp())
         if self.nbf:
             d["nbf"] = int(self.nbf.timestamp())

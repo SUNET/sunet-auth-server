@@ -35,7 +35,7 @@ class MDQCert(MDQBase):
 
     @field_validator("cert", mode="before")
     @classmethod
-    def deserialize_cert(cls: "MDQCert", v: str) -> Certificate:
+    def deserialize_cert(cls: type["MDQCert"], v: str) -> Certificate:
         if isinstance(v, Certificate):
             return v
         return load_pem_from_str(v)

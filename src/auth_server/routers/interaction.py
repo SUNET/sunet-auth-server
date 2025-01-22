@@ -19,7 +19,7 @@ interaction_router = APIRouter(route_class=ContextRequestRoute, prefix="/interac
 templates = Jinja2Templates(directory=str(Path(__file__).with_name("templates")))
 
 
-@interaction_router.get("/redirect/{transaction_id}", response_class=HTMLResponse)
+@interaction_router.get("/redirect/{transaction_id}")
 async def redirect(request: ContextRequest, transaction_id: str, background_tasks: BackgroundTasks) -> Response:
     transaction_db = await get_transaction_state_db()
     if transaction_db is None:
@@ -46,12 +46,12 @@ async def redirect(request: ContextRequest, transaction_id: str, background_task
     )
 
 
-@interaction_router.get("/code", response_class=HTMLResponse)
-async def user_code_input(request: ContextRequest) -> templates.TemplateResponse:
+@interaction_router.get("/code")
+async def user_code_input(request: ContextRequest) -> Response:
     return templates.TemplateResponse("user_code.jinja2", context={"request": request})
 
 
-@interaction_router.post("/code", response_class=HTMLResponse)
+@interaction_router.post("/code")
 async def user_code_finish(request: ContextRequest, user_code: str | None = Form(...)) -> Response:
     transaction_db = await get_transaction_state_db()
     if transaction_db is None:
@@ -81,7 +81,7 @@ async def user_code_finish(request: ContextRequest, user_code: str | None = Form
 
 async def finish_interaction(
     request: ContextRequest, transaction_state: TransactionState, background_tasks: BackgroundTasks
-) -> Response:
+) -> RedirectResponse | HTMLResponse:
     config = load_config()
     transaction_db = await get_transaction_state_db()
     if transaction_db is None:

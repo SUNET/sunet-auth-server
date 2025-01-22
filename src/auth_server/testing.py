@@ -65,7 +65,9 @@ class TemporaryInstance(ABC):
         self._logfile = open(f"/tmp/{self.__class__.__name__}-{self.port}.log", "w")
 
         start_time = utc_now()
-        self._process = subprocess.Popen(self.command, stdout=self._logfile, stderr=subprocess.STDOUT)
+        self._process: subprocess.Popen[bytes] | None = subprocess.Popen(
+            self.command, stdout=self._logfile, stderr=subprocess.STDOUT
+        )
 
         interval = 0.2
         count = 0

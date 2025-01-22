@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, Form, HTTPException, Query, Response
 from saml2.metadata import entity_descriptor
 from saml2.response import StatusError
-from starlette.responses import HTMLResponse, RedirectResponse
+from starlette.responses import RedirectResponse
 from starlette.templating import Jinja2Templates
 
 from auth_server.config import load_config
@@ -29,11 +29,11 @@ saml2_router = APIRouter(route_class=ContextRequestRoute, prefix="/saml2")
 templates = Jinja2Templates(directory=str(Path(__file__).with_name("templates")))
 
 
-@saml2_router.get("/sp/authn/{transaction_id}", response_class=HTMLResponse)
+@saml2_router.get("/sp/authn/{transaction_id}")
 async def authenticate(
     request: ContextRequest,
     transaction_id: str,
-) -> HTMLResponse:
+) -> RedirectResponse:
     saml2_sp = await get_saml2_sp()
     if saml2_sp is None:
         # there is no pysaml2 config or any database available
@@ -63,10 +63,10 @@ async def authenticate(
     return await redirect_to_idp(saml2_sp=saml2_sp, authn_id=authn_id, idp_entity_id=idp)
 
 
-@saml2_router.get("/sp/discovery-response", response_class=HTMLResponse)
+@saml2_router.get("/sp/discovery-response")
 async def discovery_service_response(
     target: str | None = None, entity_id: str | None = Query(default=None, alias="entityID")
-) -> HTMLResponse:
+) -> Response:
     saml2_sp = await get_saml2_sp()
     if saml2_sp is None:
         # there is no pysaml2 config or any database available
@@ -88,7 +88,7 @@ async def discovery_service_response(
     return await redirect_to_idp(saml2_sp=saml2_sp, authn_id=authn_id, idp_entity_id=entity_id)
 
 
-async def redirect_to_idp(saml2_sp: SAML2SP, authn_id: AuthnRequestRef, idp_entity_id: str) -> Response:
+async def redirect_to_idp(saml2_sp: SAML2SP, authn_id: AuthnRequestRef, idp_entity_id: str) -> RedirectResponse:
     try:
         _found_idp = saml2_sp.client.metadata[idp_entity_id]
     except KeyError:
@@ -103,6 +103,7 @@ async def redirect_to_idp(saml2_sp: SAML2SP, authn_id: AuthnRequestRef, idp_enti
     # get any requested authentication context from subject request
     required_loa = None
     transaction_id = saml2_sp.authn_req_cache[authn_id]
+    assert isinstance(transaction_id, str)  # please mypy
     transaction_state = await transaction_db.get_state_by_transaction_id(transaction_id=transaction_id)
     if transaction_state is not None and transaction_state.requested_subject.authentication_context is not None:
         required_loa = transaction_state.requested_subject.authentication_context
@@ -118,16 +119,19 @@ async def redirect_to_idp(saml2_sp: SAML2SP, authn_id: AuthnRequestRef, idp_enti
         required_loa=required_loa,
     )
 
+    if not authn_request:
+        raise HTTPException(status_code=400, detail="Could not create authn request")
+
     idp_redirect_url = await get_redirect_url(authn_request)
     logger.info("redirecting user to the IdP after discovery service response")
     logger.debug(f"_idp_redirect_url: {idp_redirect_url}")
     return RedirectResponse(idp_redirect_url, status_code=303)
 
 
-@saml2_router.post("/sp/saml2-acs", response_class=HTMLResponse)
+@saml2_router.post("/sp/saml2-acs")
 async def assertion_consumer_service(
     request: ContextRequest, saml_response: str = Form(alias="SAMLResponse")
-) -> HTMLResponse:
+) -> RedirectResponse:
     """
     Assertion consumer service, receives POSTs from SAML2 IdP's
     """
@@ -181,7 +185,7 @@ async def assertion_consumer_service(
     return RedirectResponse(finish_interaction_url, status_code=303)
 
 
-@saml2_router.get("/sp/metadata", response_class=Response, responses={200: {"content": {"text/xml": {}}}})
+@saml2_router.get("/sp/metadata", responses={200: {"content": {"text/xml": {}}}})
 async def metadata() -> Response:
     saml2_sp = await get_saml2_sp()
     if not saml2_sp:

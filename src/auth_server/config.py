@@ -30,8 +30,8 @@ class Environment(str, Enum):
 class LoggingFilters(str, Enum):
     """Identifiers to coherently map elements in LocalContext.filters to filter classes in logging dictConfig."""
 
-    DEBUG_TRUE: str = "require_debug_true"
-    DEBUG_FALSE: str = "require_debug_false"
+    DEBUG_TRUE = "require_debug_true"
+    DEBUG_FALSE = "require_debug_false"
 
 
 class FlowName(str, Enum):
@@ -92,7 +92,7 @@ class AuthServerConfig(BaseSettings):
 
     @field_validator("application_root")
     @classmethod
-    def application_root_must_not_end_with_slash(cls: "AuthServerConfig", v: str) -> str:
+    def application_root_must_not_end_with_slash(cls: type["AuthServerConfig"], v: str) -> str:
         if v.endswith("/"):
             v = v.removesuffix("/")
         return v

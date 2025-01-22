@@ -96,7 +96,7 @@ class MongoCacheDB:
         if not res.acknowledged or (res.matched_count != res.modified_count):
             raise CacheWriteException(f"Failed to UPDATE item {key} in collection {self._coll.name}")
 
-    def get_item(self: Self, key: str) -> MutableMapping:
+    def get_item(self: Self, key: str) -> str | int | bool | dict | list:
         docs = self._get_documents_by_filter(spec={"lookup_key": key}, fields={"_id": False, "data": True}, limit=1)
         for doc in docs:
             return doc["data"]
@@ -133,16 +133,16 @@ class MongoCache(MutableMapping):
     def __len__(self: Self) -> int:
         return self._db.db_count()
 
-    def __setitem__(self: Self, key: str, value: MutableMapping[str, Any]) -> None:
+    def __setitem__(self: Self, key: str, value: str | int | bool | dict | list) -> None:
         self._db.update_item(key, value)
 
-    def __getitem__(self: Self, key: str) -> MutableMapping[str, Any]:
+    def __getitem__(self: Self, key: str) -> str | int | bool | dict | list:
         return self._db.get_item(key)
 
     def __delitem__(self: Self, key: str) -> None:
         self._db.remove_item(key)
 
-    def __contains__(self: Self, key: str | int | bool | dict | list) -> bool:
+    def __contains__(self: Self, key: str) -> bool:  # type: ignore[override]
         return self._db.contains_item(key)
 
     def items(self: Self) -> ItemsView[Any, Any]:

@@ -46,7 +46,7 @@ class Key(GnapBaseModel):
 
     @field_validator("proof", mode="before")
     @classmethod
-    def expand_proof(cls: "Key", v: str | dict[str, Any]) -> dict[str, Any]:
+    def expand_proof(cls: type["Key"], v: str | dict[str, Any]) -> dict[str, Any]:
         # If additional parameters are not required or used for a specific method,
         # the method MAY be passed as a string instead of an object.
         if isinstance(v, str):

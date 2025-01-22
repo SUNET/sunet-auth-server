@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from abc import ABC
+from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from typing import Any, Self
 
@@ -28,6 +28,7 @@ from auth_server.db.transaction_state import (
     FlowState,
     InteractionState,
     MDQState,
+    MetadataState,
     TestState,
     TLSFEDState,
     TransactionState,
@@ -61,6 +62,8 @@ from auth_server.proof.mtls import check_mtls_proof
 from auth_server.time_utils import utc_now
 from auth_server.tls_fed_auth import entity_to_keys, get_entity
 from auth_server.utils import get_hex_uuid4, get_values
+
+TransactionStateSubtype = TestState | InteractionState | ConfigState | MetadataState | MDQState | TLSFEDState | CAState
 
 __author__ = "lundberg"
 
@@ -99,11 +102,11 @@ class BaseAuthFlow(ABC):
         version: int = 1
 
     @classmethod
-    def get_version(cls: BaseAuthFlow) -> int:
+    def get_version(cls: type[BaseAuthFlow]) -> int:
         return cls.Meta.version
 
     @classmethod
-    def get_name(cls: BaseAuthFlow) -> str:
+    def get_name(cls: type[BaseAuthFlow]) -> str:
         return f"{cls.__name__}"
 
     @staticmethod
@@ -135,6 +138,9 @@ class BaseAuthFlow(ABC):
         return None
 
     async def continue_transaction(self: Self, continue_request: ContinueRequest) -> GrantResponse | None:
+        # please mypy, should be enforced in previous steps
+        assert isinstance(self.state.grant_request.client, Client)
+        assert isinstance(self.state.grant_request.client.key, Key)
         # check the client authentication for the continuation request against the same key used for the grant request
         self.state.proof_ok = await self.check_proof(
             gnap_key=self.state.grant_request.client.key, gnap_request=continue_request
@@ -144,6 +150,10 @@ class BaseAuthFlow(ABC):
             raise StopTransactionException(status_code=401, detail="could not validate proof of key possession")
 
         # run the remaining steps in the flow
+        if self.state.flow_step is None:
+            # no previous run, cant continue
+            raise StopTransactionException(status_code=400, detail="no previous transaction found, cant continue")
+
         steps = await self.steps()
         continue_steps_index = steps.index(self.state.flow_step)
         continue_steps = steps[continue_steps_index + 1 :]  # remaining steps starts at latest completed step + 1
@@ -209,33 +219,43 @@ class BaseAuthFlow(ABC):
         return claims
 
     @classmethod
-    def load_state(cls: BaseAuthFlow, state: Mapping[str, Any]) -> TransactionState:
+    @abstractmethod
+    def load_state(cls: type[BaseAuthFlow], state: Mapping[str, Any]) -> TransactionState:
         raise NotImplementedError()
 
+    @abstractmethod
     async def lookup_client(self: Self) -> GrantResponse | None:
         raise NotImplementedError()
 
+    @abstractmethod
     async def lookup_client_key(self: Self) -> GrantResponse | None:
         raise NotImplementedError()
 
+    @abstractmethod
     async def validate_proof(self: Self) -> GrantResponse | None:
         raise NotImplementedError()
 
+    @abstractmethod
     async def handle_access_token(self: Self) -> GrantResponse | None:
         raise NotImplementedError()
 
+    @abstractmethod
     async def handle_subject_request(self: Self) -> GrantResponse | None:
         raise NotImplementedError()
 
+    @abstractmethod
     async def handle_interaction(self: Self) -> GrantResponse | None:
         raise NotImplementedError()
 
+    @abstractmethod
     async def handle_subject_response(self: Self) -> GrantResponse | None:
         raise NotImplementedError()
 
+    @abstractmethod
     async def create_auth_token(self: Self) -> GrantResponse | None:
         raise NotImplementedError()
 
+    @abstractmethod
     async def finalize_transaction(self: Self) -> GrantResponse | None:
         raise NotImplementedError()
 
@@ -441,7 +461,7 @@ class CommonFlow(BaseAuthFlow):
 
 class TestFlow(CommonFlow):
     @classmethod
-    def load_state(cls: TestFlow, state: Mapping[str, Any]) -> TestState:
+    def load_state(cls: type[TestFlow], state: Mapping[str, Any]) -> TestState:
         return TestState.from_dict(state=state)
 
     async def check_proof(self: Self, gnap_key: Key, gnap_request: GrantRequest | ContinueRequest | None) -> bool:
@@ -449,6 +469,9 @@ class TestFlow(CommonFlow):
             logger.warning("TEST_MODE - access token will be returned with no proof")
             return True
         else:
+            # please mypy, enforced in CommonFlow or previous steps
+            assert isinstance(self.state.grant_request.client, Client)
+            assert isinstance(self.state.grant_request.client.key, Key)
             # try any other supported proof method, used in tests
             return await super().check_proof(gnap_key=self.state.grant_request.client.key, gnap_request=gnap_request)
 
@@ -460,16 +483,17 @@ class TestFlow(CommonFlow):
 
 class InteractionFlow(CommonFlow):
     @classmethod
-    def load_state(cls: InteractionFlow, state: Mapping[str, Any]) -> InteractionState:
+    def load_state(cls: type[InteractionFlow], state: Mapping[str, Any]) -> InteractionState:
         return InteractionState.from_dict(state=state)
 
 
 class ConfigFlow(CommonFlow):
     @classmethod
-    def load_state(cls: ConfigFlow, state: Mapping[str, Any]) -> ConfigState:
+    def load_state(cls: type[ConfigFlow], state: Mapping[str, Any]) -> ConfigState:
         return ConfigState.from_dict(state=state)
 
     async def create_claims(self: Self) -> ConfigClaims:
+        assert isinstance(self.state, ConfigState)  # please mypy
         base_claims = await super().create_claims()
         # Update the claims with any claims found in config for this key
         claims_dict = base_claims.dict(exclude_none=True)
@@ -479,6 +503,7 @@ class ConfigFlow(CommonFlow):
         return ConfigClaims(**claims_dict)
 
     async def lookup_client_key(self: Self) -> GrantResponse | None:
+        assert isinstance(self.state, ConfigState)  # please mypy
         # please mypy, enforced in CommonFlow or previous steps
         assert isinstance(self.state.grant_request.client, Client)
 
@@ -505,6 +530,11 @@ class OnlyMTLSProofFlow(CommonFlow):
     async def check_proof(self: Self, gnap_key: Key, gnap_request: GrantRequest | ContinueRequest | None) -> bool:
         if gnap_key.proof.method is not ProofMethod.MTLS:
             raise NextFlowException(status_code=400, detail="MTLS is the only supported proof method")
+        if self.request.context.client_cert is None:
+            raise NextFlowException(status_code=401, detail="no client certificate found")
+        # please mypy, enforced in CommonFlow or previous steps
+        assert isinstance(self.state.grant_request.client, Client)
+        assert isinstance(self.state.grant_request.client.key, Key)
         return await check_mtls_proof(
             gnap_key=self.state.grant_request.client.key, cert=self.request.context.client_cert
         )
@@ -524,6 +554,9 @@ class OnlyMTLSProofFlow(CommonFlow):
 class MetadataFlow(OnlyMTLSProofFlow):
     # Used to handle multiple keys in metadata when rolling out new a new key
     async def validate_proof(self: Self) -> GrantResponse | None:
+        assert isinstance(self.state, MetadataState)  # please mypy
+        # please mypy, enforced in CommonFlow or previous steps
+        assert isinstance(self.state.grant_request.client, Client)
         for client_key in self.state.keys_from_metadata:
             self.state.grant_request.client.key = client_key
             try:
@@ -539,10 +572,11 @@ class MetadataFlow(OnlyMTLSProofFlow):
 
 class MDQFlow(MetadataFlow):
     @classmethod
-    def load_state(cls: MDQFlow, state: Mapping[str, Any]) -> MDQState:
+    def load_state(cls: type[MDQFlow], state: Mapping[str, Any]) -> MDQState:
         return MDQState.from_dict(state=state)
 
     async def lookup_client_key(self: Self) -> GrantResponse | None:
+        assert isinstance(self.state, MDQState)  # please mypy
         # please mypy, enforced in CommonFlow or previous steps
         assert isinstance(self.state.grant_request.client, Client)
 
@@ -568,6 +602,7 @@ class MDQFlow(MetadataFlow):
         return None
 
     async def create_claims(self: Self) -> MDQClaims:
+        assert isinstance(self.state, MDQState)  # please mypy
         if not self.state.mdq_data:
             raise NextFlowException(status_code=400, detail="missing mdq data")
 
@@ -600,10 +635,11 @@ class MDQFlow(MetadataFlow):
 
 class TLSFEDFlow(MetadataFlow):
     @classmethod
-    def load_state(cls: TLSFEDFlow, state: Mapping[str, Any]) -> TLSFEDState:
+    def load_state(cls: type[TLSFEDFlow], state: Mapping[str, Any]) -> TLSFEDState:
         return TLSFEDState.from_dict(state=state)
 
     async def lookup_client_key(self: Self) -> GrantResponse | None:
+        assert isinstance(self.state, TLSFEDState)  # please mypy
         # please mypy, enforced in CommonFlow or previous steps
         assert isinstance(self.state.grant_request.client, Client)
 
@@ -629,6 +665,7 @@ class TLSFEDFlow(MetadataFlow):
         return None
 
     async def create_claims(self: Self) -> TLSFEDClaims:
+        assert isinstance(self.state, TLSFEDState)  # please mypy
         if not self.state.entity:
             raise NextFlowException(status_code=400, detail="missing metadata entity")
 
@@ -649,13 +686,16 @@ class TLSFEDFlow(MetadataFlow):
 
 class CAFlow(OnlyMTLSProofFlow):
     @classmethod
-    def load_state(cls: CAFlow, state: Mapping[str, Any]) -> CAState:
+    def load_state(cls: type[CAFlow], state: Mapping[str, Any]) -> CAState:
         return CAState.from_dict(state=state)
 
     async def validate_proof(self: Self) -> GrantResponse | None:
+        assert isinstance(self.state, CAState)  # please mypy
         await super().validate_proof()
         if not self.state.proof_ok:
             raise NextFlowException(status_code=401, detail="client certificate does not match grant request")
+        if not self.request.context.client_cert:
+            raise StopTransactionException(status_code=401, detail="client certificate missing")
 
         client_cert = load_pem_from_str(self.request.context.client_cert)
         if not cert_within_validity_period(cert=client_cert):
@@ -679,6 +719,8 @@ class CAFlow(OnlyMTLSProofFlow):
         return None
 
     async def create_claims(self: Self) -> CAClaims:
+        assert isinstance(self.state, CAState)  # please mypy
+
         if self.config.ca_certs_mandatory_org_id and self.state.organization_id is None:
             raise StopTransactionException(status_code=401, detail="missing organization id in client certificate")
 

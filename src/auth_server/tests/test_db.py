@@ -35,6 +35,7 @@ class TestBaseDB(IsolatedAsyncioTestCase):
 
     async def test_get_document_by_attr(self: Self) -> None:
         doc = await self.base_db._get_document_by_attr(attr="unique_key", value="value_25")
+        assert doc is not None
         assert list(doc.keys()) == ["_id", "unique_key", "key"]
         assert doc["unique_key"] == "value_25"
         assert doc["key"] == "test"
@@ -88,6 +89,7 @@ class TestBaseDB(IsolatedAsyncioTestCase):
 
     async def test_remove_document_id(self: Self) -> None:
         doc = await self.base_db._get_document_by_attr(attr="unique_key", value="value_25")
+        assert doc is not None
         res = await self.base_db.remove_document(spec_or_id=doc["_id"])
         assert res is True
         doc = await self.base_db._get_document_by_attr(attr="unique_key", value="value_25")

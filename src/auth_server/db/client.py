@@ -168,6 +168,3 @@ class BaseDB:
                 key = params.pop("key")
                 params["name"] = name
                 await self._coll.create_index(key, **params)
-
-    async def close(self: Self) -> None:
-        self._db.close()

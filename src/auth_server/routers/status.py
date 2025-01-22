@@ -21,6 +21,7 @@ async def _mongodb_health_check() -> bool:
         return True
 
     client = await get_motor_client()
+    assert client is not None  # please mypy
     try:
         await client.admin.command("ismaster")
         return True

@@ -103,7 +103,7 @@ class SessionInfo(BaseModel):
     # TODO: raw_assertion needed for spec compliant SubjectAssertion
 
     @classmethod
-    def from_pysaml2(cls: SessionInfo, session_info: dict[str, Any]) -> SessionInfo:
+    def from_pysaml2(cls: type[SessionInfo], session_info: dict[str, Any]) -> SessionInfo:
         session_info["authn_info"] = [
             AuthnInfo(authn_class=item[0], authn_authority=item[1], authn_instant=item[2])
             for item in session_info["authn_info"]
@@ -138,9 +138,11 @@ class OutstandingQueriesCache(MongoCache):
     ) -> None:
         super().__init__(db_client=db_client, db_name=db_name, collection=collection, expire_after=expire_after)
 
-    def get(self: Self, saml2_session_id: str, default: str | None = None) -> str | None:
+    def get(self: Self, saml2_session_id: str, default: str | None = None) -> str | None:  # type: ignore[override]
         if saml2_session_id in self:
-            return self[saml2_session_id]
+            ret = self[saml2_session_id]
+            assert isinstance(ret, str)
+            return ret
         return default
 
     def set(self: Self, saml2_session_id: str, came_from: str) -> None:
@@ -234,7 +236,7 @@ def get_pysaml2_sp_config(name: str) -> SPConfig:
     return conf
 
 
-async def get_redirect_url(http_info: dict[str, str]) -> str:
+async def get_redirect_url(http_info: SAMLHttpArgs) -> str:
     """Extract the redirect URL from a pysaml2 http_info object"""
     assert "headers" in http_info
     headers = http_info["headers"]

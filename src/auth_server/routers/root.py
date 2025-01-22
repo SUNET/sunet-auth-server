@@ -32,9 +32,7 @@ async def get_jwk(signing_key: JWK = Depends(get_signing_key)) -> dict:
     return signing_key.export(private_key=False, as_dict=True)
 
 
-@root_router.get(
-    "/.well-known/public.pem", response_class=Response, responses={200: {"content": {"application/x-pem-file": {}}}}
-)
+@root_router.get("/.well-known/public.pem", responses={200: {"content": {"application/x-pem-file": {}}}})
 async def get_public_pem(signing_key: JWK = Depends(get_signing_key)) -> Response:
     data = signing_key.export_to_pem(private_key=False)
     return Response(content=data, media_type="application/x-pem-file")
