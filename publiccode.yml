@@ -1,0 +1,49 @@
+publiccodeYmlVersion: "0.4"
+name: sunet-auth-server
+applicationSuite: eduID IAM
+url: https://github.com/SUNET/sunet-auth-server
+landingURL: https://github.com/SUNET/sunet-auth-server
+softwareVersion: "1.0"
+releaseDate: 2025-01-22
+logo: ""
+platforms:
+  - web
+categories:
+  - identity-management
+developmentStatus: stable
+softwareType: standalone/web
+description:
+  en:
+    localisedName: sunet-auth-server
+    shortDescription: GNAP authentication server
+    longDescription: >-
+      ### Sunet Auth Server
+
+      An authentication server that implements the GNAP protocol
+      (RFC9635).
+
+
+      Allows for users to request a JWT using mutal TLS, JWKs and SAML2.
+      Dynamically or using static configuration.
+
+
+      Support for mutal TLS with trust in SAML metadata, tls-fed-auth and CA.
+    documentation: https://github.com/sunet/sunet-auth-server
+    apiDocumentation: https://auth.sunet.se/docs
+    features:
+      - GNAP
+      - SAML2 SP
+legal:
+  license: BSD-2-Clause
+maintenance:
+  type: internal
+  contacts:
+    - name: Johan Lundberg
+      email: lundberg@sunet.se
+      phone: ""
+      affiliation: Sunet
+localisation:
+  localisationReady: true
+  availableLanguages:
+    - en
+
