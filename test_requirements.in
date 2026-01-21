@@ -7,3 +7,5 @@ mypy
 
 # missing types
 motor-types
+types-PyYAML
+types-aiofiles
