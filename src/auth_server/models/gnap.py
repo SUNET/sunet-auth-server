@@ -19,7 +19,7 @@ __author__ = "lundberg"
 
 
 # Data models for GNAP
-# https://datatracker.ietf.org/doc/html/draft-ietf-gnap-core-protocol
+# https://datatracker.ietf.org/doc/html/rfc9635
 
 
 class GnapBaseModel(BaseModel):
