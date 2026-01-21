@@ -52,7 +52,7 @@ async def authenticate(
         if saml2_sp.discovery_service_url is None:
             logger.error("No IdP requested and no discovery service configured")
             raise HTTPException(status_code=400, detail="no IdP requested")
-        return_url = f'{request.url_for("discovery_service_response")}/?target={authn_id}'
+        return_url = f"{request.url_for('discovery_service_response')}/?target={authn_id}"
         logger.debug(f"discovery service return_url: {return_url}")
         discovery_service_redirect_url = saml2_sp.client.create_discovery_service_request(
             url=str(saml2_sp.discovery_service_url), entity_id=saml2_sp.client.config.entityid, return_url=return_url

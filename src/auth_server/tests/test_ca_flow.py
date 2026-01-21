@@ -128,9 +128,9 @@ class TestAuthServer(TestCase):
         ]
         for cert_name, within_validity_period in parameters:
             cert = self._load_cert(filename=cert_name)
-            assert (
-                cert_within_validity_period(cert) is within_validity_period
-            ), f"{cert_name} should be {not within_validity_period}"
+            assert cert_within_validity_period(cert) is within_validity_period, (
+                f"{cert_name} should be {not within_validity_period}"
+            )
 
     def _do_mtls_transaction(self: Self, cert: Certificate) -> Response:
         client_cert_str = serialize_certificate(cert=cert)

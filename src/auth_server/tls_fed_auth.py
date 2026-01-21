@@ -84,7 +84,7 @@ async def get_remote_metadata(url: str) -> str | None:
 async def get_local_metadata(path: Path) -> str | None:
     # Open local jws file
     try:
-        async with async_open(path, "r") as f:
+        async with async_open(path) as f:
             return await f.read()
     except OSError as e:
         logger.error(f"Could not open {path}: {e}")
@@ -175,7 +175,7 @@ async def load_metadata_source(
         try:
             metadata.entities.append(Entity.model_validate(entity))
         except ValidationError:
-            logger.exception(f'Failed to parse {entity.get("entity_id")} from {jose_header.iss} metadata')
+            logger.exception(f"Failed to parse {entity.get('entity_id')} from {jose_header.iss} metadata")
             continue
 
     return MetadataSource(

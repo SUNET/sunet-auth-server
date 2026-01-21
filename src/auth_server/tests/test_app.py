@@ -1015,7 +1015,7 @@ class TestAuthServer(TestCase):
         assert continue_response["access_token"]["value"] is not None
 
         # do continue request before interaction is done
-        authorization_header = f'GNAP {continue_response["access_token"]["value"]}'
+        authorization_header = f"GNAP {continue_response['access_token']['value']}"
         response = self.client.post(continue_response["uri"], json={}, headers={"Authorization": authorization_header})
         # expect the same continue response as the first time
         continue_response = response.json()["continue"]
@@ -1076,7 +1076,7 @@ class TestAuthServer(TestCase):
         assert continue_response["access_token"]["value"] is not None
 
         # do continue request before interaction is done
-        authorization_header = f'GNAP {continue_response["access_token"]["value"]}'
+        authorization_header = f"GNAP {continue_response['access_token']['value']}"
         client_header = {"Client-Cert": self.client_cert_str, "Authorization": authorization_header}
         response = self.client.post(continue_response["uri"], json={}, headers=client_header)
         # expect the same continue response as the first time
@@ -1182,7 +1182,7 @@ class TestAuthServer(TestCase):
             protected=json.dumps(jws_header),
         )
         continue_data = _jws.serialize(compact=True)
-        authorization_header = f'GNAP {continue_response["access_token"]["value"]}'
+        authorization_header = f"GNAP {continue_response['access_token']['value']}"
         client_header["Authorization"] = authorization_header
         response = self.client.post(continue_response["uri"], content=continue_data, headers=client_header)
 
@@ -1286,7 +1286,7 @@ class TestAuthServer(TestCase):
             protected=json.dumps(jws_header),
         )
         continue_data = _jws.serialize(compact=True)
-        authorization_header = f'GNAP {continue_response["access_token"]["value"]}'
+        authorization_header = f"GNAP {continue_response['access_token']['value']}"
         client_header["Authorization"] = authorization_header
         response = self.client.post(continue_response["uri"], content=continue_data, headers=client_header)
 
@@ -1389,7 +1389,7 @@ class TestAuthServer(TestCase):
         continue_header, _, continue_signature = continue_data.split(".")
         client_header = {"Detached-JWS": f"{continue_header}.{payload_hash}.{continue_signature}"}
 
-        authorization_header = f'GNAP {continue_response["access_token"]["value"]}'
+        authorization_header = f"GNAP {continue_response['access_token']['value']}"
         client_header["Authorization"] = authorization_header
         response = self.client.post(continue_response["uri"], content=payload, headers=client_header)
 

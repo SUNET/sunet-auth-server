@@ -81,7 +81,7 @@ def main(args: argparse.Namespace) -> None:
             try:
                 Entity.parse_obj(item)
             except Exception as e:
-                print(f'Failed to parse: {item["entity_id"]}: {e}')
+                print(f"Failed to parse: {item['entity_id']}: {e}")
 
     print()
 

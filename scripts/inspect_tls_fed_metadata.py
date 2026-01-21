@@ -67,7 +67,7 @@ def main(args: argparse.Namespace) -> None:
     print(f"Metadata for issuer {issuer}:")
     print(f"Issued at: {datetime.fromtimestamp(issued_at)}. Expires at: {datetime.fromtimestamp(expires_at)}")
     metadata = json.loads(_jws.payload)
-    print(f'Version: {metadata.get("version")}')
+    print(f"Version: {metadata.get('version')}")
     print()
     if args.entity is not None:
         # print requested entity
