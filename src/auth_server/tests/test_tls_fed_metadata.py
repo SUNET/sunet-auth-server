@@ -139,5 +139,7 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
         assert len(issuer_metadata.entities) == 2
         # but the unregistered extension should be removed
         entity = issuer_metadata.entities["https://unknown_extension_entity"]
+        assert entity.extensions is not None  # please mypy
+        assert entity.extensions.saml_scope is not None  # please mypy
         assert entity.extensions.saml_scope.scope == self.scopes
         assert entity.extensions.model_dump()["not_a_registered_extension"] == {"some_key": "some_value"}
