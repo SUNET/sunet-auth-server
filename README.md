@@ -55,7 +55,7 @@ SUNET Auth Server is an authentication server that implements the GNAP protocol 
 
 4. **Run the server**:
    ```bash
-   uvicorn auth_server.api:app --host 0.0.0.0 --port 8080
+   uvicorn auth_server.run:app --host 0.0.0.0 --port 8080
    ```
 
 ### Docker Deployment
@@ -175,8 +175,7 @@ curl -X POST https://auth.example.com/transaction \
       "access": [{"type": "example-api", "scope": "example.org"}]
     }],
     "client": {
-      "key": "configured_key_name",
-      }
+      "key": "configured_key_name"
     }
   }'
 ```
@@ -203,7 +202,7 @@ curl -X POST https://auth.example.com/transaction \
 ```
 ### Continue Transaction
 
-**POST** `/continue/{instance_id}`
+**POST** `/continue/{continue_reference}`
 
 Continue an in-progress GNAP transaction.
 
