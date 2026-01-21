@@ -301,7 +301,7 @@ class TestSAMLSP(TestCase):
         self.config["saml2_single_idp"] = self.test_idp
         self._update_app_config(config=self.config)
         authn_url = saml2_router.url_path_for("authenticate", transaction_id=self.test_transaction_state.transaction_id)
-        response = self.client.get(authn_url, allow_redirects=False)
+        response = self.client.get(authn_url, follow_redirects=False)
         assert response.status_code == 303
         assert (
             response.headers["location"].startswith(
@@ -318,7 +318,7 @@ class TestSAMLSP(TestCase):
         self._save_transaction_state(transaction_state)
         # do authn request
         authn_url = saml2_router.url_path_for("authenticate", transaction_id=self.test_transaction_state.transaction_id)
-        self.client.get(f"{authn_url}", allow_redirects=False)
+        self.client.get(f"{authn_url}", follow_redirects=False)
         auth_req_ref = self._get_current_saml_request_id()
         generated_authn_response = self._generate_auth_response(
             request_id=auth_req_ref, saml_response_tpl=self.saml_response_tpl_success
@@ -345,7 +345,7 @@ class TestSAMLSP(TestCase):
         self._save_transaction_state(transaction_state)
         # do authn request
         authn_url = saml2_router.url_path_for("authenticate", transaction_id=self.test_transaction_state.transaction_id)
-        self.client.get(f"{authn_url}", allow_redirects=False)
+        self.client.get(f"{authn_url}", follow_redirects=False)
         auth_req_ref = self._get_current_saml_request_id()
         generated_authn_response = self._generate_auth_response(
             request_id=auth_req_ref, saml_response_tpl=self.saml_response_tpl_fail
@@ -361,7 +361,7 @@ class TestSAMLSP(TestCase):
     def test_idp_discovery(self: Self) -> None:
         # test initial redirect
         authn_url = saml2_router.url_path_for("authenticate", transaction_id=self.test_transaction_state.transaction_id)
-        response = self.client.get(f"{authn_url}", allow_redirects=False)
+        response = self.client.get(f"{authn_url}", follow_redirects=False)
         assert response.status_code == 303
         assert response.headers["location"].startswith(self.config["saml2_discovery_service_url"]) is True
         parsed_redirect_url = urlparse(response.headers["location"])
@@ -375,10 +375,10 @@ class TestSAMLSP(TestCase):
         parsed_return_url = urlparse(parsed_redirect_qs["return"][0])
         parsed_return_qs = parse_qs(parsed_return_url.query)
         discovery_response_url = (
-            f'{saml2_router.url_path_for("discovery_service_response")}'
-            f'?target={parsed_return_qs["target"][0]}&entityID={self.test_idp}'
+            f"{saml2_router.url_path_for('discovery_service_response')}"
+            f"?target={parsed_return_qs['target'][0]}&entityID={self.test_idp}"
         )
-        response2 = self.client.get(discovery_response_url, allow_redirects=False)
+        response2 = self.client.get(discovery_response_url, follow_redirects=False)
         assert response2.status_code == 303
         assert (
             response2.headers["location"].startswith(

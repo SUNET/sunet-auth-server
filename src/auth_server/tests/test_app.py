@@ -764,7 +764,7 @@ class TestAuthServer(TestCase):
         assert continue_response["access_token"]["value"] == transaction_state.continue_access_token
 
         # check redirect to SAML SP
-        response = self.client.get(interaction_response["redirect"], allow_redirects=False)
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
         assert response.status_code == 307
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
@@ -804,14 +804,14 @@ class TestAuthServer(TestCase):
         transaction_id = interaction_response["redirect"].split("http://testserver/interaction/redirect/")[1]
 
         # check redirect to SAML SP
-        response = self.client.get(interaction_response["redirect"], allow_redirects=False)
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
         assert response.status_code == 307
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
         self._fake_saml_authentication(transaction_id=transaction_id)
 
-        response = self.client.get(interaction_response["redirect"], allow_redirects=False)
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
         assert response.status_code == 307
 
     @mock.patch("aiohttp.ClientSession.post", new_callable=AsyncMock)
@@ -845,7 +845,7 @@ class TestAuthServer(TestCase):
         transaction_id = interaction_response["redirect"].split("http://testserver/interaction/redirect/")[1]
 
         # check redirect to SAML SP
-        response = self.client.get(interaction_response["redirect"], allow_redirects=False)
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
         assert response.status_code == 307
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
@@ -876,7 +876,7 @@ class TestAuthServer(TestCase):
         assert "<h4>Input your code</h4>" in response.text
 
         response = self.client.post(
-            "/interaction/code", data={"user_code": interaction_response["user_code"]}, allow_redirects=False
+            "/interaction/code", data={"user_code": interaction_response["user_code"]}, follow_redirects=False
         )
         assert response.status_code == 303
 
@@ -884,7 +884,7 @@ class TestAuthServer(TestCase):
         redirect_interaction_endpoint = response.headers["location"]
 
         # check redirect to SAML SP
-        response = self.client.get(response.headers["location"], allow_redirects=False)
+        response = self.client.get(response.headers["location"], follow_redirects=False)
         assert response.status_code == 307
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
@@ -918,7 +918,7 @@ class TestAuthServer(TestCase):
         response = self.client.post(
             "/interaction/code",
             data={"user_code": interaction_response["user_code_uri"]["code"]},
-            allow_redirects=False,
+            follow_redirects=False,
         )
         assert response.status_code == 303
 
@@ -926,7 +926,7 @@ class TestAuthServer(TestCase):
         redirect_interaction_endpoint = response.headers["location"]
 
         # check redirect to SAML SP
-        response = self.client.get(response.headers["location"], allow_redirects=False)
+        response = self.client.get(response.headers["location"], follow_redirects=False)
         assert response.status_code == 307
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
@@ -963,7 +963,7 @@ class TestAuthServer(TestCase):
         transaction_id = interaction_response["redirect"].split("http://testserver/interaction/redirect/")[1]
 
         # check redirect to SAML SP
-        response = self.client.get(interaction_response["redirect"], allow_redirects=False)
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
         assert response.status_code == 307
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
@@ -971,12 +971,12 @@ class TestAuthServer(TestCase):
         self._fake_saml_authentication(transaction_id=transaction_id)
 
         # complete interaction
-        response = self.client.get(interaction_response["redirect"], allow_redirects=False)
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
         assert response.status_code == 200
         assert "<h3>Interaction finished</h3>" in response.text
 
         # continue request after interaction is completed
-        authorization_header = f'GNAP {continue_response["access_token"]["value"]}'
+        authorization_header = f"GNAP {continue_response['access_token']['value']}"
         response = self.client.post(continue_response["uri"], json={}, headers={"Authorization": authorization_header})
 
         assert response.status_code == 200
@@ -1027,7 +1027,7 @@ class TestAuthServer(TestCase):
         transaction_id = interaction_response["redirect"].split("http://testserver/interaction/redirect/")[1]
 
         # check redirect to SAML SP
-        response = self.client.get(interaction_response["redirect"], allow_redirects=False)
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
         assert response.status_code == 307
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
@@ -1035,12 +1035,12 @@ class TestAuthServer(TestCase):
         self._fake_saml_authentication(transaction_id=transaction_id)
 
         # complete interaction
-        response = self.client.get(interaction_response["redirect"], allow_redirects=False)
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
         assert response.status_code == 200
         assert "<h3>Interaction finished</h3>" in response.text
 
         # continue request after interaction is completed
-        authorization_header = f'GNAP {continue_response["access_token"]["value"]}'
+        authorization_header = f"GNAP {continue_response['access_token']['value']}"
         response = self.client.post(continue_response["uri"], json={}, headers={"Authorization": authorization_header})
 
         # TODO: temporary end of test (same as test for test flow)
@@ -1089,7 +1089,7 @@ class TestAuthServer(TestCase):
         transaction_id = interaction_response["redirect"].split("http://testserver/interaction/redirect/")[1]
 
         # check redirect to SAML SP
-        response = self.client.get(interaction_response["redirect"], allow_redirects=False)
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
         assert response.status_code == 307
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
@@ -1097,7 +1097,7 @@ class TestAuthServer(TestCase):
         self._fake_saml_authentication(transaction_id=transaction_id)
 
         # complete interaction
-        response = self.client.get(interaction_response["redirect"], allow_redirects=False)
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
         assert response.status_code == 200
         assert "<h3>Interaction finished</h3>" in response.text
 
@@ -1158,7 +1158,7 @@ class TestAuthServer(TestCase):
         transaction_id = interaction_response["redirect"].split("http://testserver/interaction/redirect/")[1]
 
         # check redirect to SAML SP
-        response = self.client.get(interaction_response["redirect"], allow_redirects=False)
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
         assert response.status_code == 307
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
@@ -1166,7 +1166,7 @@ class TestAuthServer(TestCase):
         self._fake_saml_authentication(transaction_id=transaction_id)
 
         # complete interaction
-        response = self.client.get(interaction_response["redirect"], allow_redirects=False)
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
         assert response.status_code == 200
         assert "<h3>Interaction finished</h3>" in response.text
 
@@ -1250,7 +1250,7 @@ class TestAuthServer(TestCase):
         as_nonce = interaction_response["finish"]
 
         # check redirect to SAML SP
-        response = self.client.get(interaction_response["redirect"], allow_redirects=False)
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
         assert response.status_code == 307
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
@@ -1258,7 +1258,7 @@ class TestAuthServer(TestCase):
         self._fake_saml_authentication(transaction_id=transaction_id)
 
         # complete interaction
-        response = self.client.get(interaction_response["redirect"], allow_redirects=False)
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
         assert response.status_code == 307
 
         # "receive" redirect back to our endpoint and pick out hash and interact_ref
@@ -1356,7 +1356,7 @@ class TestAuthServer(TestCase):
         transaction_id = interaction_response["redirect"].split("http://testserver/interaction/redirect/")[1]
 
         # check redirect to SAML SP
-        response = self.client.get(interaction_response["redirect"], allow_redirects=False)
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
         assert response.status_code == 307
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
@@ -1364,7 +1364,7 @@ class TestAuthServer(TestCase):
         self._fake_saml_authentication(transaction_id=transaction_id)
 
         # complete interaction
-        response = self.client.get(interaction_response["redirect"], allow_redirects=False)
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
         assert response.status_code == 200
         assert "<h3>Interaction finished</h3>" in response.text
 
@@ -1432,7 +1432,7 @@ class TestAuthServer(TestCase):
         transaction_id = interaction_response["redirect"].split("http://testserver/interaction/redirect/")[1]
 
         # check redirect to SAML SP
-        response = self.client.get(interaction_response["redirect"], allow_redirects=False)
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
         assert response.status_code == 307
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
@@ -1440,12 +1440,12 @@ class TestAuthServer(TestCase):
         self._fake_saml_authentication(transaction_id=transaction_id)
 
         # complete interaction
-        response = self.client.get(interaction_response["redirect"], allow_redirects=False)
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
         assert response.status_code == 200
         assert "<h3>Interaction finished</h3>" in response.text
 
         # continue request after interaction is completed
-        authorization_header = f'GNAP {continue_response["access_token"]["value"]}'
+        authorization_header = f"GNAP {continue_response['access_token']['value']}"
         response = self.client.post(continue_response["uri"], json={}, headers={"Authorization": authorization_header})
 
         assert response.status_code == 200
