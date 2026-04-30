@@ -1,6 +1,6 @@
 # setup step
 FROM debian:stable AS build
-env DEBIAN_FRONTEND noninteractive
+ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get update && \
     apt-get -y dist-upgrade && \
     apt-get install -y \
@@ -20,7 +20,7 @@ RUN /opt/sunet/sunet-auth-server/docker/setup_venv.sh
 
 # actual image
 FROM debian:stable
-env DEBIAN_FRONTEND noninteractive
+ENV DEBIAN_FRONTEND noninteractive
 #
 # Install dependencies and tools that are helpful when troubleshooting
 #
@@ -34,11 +34,10 @@ RUN apt-get update && \
       netcat-openbsd \
       procps \
       python3-minimal \
-      python3-distutils \
       xmlsec1 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-RUN addgroup --system sunet && adduser --system --shell /bin/false sunet
+RUN groupadd --system sunet && useradd --system --shell /bin/false --gid sunet sunet
 
 RUN mkdir -p /var/log/sunet && chown sunet: /var/log/sunet && chmod 770 /var/log/sunet
 
