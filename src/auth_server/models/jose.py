@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from enum import Enum
+from enum import StrEnum
 from typing import Self
 
 from pydantic import AnyUrl, BaseModel, Field
@@ -9,18 +9,18 @@ from auth_server.time_utils import utc_now
 __author__ = "lundberg"
 
 
-class KeyType(str, Enum):
+class KeyType(StrEnum):
     EC = "EC"
     RSA = "RSA"
     OCT = "oct"
 
 
-class KeyUse(str, Enum):
+class KeyUse(StrEnum):
     SIGN = "sig"
     ENCRYPT = "enc"
 
 
-class KeyOptions(str, Enum):
+class KeyOptions(StrEnum):
     SIGN = "sign"
     VERIFY = "verify"
     ENCRYPT = "encrypt"
@@ -31,13 +31,13 @@ class KeyOptions(str, Enum):
     DERIVE_BITS = "deriveBits"
 
 
-class SupportedAlgorithms(str, Enum):
+class SupportedAlgorithms(StrEnum):
     RS256 = "RS256"
     ES256 = "ES256"
     ES384 = "ES384"
 
 
-class SupportedHTTPMethods(str, Enum):
+class SupportedHTTPMethods(StrEnum):
     POST = "POST"
 
 
@@ -108,12 +108,12 @@ class JWKS(BaseModel):
     keys: list[ECJWK | RSAJWK | SymmetricJWK]
 
 
-class SupportedJWSTypeLegacy(str, Enum):
+class SupportedJWSTypeLegacy(StrEnum):
     JWS = "gnap-binding+jws"
     JWSD = "gnap-binding+jwsd"
 
 
-class SupportedJWSType(str, Enum):
+class SupportedJWSType(StrEnum):
     JWS = "gnap-binding-jws"
     JWSD = "gnap-binding-jwsd"
 

@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Annotated
 
 from pydantic import AnyUrl, BaseModel, ConfigDict, Field, PositiveInt, StringConstraints
@@ -19,7 +19,7 @@ class TLSFEDJOSEHeader(JOSEHeader):
     iss: str | None = None
 
 
-class RegisteredExtensions(str, Enum):
+class RegisteredExtensions(StrEnum):
     SAML_SCOPE = "https://kontosynk.internetstiftelsen.se/saml-scope"
 
 
@@ -37,7 +37,7 @@ class CertIssuers(BaseModel):
     x509certificate: str | None = Field(None, title="X.509 Certificate (PEM)")
 
 
-class Alg(str, Enum):
+class Alg(StrEnum):
     sha256 = "sha256"
 
 

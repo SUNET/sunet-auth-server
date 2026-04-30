@@ -1,5 +1,5 @@
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -26,7 +26,7 @@ class GnapBaseModel(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
-class ProofMethod(str, Enum):
+class ProofMethod(StrEnum):
     HTTPSIG = "httpsig"
     MTLS = "mtls"
     JWSD = "jwsd"
@@ -87,7 +87,7 @@ class Access(GnapBaseModel):
     scope: str | None = None
 
 
-class AccessTokenFlags(str, Enum):
+class AccessTokenFlags(StrEnum):
     BEARER = "bearer"
     DURABLE = "durable"
 
@@ -99,7 +99,7 @@ class AccessTokenRequest(GnapBaseModel):
     flags: list[AccessTokenFlags] | None = None
 
 
-class SubjectIdentifierFormat(str, Enum):
+class SubjectIdentifierFormat(StrEnum):
     ACCOUNT = "account"
     ALIASES = "aliases"
     DID = "did"
@@ -109,7 +109,7 @@ class SubjectIdentifierFormat(str, Enum):
     PHONE_NUMBER = "phone_number"
 
 
-class SubjectAssertionFormat(str, Enum):
+class SubjectAssertionFormat(StrEnum):
     ID_TOKEN = "id_token"
     SAML2 = "saml2"
 
@@ -175,19 +175,19 @@ class TokenManagementInfo(GnapBaseModel):
     access_token: Any | None = None
 
 
-class StartInteractionMethod(str, Enum):
+class StartInteractionMethod(StrEnum):
     REDIRECT = "redirect"
     APP = "app"
     USER_CODE = "user_code"  # for use with a stable URI
     USER_CODE_URI = "user_code_uri"  # for use with a dynamic URI
 
 
-class FinishInteractionMethod(str, Enum):
+class FinishInteractionMethod(StrEnum):
     REDIRECT = "redirect"
     PUSH = "push"
 
 
-class HashMethod(str, Enum):
+class HashMethod(StrEnum):
     # Hash names has to match https://www.iana.org/assignments/named-information/named-information.xhtml#hash-alg
     SHA_256 = "sha-256"
     SHA_512 = "sha-512"
@@ -262,7 +262,7 @@ class SubjectResponse(GnapBaseModel):
     updated_at: datetime | None = Field(default=None, description="ISO8610 date string")
 
 
-class ErrorCode(str, Enum):
+class ErrorCode(StrEnum):
     INVALID_REQUEST = "invalid_request"
     INVALID_CLIENT = "invalid_client"
     INVALID_INTERACTION = "invalid_interaction"

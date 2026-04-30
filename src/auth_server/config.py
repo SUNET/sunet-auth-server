@@ -1,7 +1,7 @@
 import json
 import os
 from datetime import timedelta
-from enum import Enum
+from enum import StrEnum
 from functools import lru_cache
 from os import environ
 from pathlib import Path
@@ -22,19 +22,19 @@ class ConfigurationError(Exception):
     pass
 
 
-class Environment(str, Enum):
+class Environment(StrEnum):
     DEV = "dev"
     PROD = "prod"
 
 
-class LoggingFilters(str, Enum):
+class LoggingFilters(StrEnum):
     """Identifiers to coherently map elements in LocalContext.filters to filter classes in logging dictConfig."""
 
     DEBUG_TRUE = "require_debug_true"
     DEBUG_FALSE = "require_debug_false"
 
 
-class FlowName(str, Enum):
+class FlowName(StrEnum):
     CAFLOW = "CAFlow"
     CONFIGFLOW = "ConfigFlow"
     INTERACTIONFLOW = "InteractionFlow"

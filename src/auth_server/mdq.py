@@ -1,7 +1,7 @@
 import logging
 from collections import OrderedDict
 from collections import OrderedDict as _OrderedDict
-from enum import Enum
+from enum import StrEnum
 from pyexpat import ExpatError
 from typing import Any, Self
 
@@ -20,7 +20,7 @@ __author__ = "lundberg"
 logger = logging.getLogger(__name__)
 
 
-class KeyUse(str, Enum):
+class KeyUse(StrEnum):
     SIGNING = "signing"
     ENCRYPTION = "encryption"
 

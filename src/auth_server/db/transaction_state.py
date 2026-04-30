@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC
 from collections.abc import Mapping
 from datetime import datetime, timedelta
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Self, TypeVar
 
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -29,14 +29,14 @@ async def get_transaction_state_db() -> TransactionStateDB | None:
     return None
 
 
-class FlowState(str, Enum):
+class FlowState(StrEnum):
     PROCESSING = "processing"
     PENDING = "pending"
     APPROVED = "approved"
     FINALIZED = "finalized"
 
 
-class AuthSource(str, Enum):
+class AuthSource(StrEnum):
     INTERACTION = "interaction"
     CONFIG = "config"
     MDQ = "mdq"

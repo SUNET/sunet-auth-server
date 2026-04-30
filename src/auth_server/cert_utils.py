@@ -3,7 +3,7 @@ __author__ = "lundberg"
 import logging
 from base64 import b64encode
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
 
@@ -28,7 +28,7 @@ OID_SERIAL_NUMBER = ObjectIdentifier("2.5.4.5")
 OID_ENHANCED_KEY_USAGE_CLIENT_AUTHENTICATION = ObjectIdentifier("1.3.6.1.5.5.7.3.2")
 
 
-class SupportedOrgIdCA(str, Enum):
+class SupportedOrgIdCA(StrEnum):
     EFOS = "Swedish Social Insurance Agency"
     EXPITRUST = "Expisoft AB"
     SITHS = "Inera AB"
