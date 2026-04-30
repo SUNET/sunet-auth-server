@@ -14,7 +14,7 @@ from jwcrypto import jwk, jws
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from auth_server.cert_utils import rfc8705_fingerprint
-from auth_server.config import load_config
+from auth_server.config import TLSFEDMetadata, load_config
 from auth_server.models.gnap import Key, Proof, ProofMethod
 from auth_server.models.tls_fed_metadata import Entity, TLSFEDJOSEHeader
 from auth_server.models.tls_fed_metadata import Model as TLSFEDMetadataModel
@@ -92,8 +92,9 @@ async def get_local_metadata(path: Path) -> str | None:
 
 
 async def load_metadata_source(
-    raw_jws: str | None, jwks: jwk.JWKSet | None, strict: bool = True
+    raw_jws: str | None, jwks: jwk.JWKSet | None, source: TLSFEDMetadata
 ) -> MetadataSource | None:
+    logger.info(f"loading metadata from source: {source}")
     if raw_jws is None:
         logger.warning("could not load metadata. missing jws")
         return None
@@ -155,7 +156,7 @@ async def load_metadata_source(
     except ValidationError:
         logger.exception("metadata could not be validated")
         # if strict we do not try to load partial metadata
-        if strict:
+        if source.strict:
             return None
 
     # Try to load any entities that validates
@@ -188,6 +189,7 @@ async def load_metadata(metadata_sources: list[MetadataSource], cache_ttl: timed
     renew_at = now + cache_ttl  # Set default renew time
     loaded_metadata: dict[str, IssuerMetadata] = {}
     for metadata_source in metadata_sources:
+        logger.info(f"loading metadata for issuer: {metadata_source.issuer}")
         # Set renew_at to the issuer's cache_ttl if available
         if metadata_source.metadata.cache_ttl is not None:
             renew_at = now + timedelta(seconds=metadata_source.metadata.cache_ttl)
@@ -218,18 +220,19 @@ async def get_tls_fed_metadata() -> Metadata:
     config = load_config()
     metadata_sources = []
     for source in config.tls_fed_metadata:
-        logger.debug(f"trying to load metadata using: {source}")
         raw_jws = None
         jwks = await load_jwks(source.jwks)
         # Try local source if it exists
         if source.local is not None:
+            logger.info(f"loading metadata from: {source.local}")
             raw_jws = await get_local_metadata(source.local)
             logger.debug(f"{source.local} returned jws: {raw_jws}")
         # if local source didn't return any metadata try remote source if it exists
         elif source.remote is not None:
+            logger.info(f"loading metadata from: {source.remote}")
             raw_jws = await get_remote_metadata(str(source.remote))
             logger.debug(f"{source.remote} returned jws: {raw_jws}")
-        metadata_source = await load_metadata_source(raw_jws=raw_jws, jwks=jwks, strict=source.strict)
+        metadata_source = await load_metadata_source(raw_jws=raw_jws, jwks=jwks, source=source)
         if metadata_source is not None:
             logger.debug(f"loaded metadata source: {metadata_source}")
             metadata_sources.append(metadata_source)

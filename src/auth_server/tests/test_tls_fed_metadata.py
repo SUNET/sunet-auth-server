@@ -10,8 +10,9 @@ from cryptography import x509
 from cryptography.hazmat.primitives.serialization import Encoding
 from jwcrypto import jwk
 
+from auth_server.config import TLSFEDMetadata
 from auth_server.models.jose import SupportedAlgorithms
-from auth_server.models.tls_fed_metadata import Model as TLSFEDMetadata
+from auth_server.models.tls_fed_metadata import Model as TLSFEDMetadataModel
 from auth_server.models.tls_fed_metadata import RegisteredExtensions
 from auth_server.tests.utils import create_tls_fed_metadata, tls_fed_metadata_to_jws
 from auth_server.time_utils import utc_now
@@ -40,7 +41,7 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
         self.client_cert_str = base64.b64encode(self.client_cert.public_bytes(encoding=Encoding.DER)).decode("utf-8")
 
     async def _load_metadata(
-        self: Self, metadata: TLSFEDMetadata | str | None = None, strict: bool = True
+        self: Self, metadata: TLSFEDMetadataModel | str | None = None, strict: bool = True
     ) -> Metadata | None:
         if metadata is None:
             metadata = create_tls_fed_metadata(
@@ -59,7 +60,9 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
             compact=False,
         ).decode("utf-8")
 
-        metadata_source = await load_metadata_source(raw_jws=metadata_jws, jwks=self.tls_fed_jwks, strict=strict)
+        metadata_source = await load_metadata_source(
+            raw_jws=metadata_jws, jwks=self.tls_fed_jwks, source=TLSFEDMetadata(jwks=Path("not_used"), strict=strict)
+        )
         if metadata_source is None:
             return None
         return await load_metadata(metadata_sources=[metadata_source], cache_ttl=self.cache_ttl)
