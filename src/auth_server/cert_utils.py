@@ -1,7 +1,7 @@
 __author__ = "lundberg"
 
 import logging
-from base64 import b64encode
+from base64 import b64encode, urlsafe_b64encode
 from datetime import datetime
 from enum import StrEnum
 from functools import lru_cache
@@ -267,5 +267,14 @@ def serialize_certificate(cert: Certificate, encoding: Encoding = Encoding.PEM) 
 
 
 @lru_cache
-def rfc8705_fingerprint(cert: Certificate) -> str:
+def wrong_rfc8705_fingerprint(cert: Certificate) -> str:
+    """
+    This was not the correct way of calculating the fingerprint, should be removed after
+    a grace period.
+    """
     return b64encode(cert.fingerprint(algorithm=SHA256())).decode("ascii")
+
+
+@lru_cache
+def rfc8705_fingerprint(cert: Certificate) -> str:
+    return urlsafe_b64encode(cert.fingerprint(algorithm=SHA256())).decode("ascii").rstrip("=")

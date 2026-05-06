@@ -160,7 +160,7 @@ curl -X POST https://auth.example.com/transaction \
     "client": {
       "key": {
         "proof": "mtls",
-        "cert#S256": "HTOXGzzHrtiq/Art..."
+        "cert#S256": "HTOXGzzHrtiq_Art..."
       }
     }
   }'
@@ -192,7 +192,7 @@ curl -X POST https://auth.example.com/transaction \
     "client": {
       "key": {
         "proof": "mtls",
-        "cert#S256": "HTOXGzzHrtiq/Art..."
+        "cert#S256": "HTOXGzzHrtiq_Art..."
       }
     },
     "interact": {

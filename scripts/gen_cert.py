@@ -1,7 +1,7 @@
 import argparse
 import os
 import sys
-from base64 import b64encode
+from base64 import urlsafe_b64encode
 from datetime import datetime, timedelta
 
 from cryptography import x509
@@ -81,7 +81,7 @@ def main(args: argparse.Namespace) -> None:
 
     # Print additional info
     sys.stdout.writelines("cert#S256 fingerprint:\n")
-    sys.stdout.writelines(b64encode(cert.fingerprint(algorithm=SHA256())).decode("utf-8"))
+    sys.stdout.writelines(urlsafe_b64encode(cert.fingerprint(algorithm=SHA256())).decode("ascii").rstrip("="))
     sys.stdout.writelines("\n")
 
 

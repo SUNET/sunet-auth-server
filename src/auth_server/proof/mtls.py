@@ -1,6 +1,12 @@
 import logging
 
-from auth_server.cert_utils import load_pem_from_str, rfc8705_fingerprint
+from auth_server.cert_utils import (
+    get_subject_cn,
+    get_subject_o,
+    load_pem_from_str,
+    rfc8705_fingerprint,
+    wrong_rfc8705_fingerprint,
+)
 from auth_server.models.gnap import Key
 
 __author__ = "lundberg"
@@ -16,12 +22,21 @@ async def check_mtls_proof(gnap_key: Key, cert: str) -> bool:
         return False
 
     tls_fingerprint = rfc8705_fingerprint(tls_cert)
+    old_tls_fingerprint = wrong_rfc8705_fingerprint(tls_cert)
     logger.debug(f"tls cert fingerprint: {str(tls_fingerprint)}")
 
     if gnap_key.cert_S256 is not None:
         logger.debug(f"cert#S256: {gnap_key.cert_S256}")
         if tls_fingerprint == gnap_key.cert_S256:
             logger.info("TLS cert fingerprint matches grant request cert#S256")
+            return True
+        if old_tls_fingerprint == gnap_key.cert_S256:
+            # check against the old, wrong, way of calculating the hash and log a warning to
+            # let users know to change the way they do it
+            logger.info("TLS cert OLD fingerprint matches grant request cert#S256")
+            logger.warning("cert#S256 calculated the old way - contact user")
+            logger.warning(f"CN: {get_subject_cn(tls_cert)}, O: {get_subject_o(tls_cert)}")
+            logger.warning(f"new {tls_fingerprint} != old {old_tls_fingerprint}")
             return True
         logger.info("TLS cert fingerprint does NOT match grant request cert#S256")
     elif gnap_key.cert is not None:

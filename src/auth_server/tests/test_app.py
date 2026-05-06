@@ -18,7 +18,7 @@ from jwcrypto.common import base64url_encode
 from starlette.testclient import TestClient
 
 from auth_server.api import init_auth_server_api
-from auth_server.cert_utils import serialize_certificate
+from auth_server.cert_utils import rfc8705_fingerprint, serialize_certificate, wrong_rfc8705_fingerprint
 from auth_server.config import ClientKey, load_config
 from auth_server.db.transaction_state import AuthSource, TransactionState
 from auth_server.models.gnap import (
@@ -285,6 +285,23 @@ class TestAuthServer(TestCase):
         # Verify token and check claims
         claims = self._get_access_token_claims(access_token=access_token, client=self.client)
         assert claims["auth_source"] == AuthSource.TEST
+
+    def test_transaction_mtls_new_and_old_fingerprint(self: Self) -> None:
+        self.config["auth_flows"] = json.dumps(["TestFlow"])
+        self._update_app_config(config=self.config)
+
+        old_fingerprint = wrong_rfc8705_fingerprint(self.client_cert)
+        new_fingerprint = rfc8705_fingerprint(self.client_cert)
+
+        for fingerprint in [old_fingerprint, new_fingerprint]:
+            req = GrantRequest(
+                client=Client(key=Key(proof=Proof(method=ProofMethod.MTLS), cert_S256=fingerprint)),
+                access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
+            )
+            client_header = {"Client-Cert": self.client_cert_str}
+            response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
+            assert response.status_code == 200
+            assert "access_token" in response.json()
 
     @mock.patch("aiohttp.ClientSession.get", new_callable=AsyncMock)
     def test_transaction_mtls_mdq_with_key_reference(self: Self, mock_mdq: AsyncMock) -> None:
