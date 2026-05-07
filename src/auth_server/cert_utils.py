@@ -2,7 +2,7 @@ __author__ = "lundberg"
 
 import logging
 from base64 import b64encode, urlsafe_b64encode
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
@@ -39,11 +39,11 @@ def cert_within_validity_period(cert: Certificate) -> bool:
     check if certificate is within the validity period
     """
     cert_fingerprint = rfc8705_fingerprint(cert)
-    now = datetime.utcnow()  # datetimes in cert are not timezone aware
-    if now < cert.not_valid_before:
+    now = datetime.now(UTC)  # datetimes in cert are not timezone aware
+    if now < cert.not_valid_before_utc:
         logger.error(f"Certificate {cert_fingerprint} not valid before {cert.not_valid_before}")
         return False
-    if now > cert.not_valid_after:
+    if now > cert.not_valid_after_utc:
         logger.error(f"Certificate {cert_fingerprint} not valid after {cert.not_valid_after}")
         return False
     return True
