@@ -25,9 +25,10 @@ def tls_fed_metadata_to_jws(
     alg: SupportedAlgorithms,
     issue_time: datetime | None = None,
     compact: bool = True,
+    rfc9932: bool = False,
 ) -> bytes:
     if isinstance(metadata, TLSFEDMetadata):
-        payload = metadata.json(exclude_unset=True)
+        payload = metadata.model_dump_json(exclude_unset=True)
     else:
         payload = metadata
 
@@ -35,26 +36,35 @@ def tls_fed_metadata_to_jws(
         issue_time = utc_now()
     expire_time = issue_time + expires
     protected_header = {
-        "iss": issuer,
-        "iat": int(issue_time.timestamp()),
-        "exp": int(expire_time.timestamp()),
         "alg": alg.value,
         "kid": key.key_id,
     }
+    if not rfc9932:
+        protected_header["iss"] = issuer
+        protected_header["iat"] = int(issue_time.timestamp())
+        protected_header["exp"] = int(expire_time.timestamp())
+
     _jws = jws.JWS(payload=payload)
     _jws.add_signature(key=key, alg=alg.value, protected=json.dumps(protected_header))
     return _jws.serialize(compact=compact).encode()
 
 
 def create_tls_fed_metadata(
+    issuer: str,
+    expires: timedelta,
     entity_id: str,
     client_certs: list[str],
     cache_ttl: int = 3600,
     organization_id: str = "SE0123456789",
     scopes: list[str] | None = None,
+    issue_time: datetime | None = None,
+    rfc9932: bool = False,
 ) -> TLSFEDMetadata:
     if scopes is None:
         scopes = list()
+
+    if issue_time is None:
+        issue_time = utc_now()
 
     entities = [
         Entity(
@@ -65,7 +75,18 @@ def create_tls_fed_metadata(
             extensions=Extensions(saml_scope=SAMLScopeExtension(scope=scopes)),
         )
     ]
-    return TLSFEDMetadata(version="1.0.0", cache_ttl=cache_ttl, entities=entities)
+    if not rfc9932:
+        return TLSFEDMetadata(version="1.0.0", cache_ttl=cache_ttl, entities=entities)
+
+    expire_time = issue_time + expires
+    return TLSFEDMetadata(
+        version="1.0.0",
+        cache_ttl=cache_ttl,
+        iss=issuer,
+        iat=int(issue_time.timestamp()),
+        exp=int(expire_time.timestamp()),
+        entities=entities,
+    )
 
 
 def create_cert(

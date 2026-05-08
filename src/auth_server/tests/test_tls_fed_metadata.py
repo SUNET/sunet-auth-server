@@ -41,14 +41,18 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
         self.client_cert_str = base64.b64encode(self.client_cert.public_bytes(encoding=Encoding.DER)).decode("utf-8")
 
     async def _load_metadata(
-        self: Self, metadata: TLSFEDMetadataModel | str | None = None, strict: bool = True
+        self: Self, metadata: TLSFEDMetadataModel | str | None = None, strict: bool = True, rfc9932: bool = False
     ) -> Metadata | None:
         if metadata is None:
             metadata = create_tls_fed_metadata(
+                issuer=self.issuer,
+                issue_time=self.about_now,
+                expires=self.expires,
                 entity_id=self.entity_id,
                 cache_ttl=self.cache_ttl.seconds,
                 scopes=self.scopes,
                 client_certs=[self.client_cert_str],
+                rfc9932=rfc9932,
             )
         metadata_jws = tls_fed_metadata_to_jws(
             metadata,
@@ -58,6 +62,7 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
             expires=self.expires,
             alg=SupportedAlgorithms.ES256,
             compact=False,
+            rfc9932=rfc9932,
         ).decode("utf-8")
 
         metadata_source = await load_metadata_source(
@@ -85,13 +90,33 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
             assert entity.extensions.saml_scope is not None
             assert entity.extensions.saml_scope.scope == self.scopes
 
+    async def test_parse_metadata_RFC9932(self: Self) -> None:
+        metadata = await self._load_metadata(rfc9932=True)
+        assert metadata is not None  # please mypy
+        issuer_metadata = list(metadata.issuer_metadata.values())[0]
+        assert issuer_metadata is not None
+        assert issuer_metadata.renew_at.replace(microsecond=0) == (self.about_now + self.cache_ttl).replace(
+            microsecond=0
+        )
+        assert len(issuer_metadata.entities) == 1
+        for entity in issuer_metadata.entities.values():
+            assert isinstance(entity, MetadataEntity) is True
+            assert entity.issuer == self.issuer
+            assert entity.entity_id == self.entity_id
+            assert entity.expires_at == (self.about_now + self.expires).replace(microsecond=0)
+            assert entity.extensions is not None
+            assert entity.extensions.saml_scope is not None
+            assert entity.extensions.saml_scope.scope == self.scopes
+
     async def test_parse_faulty_metadata(self: Self) -> None:
         serialized_metadata = create_tls_fed_metadata(
             entity_id=self.entity_id,
             cache_ttl=self.cache_ttl.seconds,
             scopes=self.scopes,
             client_certs=[self.client_cert_str],
-        ).json(by_alias=True)
+            issuer=self.issuer,
+            expires=self.expires,
+        ).model_dump_json(by_alias=True)
         deserialized_metadata = json.loads(serialized_metadata)
         entity = deserialized_metadata["entities"][0]
 
@@ -124,6 +149,8 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
             cache_ttl=self.cache_ttl.seconds,
             scopes=self.scopes,
             client_certs=[self.client_cert_str],
+            issuer=self.issuer,
+            expires=self.expires,
         ).model_dump_json(by_alias=True)
         deserialized_metadata = json.loads(serialized_metadata)
 

@@ -13,9 +13,10 @@ from pydantic import AnyUrl, BaseModel, ConfigDict, Field, PositiveInt, StringCo
 from auth_server.models.jose import JOSEHeader
 
 
+# This header class can be removed when RCF9932 is in effect
 class TLSFEDJOSEHeader(JOSEHeader):
-    iat: datetime
-    exp: datetime
+    iat: datetime | None = None
+    exp: datetime | None = None
     iss: str | None = None
 
 
@@ -110,5 +111,23 @@ class Model(BaseModel):
         "Effective maximum TTL is the minimum of HTTP Expire and TTL\n",
         examples=[3600],
         title="Metadata cache TTL",
+    )
+    iat: datetime | None = Field(
+        description="Time at which the metadata was issued (UNIX timestamp)",
+        examples=[1778230600],
+        title="Issued at",
+        default=None,
+    )
+    exp: datetime | None = Field(
+        description="Time at which the metadata expires (UNIX timestamp)",
+        examples=[1779440314],
+        title="Expiration time",
+        default=None,
+    )
+    iss: str | None = Field(
+        description="A URI that uniquely identifies the federation that issued the metadata",
+        examples=["https://federation.example.org"],
+        title="The federation issuing the metadata",
+        default=None,
     )
     entities: list[Entity]

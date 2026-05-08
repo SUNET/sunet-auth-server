@@ -45,9 +45,9 @@ def main(args: argparse.Namespace) -> None:
         # load header values
         print(f"Loading jose header: {jose_header}")
         kid = jose_header.get("kid")
-        issued_at = jose_header.get("iat")
-        expires_at = jose_header.get("exp")
-        issuer = jose_header.get("iss")
+        old_issued_at: int | None = jose_header.get("iat")  # will be removed from this header by RFC9932
+        old_expires_at: int | None = jose_header.get("exp")  # will be removed from this header by RFC9932
+        old_issuer = jose_header.get("iss")  # will be removed from this header by RFC9932
 
         # verify jws
         key = jwks.get_key(kid=kid)
@@ -64,9 +64,27 @@ def main(args: argparse.Namespace) -> None:
 
     # print output
     print()
+    metadata = json.loads(_jws.payload)
+    issued_at: int | None = metadata.get("iat")
+    expires_at: int | None = metadata.get("exp")
+    issuer = metadata.get("iss")
+    if not issued_at:
+        issued_at = old_issued_at
+        print("Using iat from signature header - old way")
+    if not expires_at:
+        expires_at = old_expires_at
+        print("Using exp from signature header - old way")
+    if not issuer:
+        issuer = old_issuer
+        print("Using issuer from signature header - old way")
+
+    if not all([issued_at, expires_at, issuer]):
+        print(f"Missing required fields: {issued_at=}, {expires_at=}, {issuer=}")
+        sys.exit(1)
+
+    print()
     print(f"Metadata for issuer {issuer}:")
     print(f"Issued at: {datetime.fromtimestamp(issued_at)}. Expires at: {datetime.fromtimestamp(expires_at)}")
-    metadata = json.loads(_jws.payload)
     print(f"Version: {metadata.get('version')}")
     print()
     if args.entity is not None:

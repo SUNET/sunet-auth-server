@@ -150,9 +150,11 @@ async def load_metadata_source(
     try:
         # validate payload structure
         metadata = TLSFEDMetadataModel.model_validate_json(_jws.payload)
-        return MetadataSource(
-            issued_at=jose_header.iat, expires_at=jose_header.exp, issuer=jose_header.iss, metadata=metadata
-        )
+        # Try both header and payload until RFC9932 is in effect, payload takes precedence
+        iat = metadata.iat or jose_header.iat
+        exp = metadata.exp or jose_header.exp
+        iss = metadata.iss or jose_header.iss
+        return MetadataSource(issued_at=iat, expires_at=exp, issuer=iss, metadata=metadata)
     except ValidationError:
         logger.exception("metadata could not be validated")
         # if strict we do not try to load partial metadata
@@ -171,17 +173,22 @@ async def load_metadata_source(
         # if there is something wrong with the base structure of the metadata, give up
         return None
 
+    # Try both header and payload until RFC9932 is in effect, payload takes precedence
+    iat = metadata.iat or jose_header.iat  # technically
+    exp = metadata.exp or jose_header.exp
+    iss = metadata.iss or jose_header.iss
+    if not all([iat, exp, iss]):
+        logger.error(f"Missing required fields: {iat=}, {exp=}, {iss=}")
+        return None
+
     # validate entities and discard the ones failing
     for entity in entities:
         try:
             metadata.entities.append(Entity.model_validate(entity))
         except ValidationError:
-            logger.exception(f"Failed to parse {entity.get('entity_id')} from {jose_header.iss} metadata")
+            logger.exception(f"Failed to parse {entity.get('entity_id')} from {iss} metadata")
             continue
-
-    return MetadataSource(
-        issued_at=jose_header.iat, expires_at=jose_header.exp, issuer=jose_header.iss, metadata=metadata
-    )
+    return MetadataSource(issued_at=iat, expires_at=exp, issuer=iss, metadata=metadata)
 
 
 async def load_metadata(metadata_sources: list[MetadataSource], cache_ttl: timedelta) -> Metadata:
