@@ -48,7 +48,7 @@ async def redirect(request: ContextRequest, transaction_id: str, background_task
 
 @interaction_router.get("/code")
 async def user_code_input(request: ContextRequest) -> Response:
-    return templates.TemplateResponse("user_code.jinja2", context={"request": request})
+    return templates.TemplateResponse(request=request, name="user_code.jinja2", context={"request": request})
 
 
 @interaction_router.post("/code")
@@ -60,7 +60,7 @@ async def user_code_finish(request: ContextRequest, user_code: str | None = Form
 
     if user_code is None:
         # TODO: show error in template
-        return templates.TemplateResponse("user_code.jinja2", context={"request": request})
+        return templates.TemplateResponse(request=request, name="user_code.jinja2", context={"request": request})
 
     # normalize user code
     # the AS MUST transform the input string remove invalid characters
@@ -68,7 +68,7 @@ async def user_code_finish(request: ContextRequest, user_code: str | None = Form
     user_code = "".join(user_code.split()).lower()
     if not user_code.isalnum():
         # TODO: show error in template
-        return templates.TemplateResponse("user_code.jinja2", context={"request": request})
+        return templates.TemplateResponse(request=request, name="user_code.jinja2", context={"request": request})
 
     transaction_state = await transaction_db.get_state_by_user_code(user_code)
     if transaction_state is None:
@@ -128,4 +128,4 @@ async def finish_interaction(
                 interaction_hash=interaction_hash,
                 interaction_reference=interact_ref,
             )
-    return templates.TemplateResponse("interaction_finished.jinja2", context={"request": request})
+    return templates.TemplateResponse(request=request, name="interaction_finished.jinja2", context={"request": request})

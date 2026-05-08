@@ -431,7 +431,7 @@ class TestAuthServer(TestCase):
 
         # Remove payload from serialized jws
         header, _, signature = data.split(".")
-        client_header = {"Detached-JWS": f"{header}.{payload_hash}.{signature}"}
+        client_header = {"Content-Type": "application/json", "Detached-JWS": f"{header}.{payload_hash}.{signature}"}
 
         response = self.client.post(
             "/transaction", content=req.model_dump_json(exclude_unset=True), headers=client_header
@@ -478,7 +478,7 @@ class TestAuthServer(TestCase):
 
         # Remove payload from serialized jws
         header, _, signature = data.split(".")
-        client_header = {"Detached-JWS": f"{header}.{payload_hash}.{signature}"}
+        client_header = {"Content-Type": "application/json", "Detached-JWS": f"{header}.{payload_hash}.{signature}"}
 
         response = self.client.post(
             "/transaction", content=req.model_dump_json(exclude_unset=True), headers=client_header
@@ -538,7 +538,13 @@ class TestAuthServer(TestCase):
             tls_fed_jwks = jwk.JWKSet()
             tls_fed_jwks.import_keyset(f.read())
 
-        metadata = create_tls_fed_metadata(entity_id=entity_id, scopes=scopes, client_certs=client_certs)
+        metadata = create_tls_fed_metadata(
+            entity_id=entity_id,
+            scopes=scopes,
+            client_certs=client_certs,
+            issuer="metadata.example.com",
+            expires=timedelta(days=14),
+        )
         metadata_jws = tls_fed_metadata_to_jws(
             metadata,
             key=tls_fed_jwks.get_key("metadata_signing_key_id"),
@@ -613,7 +619,11 @@ class TestAuthServer(TestCase):
 
         entity_id = "https://test.localhost"
         metadata = create_tls_fed_metadata(
-            entity_id=entity_id, scopes=["test.localhost"], client_certs=[self.client_cert_str]
+            entity_id=entity_id,
+            scopes=["test.localhost"],
+            client_certs=[self.client_cert_str],
+            issuer="metadata.example.com",
+            expires=timedelta(days=14),
         )
         metadata_jws = tls_fed_metadata_to_jws(
             metadata,
@@ -668,7 +678,12 @@ class TestAuthServer(TestCase):
             tls_fed_jwks.import_keyset(f.read())
 
         entity_id = "https://test.localhost"
-        metadata = create_tls_fed_metadata(entity_id=entity_id, client_certs=[self.client_cert_str])
+        metadata = create_tls_fed_metadata(
+            entity_id=entity_id,
+            client_certs=[self.client_cert_str],
+            issuer="metadata.example.com",
+            expires=timedelta(days=-1),
+        )
         metadata_jws = tls_fed_metadata_to_jws(
             metadata,
             key=tls_fed_jwks.get_key("metadata_signing_key_id"),
@@ -1355,7 +1370,7 @@ class TestAuthServer(TestCase):
 
         # Remove payload from serialized jws
         header, _, signature = data.split(".")
-        client_header = {"Detached-JWS": f"{header}.{payload_hash}.{signature}"}
+        client_header = {"Content-Type": "application/json", "Detached-JWS": f"{header}.{payload_hash}.{signature}"}
 
         response = self.client.post(
             "/transaction", content=req.model_dump_json(exclude_unset=True), headers=client_header
@@ -1404,7 +1419,10 @@ class TestAuthServer(TestCase):
 
         # Remove payload from serialized jws
         continue_header, _, continue_signature = continue_data.split(".")
-        client_header = {"Detached-JWS": f"{continue_header}.{payload_hash}.{continue_signature}"}
+        client_header = {
+            "Content-Type": "application/json",
+            "Detached-JWS": f"{continue_header}.{payload_hash}.{continue_signature}",
+        }
 
         authorization_header = f"GNAP {continue_response['access_token']['value']}"
         client_header["Authorization"] = authorization_header
