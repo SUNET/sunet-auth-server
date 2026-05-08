@@ -251,7 +251,7 @@ Uses TLS-FED metadata for certificate validation.
 
 - Loads and validates TLS-FED metadata
 - Supports both remote and local metadata sources
-- Verifies metadata signatures using trusted JWKS
+- Validates entity issuer certificate from metadata
 - Caches metadata with configurable TTL
 
 ### 5. InteractionFlow (User Authentication)
@@ -306,6 +306,7 @@ The `scripts/` directory contains helpful utilities:
 - **`gen_cert.py`**: Generate test certificates
 - **`token_info.py`**: Decode and inspect JWT tokens
 - **`inspect_tls_fed_metadata.py`**: Inspect TLS-FED metadata
+- **`pem2fingerprint_rfc8705.py`**: Get cert#S256 value from pem cert
 - **`validate_tls_fed_metadata.py`**: Validate TLS-FED metadata signatures
 
 ## Architecture
@@ -324,7 +325,7 @@ src/auth_server/
 │   ├── interaction.py # User interaction endpoints
 │   ├── saml2_sp.py    # SAML2 SP endpoints
 │   └── status.py      # Health check endpoints
-├── proof/              # Proof verification (mTLS, JWS)
+├── proof/              # Proof verification (mTLS, JWS, etc.)
 ├── db/                 # Database models and operations
 └── tests/              # Test suite
 ```
@@ -342,17 +343,6 @@ The following GNAP features are not yet implemented:
 - Complete error response formatting per RFC 9635
 
 These features may be added in future releases based on demand and use cases.
-
-## Security Considerations
-
-- Always use TLS/HTTPS in production
-- Properly configure trusted CA certificates
-- Validate TLS-FED metadata signatures
-- Implement proper certificate revocation checking
-- Use strong keys for signing tokens (RS256, ES256)
-- Regularly rotate signing keys
-- Monitor access logs for suspicious activity
-- Keep dependencies up to date
 
 ## Contributing
 
@@ -382,5 +372,5 @@ Developed and maintained by [SUNET](https://www.sunet.se/) (Swedish University C
 
 - [RFC 9635 - Grant Negotiation and Authorization Protocol (GNAP)](https://datatracker.ietf.org/doc/html/rfc9635)
 - [GNAP Working Group](https://datatracker.ietf.org/wg/gnap/about/)
-- [TLS-FED](https://github.com/leifj/tls-fed-metadata)
+- [TLS-FED](https://github.com/dotse/tls-fed-auth)
 - [SAML2 MDQ](https://tools.ietf.org/html/draft-young-md-query)
