@@ -43,6 +43,7 @@ from auth_server.models.gnap import (
     Continue,
     ContinueAccessToken,
     ContinueRequest,
+    ErrorCode,
     FinishInteractionMethod,
     GrantRequest,
     GrantResponse,
@@ -82,7 +83,11 @@ class InteractionNeededException(HTTPException):
 
 # Use this to return an error message to the client
 class StopTransactionException(HTTPException):
-    pass
+    def __init__(
+        self: Self, status_code: int, detail: str | None = None, error_code: ErrorCode = ErrorCode.INVALID_REQUEST
+    ) -> None:
+        super().__init__(status_code=status_code, detail=detail)
+        self.error_code = error_code
 
 
 class BaseAuthFlow(ABC):
@@ -147,7 +152,11 @@ class BaseAuthFlow(ABC):
         )
         if not self.state.proof_ok:
             logger.error("could not validate proof of key possession in continue response, aborting")
-            raise StopTransactionException(status_code=401, detail="could not validate proof of key possession")
+            raise StopTransactionException(
+                status_code=401,
+                detail="could not validate proof of key possession",
+                error_code=ErrorCode.INVALID_CONTINUATION,
+            )
 
         # run the remaining steps in the flow
         if self.state.flow_step is None:

@@ -169,7 +169,7 @@ class TestAuthServer(TestCase):
                 assert claims["source"] is not None
             else:
                 assert response.status_code == 401
-                assert response.json()["detail"] == expected_result
+                assert response.json()["error"]["description"] == expected_result
 
 
 class TestAuthServerAsync(IsolatedAsyncioTestCase):

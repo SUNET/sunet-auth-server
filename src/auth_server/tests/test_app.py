@@ -406,7 +406,9 @@ class TestAuthServer(TestCase):
         client_header = {"Content-Type": "application/jose"}
         response = self.client.post("/transaction", content=b"bogus_jws", headers=client_header)
         assert response.status_code == 400
-        assert response.json()["detail"] == "JWS could not be deserialized"
+        assert response.json()["error"]["code"] == "invalid_client"
+        assert response.json()["error"]["description"] == "JWS could not be deserialized"
+        assert response.headers["cache-control"] == "no-store"
 
     def test_transaction_jwsd(self: Self) -> None:
         client_key_dict = self.client_jwk.export_public(as_dict=True)
@@ -1541,3 +1543,12 @@ class TestAuthServer(TestCase):
         )
         assert query["hash"][0] == expected_hash
         assert query["interact_ref"][0] == transaction_state.interaction_reference
+
+    def test_gnap_error_response_format(self: Self) -> None:
+        # unauthenticated continuation request must return a GNAP error object
+        response = self.client.post("/continue", json={})
+        assert response.status_code == 401
+        error = response.json()["error"]
+        assert error["code"] == "invalid_continuation"
+        assert "description" in error
+        assert response.headers["cache-control"] == "no-store"

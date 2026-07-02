@@ -278,11 +278,9 @@ class ErrorCode(StrEnum):
     TOO_MANY_ATTEMPTS = "too_many_attempts"
 
 
-# TODO: Change FastApi HTTPException responses to ErrorResponse
-class ErrorResponse(BaseModel):
+class GNAPErrorDetail(GnapBaseModel):
     code: ErrorCode
-    error_description: str | None = None
-    continue_: Continue | None = Field(default=None, alias="continue")
+    description: str | None = None
 
 
 class ContinueRequest(GnapBaseModel):
@@ -296,6 +294,7 @@ class GrantResponse(GnapBaseModel):
     subject: SubjectResponse | None = None
     instance_id: str | None = None
     user_handle: str | None = None
+    error: GNAPErrorDetail | None = None
 
 
 class GNAPJOSEHeader(JOSEHeader):

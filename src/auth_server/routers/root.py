@@ -1,14 +1,15 @@
 import logging
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header
 from jwcrypto.jwk import JWK, JWKSet
 from starlette.responses import Response
 
 from auth_server.config import AuthServerConfig, load_config
 from auth_server.context import ContextRequest, ContextRequestRoute
 from auth_server.db.transaction_state import FlowState, TransactionState, get_transaction_state_db
+from auth_server.errors import GNAPErrorException
 from auth_server.flows import NextFlowException, StopTransactionException
-from auth_server.models.gnap import ContinueRequest, GrantRequest, GrantResponse
+from auth_server.models.gnap import ContinueRequest, ErrorCode, GrantRequest, GrantResponse
 from auth_server.models.jose import ECJWK, JWKS, RSAJWK, SymmetricJWK
 from auth_server.utils import get_signing_key, load_jwks
 
@@ -80,14 +81,14 @@ async def transaction(
             continue
         except StopTransactionException as e:
             logger.error(f"transaction stopped in flow {auth_flow_name} with exception: {e.detail}")
-            raise HTTPException(status_code=e.status_code, detail=e.detail)
+            raise GNAPErrorException(status_code=e.status_code, error_code=e.error_code, description=e.detail)
 
         if isinstance(res, GrantResponse):
             logger.info(f"flow {auth_flow_name} returned GrantResponse")
             logger.debug(res.dict(exclude_none=True))
             return res
 
-    raise HTTPException(status_code=401, detail="permission denied")
+    raise GNAPErrorException(status_code=401, error_code=ErrorCode.REQUEST_DENIED, description="permission denied")
 
 
 # TODO: implement DELETE (revoke transaction) and PATCH (modify transaction) for continue
@@ -116,12 +117,16 @@ async def continue_transaction(
     request.context.detached_jws = detached_jws
 
     if authorization is None:
-        raise HTTPException(status_code=401, detail="permission denied")
+        raise GNAPErrorException(
+            status_code=401, error_code=ErrorCode.INVALID_CONTINUATION, description="missing continuation access token"
+        )
 
     transaction_db = await get_transaction_state_db()
     if transaction_db is None:
         # if there is no database available no clients should try this endpoint
-        raise HTTPException(status_code=400, detail="continuation not supported")
+        raise GNAPErrorException(
+            status_code=400, error_code=ErrorCode.INVALID_REQUEST, description="continuation not supported"
+        )
 
     # load saved transaction state
     if continue_req is not None and continue_req.interact_ref is not None:
@@ -131,17 +136,25 @@ async def continue_transaction(
     elif continue_reference is not None:
         transaction_doc = await transaction_db.get_document_by_continue_reference(continue_reference=continue_reference)
     else:
-        raise HTTPException(status_code=400, detail="reference for transaction to continue is missing")
+        raise GNAPErrorException(
+            status_code=400,
+            error_code=ErrorCode.INVALID_REQUEST,
+            description="reference for transaction to continue is missing",
+        )
 
     if transaction_doc is None:
-        raise HTTPException(status_code=404, detail="transaction not found")
+        raise GNAPErrorException(
+            status_code=404, error_code=ErrorCode.INVALID_CONTINUATION, description="transaction not found"
+        )
 
     transaction_state = TransactionState(**transaction_doc)
     logger.debug(f"transaction_state loaded: {transaction_state}")
 
     # check continue access token
     if authorization != f"GNAP {transaction_state.continue_access_token}":
-        raise HTTPException(status_code=401, detail="permission denied")
+        raise GNAPErrorException(
+            status_code=401, error_code=ErrorCode.INVALID_CONTINUATION, description="permission denied"
+        )
 
     # TODO: Need to verify that continuation responses are handled correctly
     # Do not return transaction reference again
@@ -159,7 +172,9 @@ async def continue_transaction(
     auth_flow_name = transaction_state.flow_name
     auth_flow = request.app.auth_flows.get(auth_flow_name)
     if not auth_flow:
-        raise HTTPException(status_code=400, detail="requested flow not loaded")
+        raise GNAPErrorException(
+            status_code=400, error_code=ErrorCode.INVALID_REQUEST, description="requested flow not loaded"
+        )
     # update transaction_state with the clients current authentication as the authentication have to match
     # the transaction requests key that should be continued
     updated_transaction_doc = dict(**transaction_doc)
@@ -170,14 +185,18 @@ async def continue_transaction(
         res = await flow.continue_transaction(continue_request=continue_req)
     except (NextFlowException, StopTransactionException) as e:  # there is no next flow when continuing
         logger.error(f"transaction stopped in flow {auth_flow_name} with exception: {e.detail}")
-        raise HTTPException(status_code=e.status_code, detail=e.detail)
+        raise GNAPErrorException(
+            status_code=e.status_code,
+            error_code=getattr(e, "error_code", ErrorCode.INVALID_REQUEST),
+            description=e.detail,
+        )
 
     if isinstance(res, GrantResponse):
         logger.info(f"flow {auth_flow_name} returned GrantResponse")
         logger.debug(res.dict(exclude_none=True))
         return res
 
-    raise HTTPException(status_code=401, detail="permission denied")
+    raise GNAPErrorException(status_code=401, error_code=ErrorCode.REQUEST_DENIED, description="permission denied")
 
 
 # TODO: implement token management end point
