@@ -23,7 +23,7 @@ def get_header_index(scope: Scope, header_key: bytes) -> int | None:
 
 def set_header(scope: Scope, header: tuple[bytes, bytes]) -> None:
     content_type_index = get_header_index(scope, header[0])
-    if content_type_index:
+    if content_type_index is not None:
         logger.debug(f"Replacing header {scope['headers'][content_type_index]} with {header}")
         scope["headers"][content_type_index] = header
     else:
