@@ -34,6 +34,7 @@ from auth_server.db.transaction_state import (
     TransactionState,
     get_transaction_state_db,
 )
+from auth_server.errors import GNAPErrorException
 from auth_server.mdq import mdq_data_to_keys, xml_mdq_get
 from auth_server.models.claims import CAClaims, Claims, ConfigClaims, MDQClaims, SAMLAssertionClaims, TLSFEDClaims
 from auth_server.models.gnap import (
@@ -303,6 +304,14 @@ class CommonFlow(BaseAuthFlow):
             if len(self.state.grant_request.access_token) > 1:
                 raise NextFlowException(status_code=400, detail="multiple access token requests not supported")
             self.state.grant_request.access_token = self.state.grant_request.access_token[0]
+        flags = self.state.grant_request.access_token.flags or []
+        if AccessTokenFlags.BEARER not in flags:
+            # we only issue bearer tokens, and a bearer token MUST NOT be issued unless requested (RFC 9635 3.2.1)
+            raise GNAPErrorException(
+                status_code=400,
+                error_code=ErrorCode.INVALID_REQUEST,
+                description="key-bound access tokens are not supported, request the bearer flag",
+            )
         # TODO: How do we want to validate the access request?
         if self.state.grant_request.access_token.access:
             self.state.requested_access = self.state.grant_request.access_token.access
