@@ -43,11 +43,15 @@ async def get_public_pem(signing_key: JWK = Depends(get_signing_key)) -> Respons
 async def transaction(
     request: ContextRequest,
     grant_req: GrantRequest,
+    response: Response,
     client_cert: str | None = Header(None),
     detached_jws: str | None = Header(None),
     config: AuthServerConfig = Depends(load_config),
     signing_key: JWK = Depends(get_signing_key),
 ) -> GrantResponse:
+    # RFC 9635 requires Cache-Control: no-store on all grant responses
+    response.headers["Cache-Control"] = "no-store"
+
     logger.debug(f"grant_req: {grant_req}")
     logger.debug(f"client_cert: {client_cert}")
     logger.debug(f"detached_jws: {detached_jws}")
@@ -81,8 +85,6 @@ async def transaction(
         if isinstance(res, GrantResponse):
             logger.info(f"flow {auth_flow_name} returned GrantResponse")
             logger.debug(res.dict(exclude_none=True))
-            # TODO: The AS MUST include the HTTP Cache-Control response header field
-            #       [RFC9111] with a value set to "no-store".
             return res
 
     raise HTTPException(status_code=401, detail="permission denied")
@@ -93,6 +95,7 @@ async def transaction(
 @root_router.post("/continue", response_model=GrantResponse, response_model_exclude_none=True)
 async def continue_transaction(
     request: ContextRequest,
+    response: Response,
     continue_req: ContinueRequest | None = None,
     continue_reference: str | None = None,
     client_cert: str | None = Header(None),
@@ -101,6 +104,9 @@ async def continue_transaction(
     config: AuthServerConfig = Depends(load_config),
     signing_key: JWK = Depends(get_signing_key),
 ) -> GrantResponse:
+    # RFC 9635 requires Cache-Control: no-store on all grant responses
+    response.headers["Cache-Control"] = "no-store"
+
     logger.debug(f"continue_req: {continue_req}")
     logger.debug(f"client_cert: {client_cert}")
     logger.debug(f"detached_jws: {detached_jws}")

@@ -238,6 +238,15 @@ class TestAuthServer(TestCase):
         assert claims["auth_source"] == AuthSource.TEST
         assert claims["aud"] == "some_audience"
 
+    def test_grant_response_cache_control(self: Self) -> None:
+        req = GrantRequest(
+            client=Client(key=Key(proof=Proof(method=ProofMethod.TEST))),
+            access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
+        )
+        response = self.client.post("/transaction", json=req.dict(exclude_none=True))
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
+
     def test_config_from_yaml(self: Self) -> None:
         # Set absolute path to testing_jwks.json
         config_file_path = f"{self.datadir}/test_config.yaml"
@@ -1012,6 +1021,7 @@ class TestAuthServer(TestCase):
         response = self.client.post(continue_response["uri"], json={}, headers={"Authorization": authorization_header})
 
         assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
         assert "access_token" in response.json()
         access_token = response.json()["access_token"]
         assert AccessTokenFlags.BEARER.value in access_token["flags"]
