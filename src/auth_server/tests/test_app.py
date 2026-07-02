@@ -1110,6 +1110,39 @@ class TestAuthServer(TestCase):
         assert claims["saml_issuer"] == "https://idp.example.com"
         assert claims["saml_eppn"] == "test@example.com"
 
+    def test_continue_access_token_rotates_on_poll(self: Self) -> None:
+        self.config["auth_flows"] = json.dumps(["TestFlow"])
+        self.config["pysaml2_config_path"] = str(Path(__file__).with_name("data") / "saml" / "saml2_settings.py")
+        self.config["saml2_discovery_service_url"] = "https://disco.example.com/ds/"
+        self._update_app_config(config=self.config)
+
+        grant_request = {
+            "access_token": {"flags": ["bearer"]},
+            "client": {"key": {"proof": "test"}},
+            "interact": {"start": ["redirect"]},
+        }
+        response = self.client.post("/transaction", json=grant_request)
+        assert response.status_code == 200
+        continue_response = response.json()["continue"]
+        first_token = continue_response["access_token"]["value"]
+
+        # poll before interaction completes -> pending response with a rotated token
+        response = self.client.post(continue_response["uri"], json={}, headers={"Authorization": f"GNAP {first_token}"})
+        assert response.status_code == 200
+        second_token = response.json()["continue"]["access_token"]["value"]
+        assert second_token != first_token
+
+        # the used token must no longer be accepted
+        response = self.client.post(continue_response["uri"], json={}, headers={"Authorization": f"GNAP {first_token}"})
+        assert response.status_code == 401
+        assert response.json()["error"]["code"] == "invalid_continuation"
+
+        # the rotated token works
+        response = self.client.post(
+            continue_response["uri"], json={}, headers={"Authorization": f"GNAP {second_token}"}
+        )
+        assert response.status_code == 200
+
     def test_transaction_mtls_continue(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["InteractionFlow"])
         self._update_app_config(config=self.config)
@@ -1133,10 +1166,12 @@ class TestAuthServer(TestCase):
         authorization_header = f"GNAP {continue_response['access_token']['value']}"
         client_header = {"Client-Cert": self.client_cert_str, "Authorization": authorization_header}
         response = self.client.post(continue_response["uri"], json={}, headers=client_header)
-        # expect the same continue response as the first time
+        # expect the same continue response as the first time, but with a rotated continuation access token
         continue_response = response.json()["continue"]
         assert continue_response["uri"].startswith("http://testserver/continue/") is True
         assert continue_response["access_token"]["value"] is not None
+        # the continue access token is rotated on every poll, so update the header used for the next request
+        client_header["Authorization"] = f"GNAP {continue_response['access_token']['value']}"
 
         # do interaction
         interaction_response = response.json()["interact"]

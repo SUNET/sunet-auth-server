@@ -143,21 +143,26 @@ class BaseAuthFlow(ABC):
             logger.debug(f"step {flow_step} done, next step will be called")
         return None
 
-    async def continue_transaction(self: Self, continue_request: ContinueRequest) -> GrantResponse | None:
+    async def validate_continuation_proof(
+        self: Self, continue_request: ContinueRequest | None, access_token: str | None = None
+    ) -> None:
         # please mypy, should be enforced in previous steps
         assert isinstance(self.state.grant_request.client, Client)
         assert isinstance(self.state.grant_request.client.key, Key)
         # check the client authentication for the continuation request against the same key used for the grant request
         self.state.proof_ok = await self.check_proof(
-            gnap_key=self.state.grant_request.client.key, gnap_request=continue_request
+            gnap_key=self.state.grant_request.client.key, gnap_request=continue_request, access_token=access_token
         )
         if not self.state.proof_ok:
-            logger.error("could not validate proof of key possession in continue response, aborting")
+            logger.error("could not validate proof of key possession in continue request, aborting")
             raise StopTransactionException(
                 status_code=401,
                 detail="could not validate proof of key possession",
                 error_code=ErrorCode.INVALID_CONTINUATION,
             )
+
+    async def continue_transaction(self: Self, continue_request: ContinueRequest | None) -> GrantResponse | None:
+        await self.validate_continuation_proof(continue_request=continue_request)
 
         # run the remaining steps in the flow
         if self.state.flow_step is None:
@@ -173,7 +178,11 @@ class BaseAuthFlow(ABC):
         steps = await self.steps()
         return await self._run_steps(steps=steps)
 
-    async def check_proof(self: Self, gnap_key: Key, gnap_request: GrantRequest | ContinueRequest | None) -> bool:
+    async def check_proof(
+        self: Self, gnap_key: Key, gnap_request: GrantRequest | ContinueRequest | None, access_token: str | None = None
+    ) -> bool:
+        if access_token is None:
+            access_token = self.state.continue_access_token
         # MTLS
         if gnap_key.proof.method is ProofMethod.MTLS:
             if not self.request.context.client_cert:
@@ -187,7 +196,7 @@ class BaseAuthFlow(ABC):
             return await check_jws_proof(
                 request=self.request,
                 gnap_key=gnap_key,
-                access_token=self.state.continue_access_token,
+                access_token=access_token,
             )
         # JWSD
         elif gnap_request and gnap_key.proof.method is ProofMethod.JWSD:
@@ -196,7 +205,7 @@ class BaseAuthFlow(ABC):
             return await check_jwsd_proof(
                 request=self.request,
                 gnap_key=gnap_key,
-                access_token=self.state.continue_access_token,
+                access_token=access_token,
             )
         else:
             raise NextFlowException(status_code=400, detail="no supported proof method")
@@ -482,7 +491,9 @@ class TestFlow(CommonFlow):
     def load_state(cls: type[TestFlow], state: Mapping[str, Any]) -> TestState:
         return TestState.from_dict(state=state)
 
-    async def check_proof(self: Self, gnap_key: Key, gnap_request: GrantRequest | ContinueRequest | None) -> bool:
+    async def check_proof(
+        self: Self, gnap_key: Key, gnap_request: GrantRequest | ContinueRequest | None, access_token: str | None = None
+    ) -> bool:
         if gnap_key.proof.method is ProofMethod.TEST:
             logger.warning("TEST_MODE - access token will be returned with no proof")
             return True
@@ -491,7 +502,9 @@ class TestFlow(CommonFlow):
             assert isinstance(self.state.grant_request.client, Client)
             assert isinstance(self.state.grant_request.client.key, Key)
             # try any other supported proof method, used in tests
-            return await super().check_proof(gnap_key=self.state.grant_request.client.key, gnap_request=gnap_request)
+            return await super().check_proof(
+                gnap_key=self.state.grant_request.client.key, gnap_request=gnap_request, access_token=access_token
+            )
 
     async def create_claims(self: Self) -> Claims:
         claims = await super().create_claims()
@@ -545,7 +558,9 @@ class ConfigFlow(CommonFlow):
 
 
 class OnlyMTLSProofFlow(CommonFlow):
-    async def check_proof(self: Self, gnap_key: Key, gnap_request: GrantRequest | ContinueRequest | None) -> bool:
+    async def check_proof(
+        self: Self, gnap_key: Key, gnap_request: GrantRequest | ContinueRequest | None, access_token: str | None = None
+    ) -> bool:
         if gnap_key.proof.method is not ProofMethod.MTLS:
             raise NextFlowException(status_code=400, detail="MTLS is the only supported proof method")
         if self.request.context.client_cert is None:

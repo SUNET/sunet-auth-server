@@ -9,9 +9,9 @@ from auth_server.context import ContextRequest, ContextRequestRoute
 from auth_server.db.transaction_state import FlowState, TransactionState, get_transaction_state_db
 from auth_server.errors import GNAPErrorException
 from auth_server.flows import NextFlowException, StopTransactionException
-from auth_server.models.gnap import ContinueRequest, ErrorCode, GrantRequest, GrantResponse
+from auth_server.models.gnap import ContinueAccessToken, ContinueRequest, ErrorCode, GrantRequest, GrantResponse
 from auth_server.models.jose import ECJWK, JWKS, RSAJWK, SymmetricJWK
-from auth_server.utils import get_signing_key, load_jwks
+from auth_server.utils import get_hex_uuid4, get_signing_key, load_jwks
 
 __author__ = "lundberg"
 
@@ -116,6 +116,9 @@ async def continue_transaction(
     request.context.client_cert = client_cert
     request.context.detached_jws = detached_jws
 
+    if continue_req is None:
+        continue_req = ContinueRequest()
+
     if authorization is None:
         raise GNAPErrorException(
             status_code=401, error_code=ErrorCode.INVALID_CONTINUATION, description="missing continuation access token"
@@ -129,7 +132,7 @@ async def continue_transaction(
         )
 
     # load saved transaction state
-    if continue_req is not None and continue_req.interact_ref is not None:
+    if continue_req.interact_ref is not None:
         transaction_doc = await transaction_db.get_document_by_interaction_reference(
             interaction_reference=continue_req.interact_ref
         )
@@ -156,30 +159,32 @@ async def continue_transaction(
             status_code=401, error_code=ErrorCode.INVALID_CONTINUATION, description="permission denied"
         )
 
-    # TODO: Need to verify that continuation responses are handled correctly
-    # Do not return transaction reference again
-    # Change continuation access token for next request
-    # More?
-
-    # return continue response again if interaction is not completed or interaction reference is not used
-    if transaction_state.flow_state != FlowState.APPROVED:
-        logger.debug(f"transaction state: {transaction_state.flow_state}. Can not continue yet.")
-        # TODO: update expires_in, auth token and return error message to clients not waiting long enough
-        return transaction_state.grant_response
-
-    logger.debug(f"transaction state: {transaction_state.flow_state}. Continuing flow")
-    # initialize flow to continue
+    # initialize the flow that handled the original grant request
     auth_flow_name = transaction_state.flow_name
     auth_flow = request.app.auth_flows.get(auth_flow_name)
     if not auth_flow:
         raise GNAPErrorException(
             status_code=400, error_code=ErrorCode.INVALID_REQUEST, description="requested flow not loaded"
         )
-    # update transaction_state with the clients current authentication as the authentication have to match
-    # the transaction requests key that should be continued
-    updated_transaction_doc = dict(**transaction_doc)
-    flow = auth_flow(request=request, config=config, signing_key=signing_key, state=updated_transaction_doc)
+    flow = auth_flow(request=request, config=config, signing_key=signing_key, state=dict(**transaction_doc))
 
+    if transaction_state.flow_state != FlowState.APPROVED:
+        logger.debug(f"transaction state: {transaction_state.flow_state}. Can not continue yet.")
+        # every continuation request must be signed with the same key as the grant request (RFC 9635 7.2)
+        try:
+            await flow.validate_continuation_proof(continue_request=continue_req)
+        except (NextFlowException, StopTransactionException) as e:
+            raise GNAPErrorException(
+                status_code=e.status_code, error_code=ErrorCode.INVALID_CONTINUATION, description=e.detail
+            )
+        # rotate the continuation access token (RFC 9635 5.)
+        flow.state.continue_access_token = get_hex_uuid4()
+        assert flow.state.grant_response.continue_ is not None  # please mypy
+        flow.state.grant_response.continue_.access_token = ContinueAccessToken(value=flow.state.continue_access_token)
+        await transaction_db.save(flow.state, expires_in=config.transaction_state_expires_in)
+        return flow.state.grant_response
+
+    logger.debug(f"transaction state: {transaction_state.flow_state}. Continuing flow")
     # continue the transaction
     try:
         res = await flow.continue_transaction(continue_request=continue_req)
