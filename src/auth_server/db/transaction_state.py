@@ -149,6 +149,9 @@ class TransactionStateDB(BaseDB):
     async def get_document_by_continue_reference(self: Self, continue_reference: str) -> Mapping[str, Any] | None:
         return await self._get_document_by_attr("continue_reference", continue_reference)
 
+    async def get_document_by_continue_access_token(self: Self, continue_access_token: str) -> Mapping[str, Any] | None:
+        return await self._get_document_by_attr("continue_access_token", continue_access_token)
+
     async def get_state_by_user_code(self: Self, user_code: str) -> TransactionState | None:
         doc = await self._get_document_by_attr("user_code", user_code)
         if not doc:

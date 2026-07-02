@@ -1143,6 +1143,31 @@ class TestAuthServer(TestCase):
         )
         assert response.status_code == 200
 
+    def test_delete_continue_revokes_grant(self: Self) -> None:
+        self.config["auth_flows"] = json.dumps(["TestFlow"])
+        self.config["pysaml2_config_path"] = str(Path(__file__).with_name("data") / "saml" / "saml2_settings.py")
+        self.config["saml2_discovery_service_url"] = "https://disco.example.com/ds/"
+        self._update_app_config(config=self.config)
+
+        grant_request = {
+            "access_token": {"flags": ["bearer"]},
+            "client": {"key": {"proof": "test"}},
+            "interact": {"start": ["redirect"]},
+        }
+        response = self.client.post("/transaction", json=grant_request)
+        assert response.status_code == 200
+        continue_response = response.json()["continue"]
+        token = continue_response["access_token"]["value"]
+
+        # revoke the grant
+        response = self.client.delete(continue_response["uri"], headers={"Authorization": f"GNAP {token}"})
+        assert response.status_code == 204
+
+        # the transaction is gone
+        response = self.client.post(continue_response["uri"], json={}, headers={"Authorization": f"GNAP {token}"})
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "invalid_continuation"
+
     def test_transaction_mtls_continue(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["InteractionFlow"])
         self._update_app_config(config=self.config)
