@@ -103,9 +103,13 @@ class JOSEPreparer:
                 # Some implementations (e.g. HTTPX) may send one more empty-body message.
                 # Make sure they don't send one that contains a body, or it means
                 # that clients attempt to stream the request body.
-                message = await self.receive()
-                if message["body"] != b"":
+                next_message = await self.receive()
+                if next_message["body"] != b"":
                     raise HTTPException(status_code=400, detail="Streaming the request body isn't supported yet")
+                # the trailing message has been consumed and the full payload is already buffered
+                # in message["body"]; clear more_body so downstream doesn't call receive() again on
+                # an already-drained channel, and so the returned message still carries the payload
+                message["more_body"] = False
 
             body_str = body.decode("utf-8")
 
