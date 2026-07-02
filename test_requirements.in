@@ -4,6 +4,7 @@ pytest-cov>=2.7.1
 pytest>=5.2.0
 httpx
 mypy
+ruff
 
 # missing types
 motor-types
