@@ -39,7 +39,7 @@ async def redirect(request: ContextRequest, transaction_id: str, background_task
     # we only support saml2 for user authentication for now
     if not transaction_state.saml_session_info:
         redirect_url = request.url_for("authenticate", transaction_id=transaction_state.transaction_id)
-        return RedirectResponse(redirect_url)
+        return RedirectResponse(redirect_url, status_code=303)
 
     return await finish_interaction(
         request=request, transaction_state=transaction_state, background_tasks=background_tasks
@@ -119,7 +119,7 @@ async def finish_interaction(
                 f"{transaction_state.grant_request.interact.finish.uri}?"
                 f"hash={interaction_hash}&interact_ref={interact_ref}"
             )
-            return RedirectResponse(redirect_url)
+            return RedirectResponse(redirect_url, status_code=303)
         # push method
         elif transaction_state.grant_request.interact.finish.method is FinishInteractionMethod.PUSH:
             background_tasks.add_task(

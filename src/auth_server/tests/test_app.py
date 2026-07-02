@@ -49,7 +49,7 @@ from auth_server.testing import MongoTemporaryInstance
 from auth_server.tests.utils import create_cert, create_tls_fed_metadata, tls_fed_metadata_to_jws
 from auth_server.time_utils import utc_now
 from auth_server.tls_fed_auth import get_tls_fed_metadata
-from auth_server.utils import get_hash_by_name, get_signing_key, hash_with, load_jwks
+from auth_server.utils import get_hash_by_name, get_interaction_hash, get_signing_key, hash_with, load_jwks
 
 __author__ = "lundberg"
 
@@ -797,7 +797,7 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
@@ -837,14 +837,14 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
         self._fake_saml_authentication(transaction_id=transaction_id)
 
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
 
     @mock.patch("aiohttp.ClientSession.post", new_callable=AsyncMock)
     def test_transaction_interact_push_finish(self: Self, mock_response: AsyncMock) -> None:
@@ -878,7 +878,7 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
@@ -917,7 +917,7 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(response.headers["location"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
@@ -959,7 +959,7 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(response.headers["location"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
@@ -996,7 +996,7 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
@@ -1060,7 +1060,7 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
@@ -1122,7 +1122,7 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
@@ -1191,7 +1191,7 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
@@ -1283,7 +1283,7 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
@@ -1291,7 +1291,7 @@ class TestAuthServer(TestCase):
 
         # complete interaction
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
 
         # "receive" redirect back to our endpoint and pick out hash and interact_ref
         urlparsed_redirect_location = urlparse(response.headers["location"])
@@ -1389,7 +1389,7 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
@@ -1468,7 +1468,7 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
@@ -1490,3 +1490,44 @@ class TestAuthServer(TestCase):
         assertion = json.loads(subject["assertions"][0]["value"])
         assert assertion["issuer"] == "https://idp.example.com"
         assert assertion["attributes"]["eduPersonPrincipalName"] == "test@example.com"
+
+    def test_interaction_finish_redirect_uses_303(self: Self) -> None:
+        self.config["auth_flows"] = json.dumps(["TestFlow"])
+        self.config["pysaml2_config_path"] = str(Path(__file__).with_name("data") / "saml" / "saml2_settings.py")
+        self.config["saml2_discovery_service_url"] = "https://disco.example.com/ds/"
+        self._update_app_config(config=self.config)
+
+        grant_request = {
+            "access_token": {"flags": ["bearer"]},
+            "client": {"key": {"proof": "test"}},
+            "interact": {
+                "start": ["redirect"],
+                "finish": {"method": "redirect", "uri": "https://client.example.com/callback", "nonce": "abc123"},
+            },
+        }
+        response = self.client.post("/transaction", json=grant_request)
+        assert response.status_code == 200
+        interaction_response = response.json()["interact"]
+        as_nonce = interaction_response["finish"]
+        transaction_id = interaction_response["redirect"].split("http://testserver/interaction/redirect/")[1]
+
+        # fake a completed SAML authentication, then complete the interaction
+        self._fake_saml_authentication(transaction_id=transaction_id)
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
+
+        # RFC 9635 requires 303 for the interaction finish redirect
+        assert response.status_code == 303
+        location = response.headers["location"]
+        assert location.startswith("https://client.example.com/callback?")
+
+        query = parse_qs(urlparse(location).query)
+        transaction_state = self._get_transaction_state_by_id(transaction_id)
+        assert transaction_state.interaction_reference is not None
+        expected_hash = get_interaction_hash(
+            client_nonce="abc123",
+            as_nonce=as_nonce,
+            interact_ref=transaction_state.interaction_reference,
+            transaction_url="http://testserver/transaction",
+        )
+        assert query["hash"][0] == expected_hash
+        assert query["interact_ref"][0] == transaction_state.interaction_reference
