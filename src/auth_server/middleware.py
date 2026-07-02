@@ -3,7 +3,6 @@ from typing import Any, Self
 
 from jwcrypto import jws
 from jwcrypto.common import JWException
-from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -71,16 +70,23 @@ class JOSEPreparer:
         self.send = send
 
         buffered_message: Message | None = None
+        # Prepare the request body eagerly, before handing off to the wrapped app. Doing this lazily from
+        # within receive_jose below means FastAPI's body-parsing guard (fastapi.routing) rewraps any
+        # non-HTTPException raised while reading the body into a generic HTTPException with the legacy
+        # {"detail": ...} shape. By the time that propagates back out here, Starlette's
+        # ExceptionMiddleware (which sits *inside* this middleware in the stack) has already turned it
+        # into a response, so we'd never get a chance to produce a proper RFC 9635 error response.
+        # Validating eagerly, before self.app is invoked at all, avoids that.
         if self.is_jose:
-            # Deserialize the JWS eagerly, before handing off to the wrapped app. Doing this lazily from
-            # within receive_jose below means FastAPI's body-parsing guard (fastapi.routing) rewraps any
-            # non-HTTPException raised while reading the body into a generic HTTPException with the legacy
-            # {"detail": ...} shape. By the time that propagates back out here, Starlette's
-            # ExceptionMiddleware (which sits *inside* this middleware in the stack) has already turned it
-            # into a response, so we'd never get a chance to produce a proper RFC 9635 error response.
-            # Validating eagerly, before self.app is invoked at all, avoids that.
             message = await self.receive()
             error_response = await self._prepare_jose_message(scope, message)
+            if error_response is not None:
+                await error_response(scope, receive, send)
+                return
+            buffered_message = message
+        elif self.is_detached_jws:
+            message = await self.receive()
+            error_response = await self._prepare_detached_jws_message(scope, message)
             if error_response is not None:
                 await error_response(scope, receive, send)
                 return
@@ -92,32 +98,7 @@ class JOSEPreparer:
                 message, buffered_message = buffered_message, None
                 return message
 
-            message = await self.receive()
-
-            if message["type"] != "http.request" or not self.is_detached_jws:
-                return message
-
-            body = message["body"]
-            more_body = message.get("more_body", False)
-            if more_body:
-                # Some implementations (e.g. HTTPX) may send one more empty-body message.
-                # Make sure they don't send one that contains a body, or it means
-                # that clients attempt to stream the request body.
-                next_message = await self.receive()
-                if next_message["body"] != b"":
-                    raise HTTPException(status_code=400, detail="Streaming the request body isn't supported yet")
-                # the trailing message has been consumed and the full payload is already buffered
-                # in message["body"]; clear more_body so downstream doesn't call receive() again on
-                # an already-drained channel, and so the returned message still carries the payload
-                message["more_body"] = False
-
-            body_str = body.decode("utf-8")
-
-            # add original body to context for later use
-            logger.debug(f"detached JWS body: {body_str}")
-            set_context(scope, data={"detached_jws_body": body_str})
-            logger.info("added detached JWS original body to request state")
-            return message
+            return await self.receive()
 
         await self.app(scope, receive_jose, send)
 
@@ -137,7 +118,16 @@ class JOSEPreparer:
             # that clients attempt to stream the request body.
             next_message = await self.receive()
             if next_message["body"] != b"":
-                raise HTTPException(status_code=400, detail="Streaming the request body isn't supported yet")
+                error = GrantResponse(
+                    error=GNAPErrorDetail(
+                        code=ErrorCode.INVALID_REQUEST, description="Streaming the request body isn't supported yet"
+                    )
+                )
+                return JSONResponse(
+                    content=error.model_dump(exclude_none=True, by_alias=True),
+                    status_code=400,
+                    headers={"Cache-Control": "no-store"},
+                )
             # the trailing message has been consumed and the full payload is already buffered
             # in message["body"]; clear more_body or a real ASGI server will see this buffered
             # message replayed downstream and call receive() again on an already-drained channel
@@ -172,6 +162,45 @@ class JOSEPreparer:
         # update content-length header to match the new body
         content_length = str(len(jwstoken.objects["payload"]))
         set_header(scope, (b"content-length", content_length.encode("utf-8")))
+        return None
+
+    async def _prepare_detached_jws_message(self: Self, scope: Scope, message: Message) -> JSONResponse | None:
+        """Record the original detached-JWS body on the request context for later verification.
+
+        Returns a JSONResponse describing the error if the body is streamed, or None on success.
+        """
+        if message["type"] != "http.request":
+            return None
+
+        body = message["body"]
+        more_body = message.get("more_body", False)
+        if more_body:
+            # Some implementations (e.g. HTTPX) may send one more empty-body message.
+            # Make sure they don't send one that contains a body, or it means
+            # that clients attempt to stream the request body.
+            next_message = await self.receive()
+            if next_message["body"] != b"":
+                error = GrantResponse(
+                    error=GNAPErrorDetail(
+                        code=ErrorCode.INVALID_REQUEST, description="Streaming the request body isn't supported yet"
+                    )
+                )
+                return JSONResponse(
+                    content=error.model_dump(exclude_none=True, by_alias=True),
+                    status_code=400,
+                    headers={"Cache-Control": "no-store"},
+                )
+            # the trailing message has been consumed and the full payload is already buffered
+            # in message["body"]; clear more_body or a real ASGI server will see this buffered
+            # message replayed downstream and call receive() again on an already-drained channel
+            message["more_body"] = False
+
+        body_str = body.decode("utf-8")
+
+        # add original body to context for later use
+        logger.debug(f"detached JWS body: {body_str}")
+        set_context(scope, data={"detached_jws_body": body_str})
+        logger.info("added detached JWS original body to request state")
         return None
 
 
