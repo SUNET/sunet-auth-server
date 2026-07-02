@@ -6,7 +6,7 @@ from os import environ
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Self
-from unittest import TestCase, mock
+from unittest import IsolatedAsyncioTestCase, TestCase, mock
 from unittest.mock import AsyncMock
 from urllib.parse import parse_qs, urlparse
 
@@ -16,11 +16,13 @@ from cryptography.hazmat.primitives.hashes import SHA256
 from jwcrypto import jwk, jws, jwt
 from jwcrypto.common import base64url_encode
 from starlette.testclient import TestClient
+from starlette.types import Message
 
 from auth_server.api import init_auth_server_api
 from auth_server.cert_utils import rfc8705_fingerprint, serialize_certificate, wrong_rfc8705_fingerprint
 from auth_server.config import ClientKey, load_config
 from auth_server.db.transaction_state import AuthSource, TransactionState
+from auth_server.middleware import JOSEPreparer
 from auth_server.models.gnap import (
     AccessTokenFlags,
     AccessTokenRequest,
@@ -1047,6 +1049,52 @@ class TestAuthServer(TestCase):
         assert claims["saml_assurance"] is not None
         assert claims["saml_entitlement"] is not None
 
+    def test_transaction_continue_replay_after_finalize(self: Self) -> None:
+        self.config["auth_flows"] = json.dumps(["TestFlow"])
+        self.config["pysaml2_config_path"] = str(Path(__file__).with_name("data") / "saml" / "saml2_settings.py")
+        self.config["saml2_discovery_service_url"] = "https://disco.example.com/ds/"
+        self._update_app_config(config=self.config)
+
+        grant_request = {
+            "access_token": {"flags": ["bearer"]},
+            "client": {"key": {"proof": "test"}},
+            "interact": {"start": ["redirect"]},
+        }
+
+        response = self.client.post("/transaction", json=grant_request)
+        assert response.status_code == 200
+
+        continue_response = response.json()["continue"]
+        assert continue_response["access_token"]["value"] is not None
+
+        # do interaction
+        interaction_response = response.json()["interact"]
+        transaction_id = interaction_response["redirect"].split("http://testserver/interaction/redirect/")[1]
+
+        # check redirect to SAML SP
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
+        assert response.status_code == 303
+        assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
+
+        # fake a completed SAML authentication
+        self._fake_saml_authentication(transaction_id=transaction_id)
+
+        # complete interaction
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
+        assert response.status_code == 200
+        assert "<h3>Interaction finished</h3>" in response.text
+
+        # continue request after interaction is completed -> grant finalized
+        authorization_header = f"GNAP {continue_response['access_token']['value']}"
+        response = self.client.post(continue_response["uri"], json={}, headers={"Authorization": authorization_header})
+        assert response.status_code == 200
+        assert "access_token" in response.json()
+
+        # replay the same continuation request against the now-finalized transaction
+        response = self.client.post(continue_response["uri"], json={}, headers={"Authorization": authorization_header})
+        assert response.status_code == 401
+        assert response.json()["error"]["code"] == "invalid_continuation"
+
     def test_transaction_continue_check_progress(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["TestFlow"])
         self.config["pysaml2_config_path"] = str(Path(__file__).with_name("data") / "saml" / "saml2_settings.py")
@@ -1126,11 +1174,19 @@ class TestAuthServer(TestCase):
         continue_response = response.json()["continue"]
         first_token = continue_response["access_token"]["value"]
 
+        interaction_response = response.json()["interact"]
+        transaction_id = interaction_response["redirect"].split("http://testserver/interaction/redirect/")[1]
+        expires_at_before_poll = self._get_transaction_state_by_id(transaction_id).expires_at
+
         # poll before interaction completes -> pending response with a rotated token
         response = self.client.post(continue_response["uri"], json={}, headers={"Authorization": f"GNAP {first_token}"})
         assert response.status_code == 200
         second_token = response.json()["continue"]["access_token"]["value"]
         assert second_token != first_token
+
+        # polling must not extend the transaction's expiry (finding: unbounded TTL growth)
+        expires_at_after_poll = self._get_transaction_state_by_id(transaction_id).expires_at
+        assert expires_at_after_poll == expires_at_before_poll
 
         # the used token must no longer be accepted
         response = self.client.post(continue_response["uri"], json={}, headers={"Authorization": f"GNAP {first_token}"})
@@ -1663,3 +1719,40 @@ class TestAuthServer(TestCase):
         assert error["code"] == "invalid_continuation"
         assert "description" in error
         assert response.headers["cache-control"] == "no-store"
+
+
+class TestJOSEPreparer(IsolatedAsyncioTestCase):
+    """Unit tests for JOSEPreparer._prepare_jose_message that don't go through TestClient.
+
+    TestClient/httpx always deliver the request body as a single ASGI message, so it can't
+    exercise the two-message (body + trailing empty message with more_body=True) sequence
+    real ASGI servers use. Drive _prepare_jose_message directly with a scripted receive.
+    """
+
+    async def test_more_body_cleared_after_trailing_message(self: Self) -> None:
+        client_jwk = jwk.JWK.generate(kid="default", kty="EC", crv="P-256")
+        _jws = jws.JWS(payload=json.dumps({"hello": "world"}))
+        _jws.add_signature(key=client_jwk, protected=json.dumps({"alg": "ES256"}))
+        body = _jws.serialize(compact=True).encode("utf-8")
+
+        messages: list[Message] = [
+            {"type": "http.request", "body": body, "more_body": True},
+            {"type": "http.request", "body": b"", "more_body": False},
+        ]
+
+        async def scripted_receive() -> Message:
+            return messages.pop(0)
+
+        preparer = JOSEPreparer(app=AsyncMock())
+        preparer.receive = scripted_receive
+        scope: dict[str, Any] = {"headers": [], "state": {}}
+
+        message = await scripted_receive()
+        error_response = await preparer._prepare_jose_message(scope, message)
+
+        assert error_response is None
+        # the trailing message was consumed, and the buffered message must no longer
+        # advertise more body - the full payload is already in message["body"]
+        assert message.get("more_body") is False
+        assert message["body"] == json.dumps({"hello": "world"}).encode("utf-8")
+        assert messages == []  # trailing message was drained

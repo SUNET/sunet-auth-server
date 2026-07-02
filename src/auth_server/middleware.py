@@ -134,6 +134,10 @@ class JOSEPreparer:
             next_message = await self.receive()
             if next_message["body"] != b"":
                 raise HTTPException(status_code=400, detail="Streaming the request body isn't supported yet")
+            # the trailing message has been consumed and the full payload is already buffered
+            # in message["body"]; clear more_body or a real ASGI server will see this buffered
+            # message replayed downstream and call receive() again on an already-drained channel
+            message["more_body"] = False
 
         body_str = body.decode("utf-8")
 

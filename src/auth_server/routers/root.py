@@ -1,5 +1,6 @@
 import logging
 from collections.abc import Mapping
+from datetime import timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header
@@ -204,6 +205,14 @@ async def continue_transaction(
         )
     flow = auth_flow(request=request, config=config, signing_key=signing_key, state=dict(**transaction_doc))
 
+    if transaction_state.flow_state is FlowState.FINALIZED:
+        logger.debug(f"transaction state: {transaction_state.flow_state}. Grant is finalized, can not continue.")
+        raise GNAPErrorException(
+            status_code=401,
+            error_code=ErrorCode.INVALID_CONTINUATION,
+            description="grant is finalized and can not be continued",
+        )
+
     if transaction_state.flow_state != FlowState.APPROVED:
         logger.debug(f"transaction state: {transaction_state.flow_state}. Can not continue yet.")
         # every continuation request must be signed with the same key as the grant request (RFC 9635 7.2)
@@ -219,7 +228,10 @@ async def continue_transaction(
         flow.state.grant_response.continue_.access_token = ContinueAccessToken(value=flow.state.continue_access_token)
         transaction_db = await get_transaction_state_db()
         assert transaction_db is not None  # already checked in _load_continuation_doc
-        await transaction_db.save(flow.state, expires_in=config.transaction_state_expires_in)
+        # rotation must not extend the transaction lifetime - pass a zero delta so expires_at is left as-is
+        # (save() adds expires_in to the existing expires_at; that additive behaviour is relied on by the
+        # initial-save callers, so it is not changed here)
+        await transaction_db.save(flow.state, expires_in=timedelta(0))
         return flow.state.grant_response
 
     logger.debug(f"transaction state: {transaction_state.flow_state}. Continuing flow")
