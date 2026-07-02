@@ -3,10 +3,11 @@ from typing import Any, Self
 
 from jwcrypto import jws
 from jwcrypto.common import JWException
-from starlette.exceptions import HTTPException
+from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from auth_server.context import Context
+from auth_server.models.gnap import ErrorCode, GNAPErrorDetail, GrantResponse
 
 __author__ = "lundberg"
 
@@ -22,7 +23,7 @@ def get_header_index(scope: Scope, header_key: bytes) -> int | None:
 
 def set_header(scope: Scope, header: tuple[bytes, bytes]) -> None:
     content_type_index = get_header_index(scope, header[0])
-    if content_type_index:
+    if content_type_index is not None:
         logger.debug(f"Replacing header {scope['headers'][content_type_index]} with {header}")
         scope["headers"][content_type_index] = header
     else:
@@ -68,56 +69,139 @@ class JOSEPreparer:
         self.receive = receive
         self.send = send
 
-        async def receive_jose() -> Message:
+        buffered_message: Message | None = None
+        # Prepare the request body eagerly, before handing off to the wrapped app. Doing this lazily from
+        # within receive_jose below means FastAPI's body-parsing guard (fastapi.routing) rewraps any
+        # non-HTTPException raised while reading the body into a generic HTTPException with the legacy
+        # {"detail": ...} shape. By the time that propagates back out here, Starlette's
+        # ExceptionMiddleware (which sits *inside* this middleware in the stack) has already turned it
+        # into a response, so we'd never get a chance to produce a proper RFC 9635 error response.
+        # Validating eagerly, before self.app is invoked at all, avoids that.
+        if self.is_jose:
             message = await self.receive()
+            error_response = await self._prepare_jose_message(scope, message)
+            if error_response is not None:
+                await error_response(scope, receive, send)
+                return
+            buffered_message = message
+        elif self.is_detached_jws:
+            message = await self.receive()
+            error_response = await self._prepare_detached_jws_message(scope, message)
+            if error_response is not None:
+                await error_response(scope, receive, send)
+                return
+            buffered_message = message
 
-            if message["type"] != "http.request":
+        async def receive_jose() -> Message:
+            nonlocal buffered_message
+            if buffered_message is not None:
+                message, buffered_message = buffered_message, None
                 return message
 
-            if not self.is_jose and not self.is_detached_jws:
-                return message
-
-            body = message["body"]
-            more_body = message.get("more_body", False)
-            if more_body:
-                # Some implementations (e.g. HTTPX) may send one more empty-body message.
-                # Make sure they don't send one that contains a body, or it means
-                # that clients attempt to stream the request body.
-                message = await self.receive()
-                if message["body"] != b"":
-                    raise HTTPException(status_code=400, detail="Streaming the request body isn't supported yet")
-
-            body_str = body.decode("utf-8")
-
-            if self.is_detached_jws:
-                # add original body to context for later use
-                logger.debug(f"detached JWS body: {body_str}")
-                set_context(scope, data={"detached_jws_body": body_str})
-                logger.info("added detached JWS original body to request state")
-            elif self.is_jose:
-                # deserialize jws and replace body with the resulting json
-                logger.debug(f"JWS body: {body_str}")
-                jwstoken = jws.JWS()
-                try:
-                    jwstoken.deserialize(body_str)
-                except JWException:
-                    logger.exception("JWS deserialization failure")
-                    raise HTTPException(status_code=400, detail="JWS could not be deserialized")
-                logger.info("JWS token deserialized")
-                logger.debug(f"JWS: {jwstoken.objects}")
-
-                # add jws to context request to be verified later
-                set_context(scope, data={"jws_obj": jwstoken})
-                # replace body with unverified deserialized token - verification is done later in proof.jws
-                message["body"] = jwstoken.objects["payload"]
-                # set content-type to application/json as the body has changed
-                set_header(scope, (b"content-type", b"application/json"))
-                # update content-length header to match the new body
-                content_length = str(len(jwstoken.objects["payload"]))
-                set_header(scope, (b"content-length", content_length.encode("utf-8")))
-            return message
+            return await self.receive()
 
         await self.app(scope, receive_jose, send)
+
+    async def _prepare_jose_message(self: Self, scope: Scope, message: Message) -> JSONResponse | None:
+        """Deserialize an application/jose(+json) body and update message/scope in place.
+
+        Returns a JSONResponse describing the error if deserialization failed, or None on success.
+        """
+        if message["type"] != "http.request":
+            return None
+
+        body = message["body"]
+        more_body = message.get("more_body", False)
+        if more_body:
+            # Some implementations (e.g. HTTPX) may send one more empty-body message.
+            # Make sure they don't send one that contains a body, or it means
+            # that clients attempt to stream the request body.
+            next_message = await self.receive()
+            if next_message["body"] != b"":
+                error = GrantResponse(
+                    error=GNAPErrorDetail(
+                        code=ErrorCode.INVALID_REQUEST, description="Streaming the request body isn't supported yet"
+                    )
+                )
+                return JSONResponse(
+                    content=error.model_dump(exclude_none=True, by_alias=True),
+                    status_code=400,
+                    headers={"Cache-Control": "no-store"},
+                )
+            # the trailing message has been consumed and the full payload is already buffered
+            # in message["body"]; clear more_body or a real ASGI server will see this buffered
+            # message replayed downstream and call receive() again on an already-drained channel
+            message["more_body"] = False
+
+        body_str = body.decode("utf-8")
+
+        # deserialize jws and replace body with the resulting json
+        logger.debug(f"JWS body: {body_str}")
+        jwstoken = jws.JWS()
+        try:
+            jwstoken.deserialize(body_str)
+        except JWException:
+            logger.exception("JWS deserialization failure")
+            error = GrantResponse(
+                error=GNAPErrorDetail(code=ErrorCode.INVALID_CLIENT, description="JWS could not be deserialized")
+            )
+            return JSONResponse(
+                content=error.model_dump(exclude_none=True, by_alias=True),
+                status_code=400,
+                headers={"Cache-Control": "no-store"},
+            )
+        logger.info("JWS token deserialized")
+        logger.debug(f"JWS: {jwstoken.objects}")
+
+        # add jws to context request to be verified later
+        set_context(scope, data={"jws_obj": jwstoken})
+        # replace body with unverified deserialized token - verification is done later in proof.jws
+        message["body"] = jwstoken.objects["payload"]
+        # set content-type to application/json as the body has changed
+        set_header(scope, (b"content-type", b"application/json"))
+        # update content-length header to match the new body
+        content_length = str(len(jwstoken.objects["payload"]))
+        set_header(scope, (b"content-length", content_length.encode("utf-8")))
+        return None
+
+    async def _prepare_detached_jws_message(self: Self, scope: Scope, message: Message) -> JSONResponse | None:
+        """Record the original detached-JWS body on the request context for later verification.
+
+        Returns a JSONResponse describing the error if the body is streamed, or None on success.
+        """
+        if message["type"] != "http.request":
+            return None
+
+        body = message["body"]
+        more_body = message.get("more_body", False)
+        if more_body:
+            # Some implementations (e.g. HTTPX) may send one more empty-body message.
+            # Make sure they don't send one that contains a body, or it means
+            # that clients attempt to stream the request body.
+            next_message = await self.receive()
+            if next_message["body"] != b"":
+                error = GrantResponse(
+                    error=GNAPErrorDetail(
+                        code=ErrorCode.INVALID_REQUEST, description="Streaming the request body isn't supported yet"
+                    )
+                )
+                return JSONResponse(
+                    content=error.model_dump(exclude_none=True, by_alias=True),
+                    status_code=400,
+                    headers={"Cache-Control": "no-store"},
+                )
+            # the trailing message has been consumed and the full payload is already buffered
+            # in message["body"]; clear more_body or a real ASGI server will see this buffered
+            # message replayed downstream and call receive() again on an already-drained channel
+            message["more_body"] = False
+
+        body_str = body.decode("utf-8")
+
+        # add original body to context for later use
+        logger.debug(f"detached JWS body: {body_str}")
+        set_context(scope, data={"detached_jws_body": body_str})
+        logger.info("added detached JWS original body to request state")
+        return None
 
 
 async def unattached_receive() -> Message:

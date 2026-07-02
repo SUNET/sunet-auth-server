@@ -153,26 +153,10 @@ class User(GnapBaseModel):
 
 
 class TokenManagementInfo(GnapBaseModel):
-    # TODO:
-    #    uri (string):  The URI of the token management API for this access
-    #       token.  This URI MUST be an absolute URI.  This URI MUST NOT
-    #       include the value of the access token being managed or the value
-    #       of the access token used to protect the URI.  This URI SHOULD be
-    #       different for each access token issued in a request.  REQUIRED.
-    #    access_token (object):  A unique access token for continuing the
-    #       request, called the "token management access token".  The value of
-    #       this property MUST be an object in the format specified in
-    #       Section 3.2.1.  This access token MUST be bound to the client
-    #       instance's key used in the request (or its most recent rotation)
-    #       and MUST NOT be a bearer token.  As a consequence, the flags array
-    #       of this access token MUST NOT contain the string bearer, and the
-    #       key field MUST be omitted.  This access token MUST NOT have a
-    #       manage field.  This access token MUST NOT have the same value as
-    #       the token it is managing.  The client instance MUST present the
-    #       continuation access token in all requests to the continuation URI
-    #       as described in Section 7.2.  REQUIRED.
-    uri: str | None = None
-    access_token: Any | None = None
+    # The token management access token MUST be bound to the client instance's key and MUST NOT be a bearer
+    # token (no bearer flag, no key field set)
+    uri: str
+    access_token: "AccessTokenResponse"
 
 
 class StartInteractionMethod(StrEnum):
@@ -256,6 +240,9 @@ class AccessTokenResponse(GnapBaseModel):
     flags: list[AccessTokenFlags] | None = None
 
 
+TokenManagementInfo.model_rebuild()
+
+
 class SubjectResponse(GnapBaseModel):
     sub_ids: list[SubjectIdentifier] | None = None
     assertions: list[SubjectAssertion] | None = None
@@ -278,11 +265,9 @@ class ErrorCode(StrEnum):
     TOO_MANY_ATTEMPTS = "too_many_attempts"
 
 
-# TODO: Change FastApi HTTPException responses to ErrorResponse
-class ErrorResponse(BaseModel):
+class GNAPErrorDetail(GnapBaseModel):
     code: ErrorCode
-    error_description: str | None = None
-    continue_: Continue | None = Field(default=None, alias="continue")
+    description: str | None = None
 
 
 class ContinueRequest(GnapBaseModel):
@@ -296,6 +281,17 @@ class GrantResponse(GnapBaseModel):
     subject: SubjectResponse | None = None
     instance_id: str | None = None
     user_handle: str | None = None
+    error: GNAPErrorDetail | None = None
+
+
+class GNAPServiceDiscovery(GnapBaseModel):
+    grant_request_endpoint: str
+    interaction_start_modes_supported: list[StartInteractionMethod] | None = None
+    interaction_finish_methods_supported: list[FinishInteractionMethod] | None = None
+    key_proofs_supported: list[ProofMethod] | None = None
+    sub_id_formats_supported: list[SubjectIdentifierFormat] | None = None
+    assertion_formats_supported: list[SubjectAssertionFormat] | None = None
+    key_rotation_supported: bool = False
 
 
 class GNAPJOSEHeader(JOSEHeader):

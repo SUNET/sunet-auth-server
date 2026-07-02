@@ -6,7 +6,7 @@ from os import environ
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Self
-from unittest import TestCase, mock
+from unittest import IsolatedAsyncioTestCase, TestCase, mock
 from unittest.mock import AsyncMock
 from urllib.parse import parse_qs, urlparse
 
@@ -16,11 +16,13 @@ from cryptography.hazmat.primitives.hashes import SHA256
 from jwcrypto import jwk, jws, jwt
 from jwcrypto.common import base64url_encode
 from starlette.testclient import TestClient
+from starlette.types import Message
 
 from auth_server.api import init_auth_server_api
 from auth_server.cert_utils import rfc8705_fingerprint, serialize_certificate, wrong_rfc8705_fingerprint
 from auth_server.config import ClientKey, load_config
 from auth_server.db.transaction_state import AuthSource, TransactionState
+from auth_server.middleware import JOSEPreparer
 from auth_server.models.gnap import (
     AccessTokenFlags,
     AccessTokenRequest,
@@ -49,7 +51,7 @@ from auth_server.testing import MongoTemporaryInstance
 from auth_server.tests.utils import create_cert, create_tls_fed_metadata, tls_fed_metadata_to_jws
 from auth_server.time_utils import utc_now
 from auth_server.tls_fed_auth import get_tls_fed_metadata
-from auth_server.utils import get_hash_by_name, get_signing_key, hash_with, load_jwks
+from auth_server.utils import get_hash_by_name, get_interaction_hash, get_signing_key, hash_with, load_jwks
 
 __author__ = "lundberg"
 
@@ -238,6 +240,25 @@ class TestAuthServer(TestCase):
         assert claims["auth_source"] == AuthSource.TEST
         assert claims["aud"] == "some_audience"
 
+    def test_transaction_without_bearer_flag_denied(self: Self) -> None:
+        # we can not issue key-bound tokens, so a request without the bearer flag must be denied
+        req = GrantRequest(
+            client=Client(key=Key(proof=Proof(method=ProofMethod.TEST))),
+            access_token=[AccessTokenRequest()],
+        )
+        response = self.client.post("/transaction", json=req.dict(exclude_none=True))
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "invalid_request"
+
+    def test_grant_response_cache_control(self: Self) -> None:
+        req = GrantRequest(
+            client=Client(key=Key(proof=Proof(method=ProofMethod.TEST))),
+            access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
+        )
+        response = self.client.post("/transaction", json=req.dict(exclude_none=True))
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
+
     def test_config_from_yaml(self: Self) -> None:
         # Set absolute path to testing_jwks.json
         config_file_path = f"{self.datadir}/test_config.yaml"
@@ -397,7 +418,9 @@ class TestAuthServer(TestCase):
         client_header = {"Content-Type": "application/jose"}
         response = self.client.post("/transaction", content=b"bogus_jws", headers=client_header)
         assert response.status_code == 400
-        assert response.json()["detail"] == "JWS could not be deserialized"
+        assert response.json()["error"]["code"] == "invalid_client"
+        assert response.json()["error"]["description"] == "JWS could not be deserialized"
+        assert response.headers["cache-control"] == "no-store"
 
     def test_transaction_jwsd(self: Self) -> None:
         client_key_dict = self.client_jwk.export_public(as_dict=True)
@@ -797,7 +820,7 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
@@ -837,14 +860,14 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
         self._fake_saml_authentication(transaction_id=transaction_id)
 
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
 
     @mock.patch("aiohttp.ClientSession.post", new_callable=AsyncMock)
     def test_transaction_interact_push_finish(self: Self, mock_response: AsyncMock) -> None:
@@ -878,7 +901,7 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
@@ -917,7 +940,7 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(response.headers["location"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
@@ -959,7 +982,7 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(response.headers["location"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
@@ -996,7 +1019,7 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
@@ -1012,6 +1035,7 @@ class TestAuthServer(TestCase):
         response = self.client.post(continue_response["uri"], json={}, headers={"Authorization": authorization_header})
 
         assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
         assert "access_token" in response.json()
         access_token = response.json()["access_token"]
         assert AccessTokenFlags.BEARER.value in access_token["flags"]
@@ -1024,6 +1048,52 @@ class TestAuthServer(TestCase):
         assert claims["saml_eppn"] == "test@example.com"
         assert claims["saml_assurance"] is not None
         assert claims["saml_entitlement"] is not None
+
+    def test_transaction_continue_replay_after_finalize(self: Self) -> None:
+        self.config["auth_flows"] = json.dumps(["TestFlow"])
+        self.config["pysaml2_config_path"] = str(Path(__file__).with_name("data") / "saml" / "saml2_settings.py")
+        self.config["saml2_discovery_service_url"] = "https://disco.example.com/ds/"
+        self._update_app_config(config=self.config)
+
+        grant_request = {
+            "access_token": {"flags": ["bearer"]},
+            "client": {"key": {"proof": "test"}},
+            "interact": {"start": ["redirect"]},
+        }
+
+        response = self.client.post("/transaction", json=grant_request)
+        assert response.status_code == 200
+
+        continue_response = response.json()["continue"]
+        assert continue_response["access_token"]["value"] is not None
+
+        # do interaction
+        interaction_response = response.json()["interact"]
+        transaction_id = interaction_response["redirect"].split("http://testserver/interaction/redirect/")[1]
+
+        # check redirect to SAML SP
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
+        assert response.status_code == 303
+        assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
+
+        # fake a completed SAML authentication
+        self._fake_saml_authentication(transaction_id=transaction_id)
+
+        # complete interaction
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
+        assert response.status_code == 200
+        assert "<h3>Interaction finished</h3>" in response.text
+
+        # continue request after interaction is completed -> grant finalized
+        authorization_header = f"GNAP {continue_response['access_token']['value']}"
+        response = self.client.post(continue_response["uri"], json={}, headers={"Authorization": authorization_header})
+        assert response.status_code == 200
+        assert "access_token" in response.json()
+
+        # replay the same continuation request against the now-finalized transaction
+        response = self.client.post(continue_response["uri"], json={}, headers={"Authorization": authorization_header})
+        assert response.status_code == 401
+        assert response.json()["error"]["code"] == "invalid_continuation"
 
     def test_transaction_continue_check_progress(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["TestFlow"])
@@ -1060,7 +1130,7 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
@@ -1088,6 +1158,102 @@ class TestAuthServer(TestCase):
         assert claims["saml_issuer"] == "https://idp.example.com"
         assert claims["saml_eppn"] == "test@example.com"
 
+    def test_continue_access_token_rotates_on_poll(self: Self) -> None:
+        self.config["auth_flows"] = json.dumps(["TestFlow"])
+        self.config["pysaml2_config_path"] = str(Path(__file__).with_name("data") / "saml" / "saml2_settings.py")
+        self.config["saml2_discovery_service_url"] = "https://disco.example.com/ds/"
+        self._update_app_config(config=self.config)
+
+        grant_request = {
+            "access_token": {"flags": ["bearer"]},
+            "client": {"key": {"proof": "test"}},
+            "interact": {"start": ["redirect"]},
+        }
+        response = self.client.post("/transaction", json=grant_request)
+        assert response.status_code == 200
+        continue_response = response.json()["continue"]
+        first_token = continue_response["access_token"]["value"]
+
+        interaction_response = response.json()["interact"]
+        transaction_id = interaction_response["redirect"].split("http://testserver/interaction/redirect/")[1]
+        expires_at_before_poll = self._get_transaction_state_by_id(transaction_id).expires_at
+
+        # poll before interaction completes -> pending response with a rotated token
+        response = self.client.post(continue_response["uri"], json={}, headers={"Authorization": f"GNAP {first_token}"})
+        assert response.status_code == 200
+        second_token = response.json()["continue"]["access_token"]["value"]
+        assert second_token != first_token
+
+        # polling must not extend the transaction's expiry (finding: unbounded TTL growth)
+        expires_at_after_poll = self._get_transaction_state_by_id(transaction_id).expires_at
+        assert expires_at_after_poll == expires_at_before_poll
+
+        # the used token must no longer be accepted
+        response = self.client.post(continue_response["uri"], json={}, headers={"Authorization": f"GNAP {first_token}"})
+        assert response.status_code == 401
+        assert response.json()["error"]["code"] == "invalid_continuation"
+
+        # the rotated token works
+        response = self.client.post(
+            continue_response["uri"], json={}, headers={"Authorization": f"GNAP {second_token}"}
+        )
+        assert response.status_code == 200
+
+    def test_delete_continue_revokes_grant(self: Self) -> None:
+        self.config["auth_flows"] = json.dumps(["TestFlow"])
+        self.config["pysaml2_config_path"] = str(Path(__file__).with_name("data") / "saml" / "saml2_settings.py")
+        self.config["saml2_discovery_service_url"] = "https://disco.example.com/ds/"
+        self._update_app_config(config=self.config)
+
+        grant_request = {
+            "access_token": {"flags": ["bearer"]},
+            "client": {"key": {"proof": "test"}},
+            "interact": {"start": ["redirect"]},
+        }
+        response = self.client.post("/transaction", json=grant_request)
+        assert response.status_code == 200
+        continue_response = response.json()["continue"]
+        token = continue_response["access_token"]["value"]
+
+        # revoke the grant
+        response = self.client.delete(continue_response["uri"], headers={"Authorization": f"GNAP {token}"})
+        assert response.status_code == 204
+
+        # the transaction is gone
+        response = self.client.post(continue_response["uri"], json={}, headers={"Authorization": f"GNAP {token}"})
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "invalid_continuation"
+
+    def test_token_management_revoke(self: Self) -> None:
+        req = GrantRequest(
+            client=Client(key=Key(proof=Proof(method=ProofMethod.TEST))),
+            access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
+        )
+        response = self.client.post("/transaction", json=req.dict(exclude_none=True))
+        assert response.status_code == 200
+        access_token = response.json()["access_token"]
+        assert "manage" in access_token
+        manage = access_token["manage"]
+        assert manage["uri"].startswith("http://testserver/token/")
+        mgmt_token = manage["access_token"]["value"]
+
+        # wrong management token is denied
+        response = self.client.delete(manage["uri"], headers={"Authorization": "GNAP wrong"})
+        assert response.status_code == 401
+
+        # rotation is not supported
+        response = self.client.post(manage["uri"], headers={"Authorization": f"GNAP {mgmt_token}"})
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "invalid_rotation"
+
+        # revoke the token
+        response = self.client.delete(manage["uri"], headers={"Authorization": f"GNAP {mgmt_token}"})
+        assert response.status_code == 204
+
+        # revoking again finds nothing
+        response = self.client.delete(manage["uri"], headers={"Authorization": f"GNAP {mgmt_token}"})
+        assert response.status_code == 404
+
     def test_transaction_mtls_continue(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["InteractionFlow"])
         self._update_app_config(config=self.config)
@@ -1111,10 +1277,12 @@ class TestAuthServer(TestCase):
         authorization_header = f"GNAP {continue_response['access_token']['value']}"
         client_header = {"Client-Cert": self.client_cert_str, "Authorization": authorization_header}
         response = self.client.post(continue_response["uri"], json={}, headers=client_header)
-        # expect the same continue response as the first time
+        # expect the same continue response as the first time, but with a rotated continuation access token
         continue_response = response.json()["continue"]
         assert continue_response["uri"].startswith("http://testserver/continue/") is True
         assert continue_response["access_token"]["value"] is not None
+        # the continue access token is rotated on every poll, so update the header used for the next request
+        client_header["Authorization"] = f"GNAP {continue_response['access_token']['value']}"
 
         # do interaction
         interaction_response = response.json()["interact"]
@@ -1122,7 +1290,7 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
@@ -1191,7 +1359,7 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
@@ -1283,7 +1451,7 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
@@ -1291,7 +1459,7 @@ class TestAuthServer(TestCase):
 
         # complete interaction
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
 
         # "receive" redirect back to our endpoint and pick out hash and interact_ref
         urlparsed_redirect_location = urlparse(response.headers["location"])
@@ -1389,7 +1557,7 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
@@ -1468,7 +1636,7 @@ class TestAuthServer(TestCase):
 
         # check redirect to SAML SP
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
-        assert response.status_code == 307
+        assert response.status_code == 303
         assert response.headers["location"].startswith("http://testserver/saml2/sp/authn/")
 
         # fake a completed SAML authentication
@@ -1490,3 +1658,101 @@ class TestAuthServer(TestCase):
         assertion = json.loads(subject["assertions"][0]["value"])
         assert assertion["issuer"] == "https://idp.example.com"
         assert assertion["attributes"]["eduPersonPrincipalName"] == "test@example.com"
+
+    def test_interaction_finish_redirect_uses_303(self: Self) -> None:
+        self.config["auth_flows"] = json.dumps(["TestFlow"])
+        self.config["pysaml2_config_path"] = str(Path(__file__).with_name("data") / "saml" / "saml2_settings.py")
+        self.config["saml2_discovery_service_url"] = "https://disco.example.com/ds/"
+        self._update_app_config(config=self.config)
+
+        grant_request = {
+            "access_token": {"flags": ["bearer"]},
+            "client": {"key": {"proof": "test"}},
+            "interact": {
+                "start": ["redirect"],
+                "finish": {"method": "redirect", "uri": "https://client.example.com/callback", "nonce": "abc123"},
+            },
+        }
+        response = self.client.post("/transaction", json=grant_request)
+        assert response.status_code == 200
+        interaction_response = response.json()["interact"]
+        as_nonce = interaction_response["finish"]
+        transaction_id = interaction_response["redirect"].split("http://testserver/interaction/redirect/")[1]
+
+        # fake a completed SAML authentication, then complete the interaction
+        self._fake_saml_authentication(transaction_id=transaction_id)
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
+
+        # RFC 9635 requires 303 for the interaction finish redirect
+        assert response.status_code == 303
+        location = response.headers["location"]
+        assert location.startswith("https://client.example.com/callback?")
+
+        query = parse_qs(urlparse(location).query)
+        transaction_state = self._get_transaction_state_by_id(transaction_id)
+        assert transaction_state.interaction_reference is not None
+        expected_hash = get_interaction_hash(
+            client_nonce="abc123",
+            as_nonce=as_nonce,
+            interact_ref=transaction_state.interaction_reference,
+            transaction_url="http://testserver/transaction",
+        )
+        assert query["hash"][0] == expected_hash
+        assert query["interact_ref"][0] == transaction_state.interaction_reference
+
+    def test_transaction_discovery(self: Self) -> None:
+        response = self.client.options("/transaction")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["grant_request_endpoint"] == "http://testserver/transaction"
+        assert body["interaction_start_modes_supported"] == ["redirect", "user_code", "user_code_uri"]
+        assert body["interaction_finish_methods_supported"] == ["redirect", "push"]
+        assert body["key_proofs_supported"] == ["mtls", "jws", "jwsd"]
+        assert body["assertion_formats_supported"] == ["saml2"]
+        assert body["key_rotation_supported"] is False
+
+    def test_gnap_error_response_format(self: Self) -> None:
+        # unauthenticated continuation request must return a GNAP error object
+        response = self.client.post("/continue", json={})
+        assert response.status_code == 401
+        error = response.json()["error"]
+        assert error["code"] == "invalid_continuation"
+        assert "description" in error
+        assert response.headers["cache-control"] == "no-store"
+
+
+class TestJOSEPreparer(IsolatedAsyncioTestCase):
+    """Unit tests for JOSEPreparer._prepare_jose_message that don't go through TestClient.
+
+    TestClient/httpx always deliver the request body as a single ASGI message, so it can't
+    exercise the two-message (body + trailing empty message with more_body=True) sequence
+    real ASGI servers use. Drive _prepare_jose_message directly with a scripted receive.
+    """
+
+    async def test_more_body_cleared_after_trailing_message(self: Self) -> None:
+        client_jwk = jwk.JWK.generate(kid="default", kty="EC", crv="P-256")
+        _jws = jws.JWS(payload=json.dumps({"hello": "world"}))
+        _jws.add_signature(key=client_jwk, protected=json.dumps({"alg": "ES256"}))
+        body = _jws.serialize(compact=True).encode("utf-8")
+
+        messages: list[Message] = [
+            {"type": "http.request", "body": body, "more_body": True},
+            {"type": "http.request", "body": b"", "more_body": False},
+        ]
+
+        async def scripted_receive() -> Message:
+            return messages.pop(0)
+
+        preparer = JOSEPreparer(app=AsyncMock())
+        preparer.receive = scripted_receive
+        scope: dict[str, Any] = {"headers": [], "state": {}}
+
+        message = await scripted_receive()
+        error_response = await preparer._prepare_jose_message(scope, message)
+
+        assert error_response is None
+        # the trailing message was consumed, and the buffered message must no longer
+        # advertise more body - the full payload is already in message["body"]
+        assert message.get("more_body") is False
+        assert message["body"] == json.dumps({"hello": "world"}).encode("utf-8")
+        assert messages == []  # trailing message was drained

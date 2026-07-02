@@ -34,6 +34,7 @@ from auth_server.db.transaction_state import (
     TransactionState,
     get_transaction_state_db,
 )
+from auth_server.errors import GNAPErrorException
 from auth_server.mdq import mdq_data_to_keys, xml_mdq_get
 from auth_server.models.claims import CAClaims, Claims, ConfigClaims, MDQClaims, SAMLAssertionClaims, TLSFEDClaims
 from auth_server.models.gnap import (
@@ -43,6 +44,7 @@ from auth_server.models.gnap import (
     Continue,
     ContinueAccessToken,
     ContinueRequest,
+    ErrorCode,
     FinishInteractionMethod,
     GrantRequest,
     GrantResponse,
@@ -54,6 +56,7 @@ from auth_server.models.gnap import (
     SubjectAssertion,
     SubjectAssertionFormat,
     SubjectResponse,
+    TokenManagementInfo,
     UserCodeURI,
 )
 from auth_server.proof.common import lookup_client_key_from_config
@@ -69,6 +72,14 @@ __author__ = "lundberg"
 
 logger = logging.getLogger(__name__)
 
+SUPPORTED_START_METHODS = [
+    StartInteractionMethod.REDIRECT,
+    StartInteractionMethod.USER_CODE,
+    StartInteractionMethod.USER_CODE_URI,
+]
+SUPPORTED_FINISH_METHODS = [FinishInteractionMethod.REDIRECT, FinishInteractionMethod.PUSH]
+SUPPORTED_KEY_PROOFS = [ProofMethod.MTLS, ProofMethod.JWS, ProofMethod.JWSD]
+
 
 # Use this to go to next flow
 class NextFlowException(HTTPException):
@@ -82,7 +93,11 @@ class InteractionNeededException(HTTPException):
 
 # Use this to return an error message to the client
 class StopTransactionException(HTTPException):
-    pass
+    def __init__(
+        self: Self, status_code: int, detail: str | None = None, error_code: ErrorCode = ErrorCode.INVALID_REQUEST
+    ) -> None:
+        super().__init__(status_code=status_code, detail=detail)
+        self.error_code = error_code
 
 
 class BaseAuthFlow(ABC):
@@ -137,17 +152,26 @@ class BaseAuthFlow(ABC):
             logger.debug(f"step {flow_step} done, next step will be called")
         return None
 
-    async def continue_transaction(self: Self, continue_request: ContinueRequest) -> GrantResponse | None:
+    async def validate_continuation_proof(
+        self: Self, continue_request: ContinueRequest | None, access_token: str | None = None
+    ) -> None:
         # please mypy, should be enforced in previous steps
         assert isinstance(self.state.grant_request.client, Client)
         assert isinstance(self.state.grant_request.client.key, Key)
         # check the client authentication for the continuation request against the same key used for the grant request
         self.state.proof_ok = await self.check_proof(
-            gnap_key=self.state.grant_request.client.key, gnap_request=continue_request
+            gnap_key=self.state.grant_request.client.key, gnap_request=continue_request, access_token=access_token
         )
         if not self.state.proof_ok:
-            logger.error("could not validate proof of key possession in continue response, aborting")
-            raise StopTransactionException(status_code=401, detail="could not validate proof of key possession")
+            logger.error("could not validate proof of key possession in continue request, aborting")
+            raise StopTransactionException(
+                status_code=401,
+                detail="could not validate proof of key possession",
+                error_code=ErrorCode.INVALID_CONTINUATION,
+            )
+
+    async def continue_transaction(self: Self, continue_request: ContinueRequest | None) -> GrantResponse | None:
+        await self.validate_continuation_proof(continue_request=continue_request)
 
         # run the remaining steps in the flow
         if self.state.flow_step is None:
@@ -163,7 +187,11 @@ class BaseAuthFlow(ABC):
         steps = await self.steps()
         return await self._run_steps(steps=steps)
 
-    async def check_proof(self: Self, gnap_key: Key, gnap_request: GrantRequest | ContinueRequest | None) -> bool:
+    async def check_proof(
+        self: Self, gnap_key: Key, gnap_request: GrantRequest | ContinueRequest | None, access_token: str | None = None
+    ) -> bool:
+        if access_token is None:
+            access_token = self.state.continue_access_token
         # MTLS
         if gnap_key.proof.method is ProofMethod.MTLS:
             if not self.request.context.client_cert:
@@ -177,7 +205,7 @@ class BaseAuthFlow(ABC):
             return await check_jws_proof(
                 request=self.request,
                 gnap_key=gnap_key,
-                access_token=self.state.continue_access_token,
+                access_token=access_token,
             )
         # JWSD
         elif gnap_request and gnap_key.proof.method is ProofMethod.JWSD:
@@ -186,7 +214,7 @@ class BaseAuthFlow(ABC):
             return await check_jwsd_proof(
                 request=self.request,
                 gnap_key=gnap_key,
-                access_token=self.state.continue_access_token,
+                access_token=access_token,
             )
         else:
             raise NextFlowException(status_code=400, detail="no supported proof method")
@@ -294,6 +322,14 @@ class CommonFlow(BaseAuthFlow):
             if len(self.state.grant_request.access_token) > 1:
                 raise NextFlowException(status_code=400, detail="multiple access token requests not supported")
             self.state.grant_request.access_token = self.state.grant_request.access_token[0]
+        flags = self.state.grant_request.access_token.flags or []
+        if AccessTokenFlags.BEARER not in flags:
+            # we only issue bearer tokens, and a bearer token MUST NOT be issued unless requested (RFC 9635 3.2.1)
+            raise GNAPErrorException(
+                status_code=400,
+                error_code=ErrorCode.INVALID_REQUEST,
+                description="key-bound access tokens are not supported, request the bearer flag",
+            )
         # TODO: How do we want to validate the access request?
         if self.state.grant_request.access_token.access:
             self.state.requested_access = self.state.grant_request.access_token.access
@@ -315,12 +351,8 @@ class CommonFlow(BaseAuthFlow):
             raise NextFlowException(status_code=400, detail="interaction not supported")
 
         interaction_response = InteractionResponse(expires_in=self.config.transaction_state_expires_in.seconds)
-        supported_start_methods = [
-            StartInteractionMethod.REDIRECT,
-            StartInteractionMethod.USER_CODE,
-            StartInteractionMethod.USER_CODE_URI,
-        ]
-        supported_finish_methods = [FinishInteractionMethod.REDIRECT, FinishInteractionMethod.PUSH]
+        supported_start_methods = SUPPORTED_START_METHODS
+        supported_finish_methods = SUPPORTED_FINISH_METHODS
         start_methods = [
             method for method in self.state.grant_request.interact.start if method in supported_start_methods
         ]
@@ -435,6 +467,17 @@ class CommonFlow(BaseAuthFlow):
             value=token.serialize(),
             expires_in=expires_in,
         )
+
+        # offer token management if we can save the transaction state (RFC 9635 6.)
+        transaction_state_db = await get_transaction_state_db()
+        if transaction_state_db is not None:
+            self.state.token_reference = get_hex_uuid4()
+            self.state.token_management_access_token = get_hex_uuid4()
+            self.state.grant_response.access_token.manage = TokenManagementInfo(
+                uri=str(self.request.url_for("token_management", token_reference=self.state.token_reference)),
+                access_token=AccessTokenResponse(value=self.state.token_management_access_token),
+            )
+
         logger.info(f"OK:{self.state.key_reference}:{self.config.auth_token_audience}")
         logger.debug(f"claims: {claims.model_dump(exclude_none=True)}")
         return None
@@ -464,7 +507,9 @@ class TestFlow(CommonFlow):
     def load_state(cls: type[TestFlow], state: Mapping[str, Any]) -> TestState:
         return TestState.from_dict(state=state)
 
-    async def check_proof(self: Self, gnap_key: Key, gnap_request: GrantRequest | ContinueRequest | None) -> bool:
+    async def check_proof(
+        self: Self, gnap_key: Key, gnap_request: GrantRequest | ContinueRequest | None, access_token: str | None = None
+    ) -> bool:
         if gnap_key.proof.method is ProofMethod.TEST:
             logger.warning("TEST_MODE - access token will be returned with no proof")
             return True
@@ -473,7 +518,9 @@ class TestFlow(CommonFlow):
             assert isinstance(self.state.grant_request.client, Client)
             assert isinstance(self.state.grant_request.client.key, Key)
             # try any other supported proof method, used in tests
-            return await super().check_proof(gnap_key=self.state.grant_request.client.key, gnap_request=gnap_request)
+            return await super().check_proof(
+                gnap_key=self.state.grant_request.client.key, gnap_request=gnap_request, access_token=access_token
+            )
 
     async def create_claims(self: Self) -> Claims:
         claims = await super().create_claims()
@@ -527,7 +574,9 @@ class ConfigFlow(CommonFlow):
 
 
 class OnlyMTLSProofFlow(CommonFlow):
-    async def check_proof(self: Self, gnap_key: Key, gnap_request: GrantRequest | ContinueRequest | None) -> bool:
+    async def check_proof(
+        self: Self, gnap_key: Key, gnap_request: GrantRequest | ContinueRequest | None, access_token: str | None = None
+    ) -> bool:
         if gnap_key.proof.method is not ProofMethod.MTLS:
             raise NextFlowException(status_code=400, detail="MTLS is the only supported proof method")
         if self.request.context.client_cert is None:

@@ -7,13 +7,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.staticfiles import StaticFiles
-from starlette.status import HTTP_422_UNPROCESSABLE_ENTITY
 
 from auth_server.config import AuthServerConfig, ConfigurationError, FlowName, load_config
 from auth_server.context import ContextRequestRoute
+from auth_server.errors import GNAPErrorException
 from auth_server.flows import BaseAuthFlow, CAFlow, ConfigFlow, InteractionFlow, MDQFlow, TestFlow, TLSFEDFlow
 from auth_server.logging import init_logging
 from auth_server.middleware import JOSEMiddleware
+from auth_server.models.gnap import ErrorCode, GNAPErrorDetail, GrantResponse
 from auth_server.routers.interaction import interaction_router
 from auth_server.routers.root import root_router
 from auth_server.routers.saml2_sp import saml2_router
@@ -84,14 +85,24 @@ def init_auth_server_api() -> AuthServer:
         "/static", StaticFiles(packages=["auth_server"]), name="static"
     )  # defaults to the "statics" directory (the ending s is not a mistake) because starlette says so
 
-    config = load_config()
-    if config.debug or config.testing:
-        # log more info about 422 errors to ease fault tracing
-        @app.exception_handler(RequestValidationError)
-        async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-            exc_str = f"{exc}".replace("\n", " ").replace("   ", " ")
-            logger.exception(f"{exc}")
-            content = {"status_code": 422, "message": exc_str, "data": None}
-            return JSONResponse(content=content, status_code=HTTP_422_UNPROCESSABLE_ENTITY)
+    @app.exception_handler(GNAPErrorException)
+    async def gnap_error_handler(request: Request, exc: GNAPErrorException) -> JSONResponse:
+        error = GrantResponse(error=GNAPErrorDetail(code=exc.error_code, description=exc.description))
+        return JSONResponse(
+            content=error.model_dump(exclude_none=True, by_alias=True),
+            status_code=exc.status_code,
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+        exc_str = f"{exc}".replace("\n", " ").replace("   ", " ")
+        logger.info(f"validation error for {request.url.path}: {exc_str}")
+        error = GrantResponse(error=GNAPErrorDetail(code=ErrorCode.INVALID_REQUEST, description=exc_str))
+        return JSONResponse(
+            content=error.model_dump(exclude_none=True, by_alias=True),
+            status_code=400,
+            headers={"Cache-Control": "no-store"},
+        )
 
     return app
