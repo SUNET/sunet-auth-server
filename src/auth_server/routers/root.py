@@ -256,4 +256,61 @@ async def delete_transaction(
     return Response(status_code=204)
 
 
-# TODO: implement token management end point
+@root_router.delete("/token/{token_reference}", status_code=204, name="token_management")
+async def revoke_token(
+    request: ContextRequest,
+    token_reference: str,
+    client_cert: str | None = Header(None),
+    detached_jws: str | None = Header(None),
+    authorization: str | None = Header(None),
+    config: AuthServerConfig = Depends(load_config),
+    signing_key: JWK = Depends(get_signing_key),
+) -> Response:
+    request.context.client_cert = client_cert
+    request.context.detached_jws = detached_jws
+
+    if authorization is None:
+        raise GNAPErrorException(
+            status_code=401, error_code=ErrorCode.INVALID_REQUEST, description="missing token management access token"
+        )
+
+    transaction_db = await get_transaction_state_db()
+    if transaction_db is None:
+        raise GNAPErrorException(
+            status_code=400, error_code=ErrorCode.INVALID_REQUEST, description="token management not supported"
+        )
+
+    transaction_doc = await transaction_db.get_document_by_token_reference(token_reference=token_reference)
+    if transaction_doc is None:
+        raise GNAPErrorException(status_code=404, error_code=ErrorCode.INVALID_REQUEST, description="token not found")
+
+    transaction_state = TransactionState(**transaction_doc)
+    if authorization != f"GNAP {transaction_state.token_management_access_token}":
+        raise GNAPErrorException(status_code=401, error_code=ErrorCode.INVALID_REQUEST, description="permission denied")
+
+    auth_flow = request.app.auth_flows.get(transaction_state.flow_name)
+    if not auth_flow:
+        raise GNAPErrorException(
+            status_code=400, error_code=ErrorCode.INVALID_REQUEST, description="requested flow not loaded"
+        )
+    flow = auth_flow(request=request, config=config, signing_key=signing_key, state=dict(**transaction_doc))
+    try:
+        await flow.validate_continuation_proof(
+            continue_request=ContinueRequest(), access_token=transaction_state.token_management_access_token
+        )
+    except (NextFlowException, StopTransactionException) as e:
+        raise GNAPErrorException(status_code=e.status_code, error_code=ErrorCode.INVALID_REQUEST, description=e.detail)
+
+    # NOTE: the JWT stays technically valid until exp as resource servers validate it offline;
+    # revocation removes the AS-side state (and with it token management/continuation)
+    await transaction_db.remove_state(transaction_id=transaction_state.transaction_id)
+    logger.info(f"access token for transaction {transaction_state.transaction_id} revoked by client")
+    return Response(status_code=204)
+
+
+@root_router.post("/token/{token_reference}", name="token_rotation")
+async def rotate_token(token_reference: str) -> Response:
+    # access token rotation is not supported (RFC 9635 6.1)
+    raise GNAPErrorException(
+        status_code=400, error_code=ErrorCode.INVALID_ROTATION, description="access token rotation is not supported"
+    )

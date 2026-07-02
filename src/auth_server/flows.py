@@ -56,6 +56,7 @@ from auth_server.models.gnap import (
     SubjectAssertion,
     SubjectAssertionFormat,
     SubjectResponse,
+    TokenManagementInfo,
     UserCodeURI,
 )
 from auth_server.proof.common import lookup_client_key_from_config
@@ -462,6 +463,17 @@ class CommonFlow(BaseAuthFlow):
             value=token.serialize(),
             expires_in=expires_in,
         )
+
+        # offer token management if we can save the transaction state (RFC 9635 6.)
+        transaction_state_db = await get_transaction_state_db()
+        if transaction_state_db is not None:
+            self.state.token_reference = get_hex_uuid4()
+            self.state.token_management_access_token = get_hex_uuid4()
+            self.state.grant_response.access_token.manage = TokenManagementInfo(
+                uri=str(self.request.url_for("token_management", token_reference=self.state.token_reference)),
+                access_token=AccessTokenResponse(value=self.state.token_management_access_token),
+            )
+
         logger.info(f"OK:{self.state.key_reference}:{self.config.auth_token_audience}")
         logger.debug(f"claims: {claims.model_dump(exclude_none=True)}")
         return None

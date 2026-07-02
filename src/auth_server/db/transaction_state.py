@@ -59,6 +59,8 @@ class TransactionState(BaseModel, ABC):
     user_code: str | None = None
     continue_reference: str | None = None
     continue_access_token: str | None = None
+    token_reference: str | None = None
+    token_management_access_token: str | None = None
     # meta
     auth_source: AuthSource | None = None
     flow_name: str
@@ -148,6 +150,9 @@ class TransactionStateDB(BaseDB):
 
     async def get_document_by_continue_reference(self: Self, continue_reference: str) -> Mapping[str, Any] | None:
         return await self._get_document_by_attr("continue_reference", continue_reference)
+
+    async def get_document_by_token_reference(self: Self, token_reference: str) -> Mapping[str, Any] | None:
+        return await self._get_document_by_attr("token_reference", token_reference)
 
     async def get_document_by_continue_access_token(self: Self, continue_access_token: str) -> Mapping[str, Any] | None:
         return await self._get_document_by_attr("continue_access_token", continue_access_token)

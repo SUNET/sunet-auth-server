@@ -1168,6 +1168,36 @@ class TestAuthServer(TestCase):
         assert response.status_code == 404
         assert response.json()["error"]["code"] == "invalid_continuation"
 
+    def test_token_management_revoke(self: Self) -> None:
+        req = GrantRequest(
+            client=Client(key=Key(proof=Proof(method=ProofMethod.TEST))),
+            access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
+        )
+        response = self.client.post("/transaction", json=req.dict(exclude_none=True))
+        assert response.status_code == 200
+        access_token = response.json()["access_token"]
+        assert "manage" in access_token
+        manage = access_token["manage"]
+        assert manage["uri"].startswith("http://testserver/token/")
+        mgmt_token = manage["access_token"]["value"]
+
+        # wrong management token is denied
+        response = self.client.delete(manage["uri"], headers={"Authorization": "GNAP wrong"})
+        assert response.status_code == 401
+
+        # rotation is not supported
+        response = self.client.post(manage["uri"], headers={"Authorization": f"GNAP {mgmt_token}"})
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "invalid_rotation"
+
+        # revoke the token
+        response = self.client.delete(manage["uri"], headers={"Authorization": f"GNAP {mgmt_token}"})
+        assert response.status_code == 204
+
+        # revoking again finds nothing
+        response = self.client.delete(manage["uri"], headers={"Authorization": f"GNAP {mgmt_token}"})
+        assert response.status_code == 404
+
     def test_transaction_mtls_continue(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["InteractionFlow"])
         self._update_app_config(config=self.config)
