@@ -284,6 +284,16 @@ class GrantResponse(GnapBaseModel):
     error: GNAPErrorDetail | None = None
 
 
+class GNAPServiceDiscovery(GnapBaseModel):
+    grant_request_endpoint: str
+    interaction_start_modes_supported: list[StartInteractionMethod] | None = None
+    interaction_finish_methods_supported: list[FinishInteractionMethod] | None = None
+    key_proofs_supported: list[ProofMethod] | None = None
+    sub_id_formats_supported: list[SubjectIdentifierFormat] | None = None
+    assertion_formats_supported: list[SubjectAssertionFormat] | None = None
+    key_rotation_supported: bool = False
+
+
 class GNAPJOSEHeader(JOSEHeader):
     kid: str
     alg: SupportedAlgorithms

@@ -1644,6 +1644,17 @@ class TestAuthServer(TestCase):
         assert query["hash"][0] == expected_hash
         assert query["interact_ref"][0] == transaction_state.interaction_reference
 
+    def test_transaction_discovery(self: Self) -> None:
+        response = self.client.options("/transaction")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["grant_request_endpoint"] == "http://testserver/transaction"
+        assert body["interaction_start_modes_supported"] == ["redirect", "user_code", "user_code_uri"]
+        assert body["interaction_finish_methods_supported"] == ["redirect", "push"]
+        assert body["key_proofs_supported"] == ["mtls", "jws", "jwsd"]
+        assert body["assertion_formats_supported"] == ["saml2"]
+        assert body["key_rotation_supported"] is False
+
     def test_gnap_error_response_format(self: Self) -> None:
         # unauthenticated continuation request must return a GNAP error object
         response = self.client.post("/continue", json={})

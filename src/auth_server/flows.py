@@ -72,6 +72,14 @@ __author__ = "lundberg"
 
 logger = logging.getLogger(__name__)
 
+SUPPORTED_START_METHODS = [
+    StartInteractionMethod.REDIRECT,
+    StartInteractionMethod.USER_CODE,
+    StartInteractionMethod.USER_CODE_URI,
+]
+SUPPORTED_FINISH_METHODS = [FinishInteractionMethod.REDIRECT, FinishInteractionMethod.PUSH]
+SUPPORTED_KEY_PROOFS = [ProofMethod.MTLS, ProofMethod.JWS, ProofMethod.JWSD]
+
 
 # Use this to go to next flow
 class NextFlowException(HTTPException):
@@ -343,12 +351,8 @@ class CommonFlow(BaseAuthFlow):
             raise NextFlowException(status_code=400, detail="interaction not supported")
 
         interaction_response = InteractionResponse(expires_in=self.config.transaction_state_expires_in.seconds)
-        supported_start_methods = [
-            StartInteractionMethod.REDIRECT,
-            StartInteractionMethod.USER_CODE,
-            StartInteractionMethod.USER_CODE_URI,
-        ]
-        supported_finish_methods = [FinishInteractionMethod.REDIRECT, FinishInteractionMethod.PUSH]
+        supported_start_methods = SUPPORTED_START_METHODS
+        supported_finish_methods = SUPPORTED_FINISH_METHODS
         start_methods = [
             method for method in self.state.grant_request.interact.start if method in supported_start_methods
         ]

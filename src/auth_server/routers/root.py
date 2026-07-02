@@ -10,8 +10,22 @@ from auth_server.config import AuthServerConfig, load_config
 from auth_server.context import ContextRequest, ContextRequestRoute
 from auth_server.db.transaction_state import FlowState, TransactionState, get_transaction_state_db
 from auth_server.errors import GNAPErrorException
-from auth_server.flows import NextFlowException, StopTransactionException
-from auth_server.models.gnap import ContinueAccessToken, ContinueRequest, ErrorCode, GrantRequest, GrantResponse
+from auth_server.flows import (
+    SUPPORTED_FINISH_METHODS,
+    SUPPORTED_KEY_PROOFS,
+    SUPPORTED_START_METHODS,
+    NextFlowException,
+    StopTransactionException,
+)
+from auth_server.models.gnap import (
+    ContinueAccessToken,
+    ContinueRequest,
+    ErrorCode,
+    GNAPServiceDiscovery,
+    GrantRequest,
+    GrantResponse,
+    SubjectAssertionFormat,
+)
 from auth_server.models.jose import ECJWK, JWKS, RSAJWK, SymmetricJWK
 from auth_server.utils import get_hex_uuid4, get_signing_key, load_jwks
 
@@ -41,7 +55,18 @@ async def get_public_pem(signing_key: JWK = Depends(get_signing_key)) -> Respons
     return Response(content=data, media_type="application/x-pem-file")
 
 
-# TODO implement OPTIONS (discovery)
+@root_router.options("/transaction", response_model=GNAPServiceDiscovery, response_model_exclude_none=True)
+async def transaction_discovery(request: ContextRequest) -> GNAPServiceDiscovery:
+    return GNAPServiceDiscovery(
+        grant_request_endpoint=str(request.url_for("transaction")),
+        interaction_start_modes_supported=SUPPORTED_START_METHODS,
+        interaction_finish_methods_supported=SUPPORTED_FINISH_METHODS,
+        key_proofs_supported=SUPPORTED_KEY_PROOFS,
+        assertion_formats_supported=[SubjectAssertionFormat.SAML2],
+        key_rotation_supported=False,
+    )
+
+
 @root_router.post("/transaction", response_model=GrantResponse, response_model_exclude_none=True)
 async def transaction(
     request: ContextRequest,
