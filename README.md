@@ -335,12 +335,16 @@ src/auth_server/
 The following GNAP features are not yet implemented:
 
 - **HTTPSIG** proof method support
-- Access token **introspection** endpoint
-- Access token **revocation** endpoint
-- Access token **rotation**
-- Grant **revocation**
-- Grant **modification**
-- Complete error response formatting per RFC 9635
+- **Key-bound** access tokens — grant requests must include the `bearer` access token flag; requests without it are rejected with `invalid_request`
+- **Multiple access token requests** (array of token requests in a single grant)
+- **Client/user by reference**
+- Access token **rotation** (`POST /token/{ref}` returns `invalid_rotation`)
+- Access token **introspection** (RFC 9767)
+- **App** interaction start mode
+- Subject **`sub_ids`**
+- RO **consent** step (authentication is currently treated as approval)
+
+Note: revoking an access token (`DELETE /token/{ref}`) removes AS-side state only — the JWT remains valid to offline validators until it expires.
 
 These features may be added in future releases based on demand and use cases.
 
