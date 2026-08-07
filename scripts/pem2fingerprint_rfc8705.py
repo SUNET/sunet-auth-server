@@ -11,11 +11,7 @@ cert = load_pem_x509_certificate(sys.stdin.buffer.read())
 
 
 def rfc8705_fingerprint(cert: Certificate) -> str:
-    return (
-        base64.urlsafe_b64encode(cert.fingerprint(algorithm=SHA256()))
-        .decode("ascii")
-        .rstrip("=")
-    )
+    return base64.urlsafe_b64encode(cert.fingerprint(algorithm=SHA256())).decode("ascii").rstrip("=")
 
 
 print(rfc8705_fingerprint(cert))
