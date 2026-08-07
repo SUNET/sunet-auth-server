@@ -33,6 +33,7 @@ class FlowState(StrEnum):
     PROCESSING = "processing"
     PENDING = "pending"
     APPROVED = "approved"
+    DENIED = "denied"
     FINALIZED = "finalized"
 
 
@@ -56,6 +57,9 @@ class TransactionState(BaseModel, ABC):
     requested_subject: SubjectRequest = Field(default_factory=SubjectRequest)
     saml_session_info: SessionInfo | None = None
     interaction_reference: str | None = None
+    # binds the interaction to the browser that started it, and its consent form to that browser
+    interaction_session_id: str | None = None
+    interaction_csrf_token: str | None = None
     user_code: str | None = None
     continue_reference: str | None = None
     continue_access_token: str | None = None
