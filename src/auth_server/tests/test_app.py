@@ -1,5 +1,6 @@
 import base64
 import json
+import re
 from collections.abc import Mapping
 from datetime import timedelta
 from os import environ
@@ -10,6 +11,7 @@ from unittest import IsolatedAsyncioTestCase, TestCase, mock
 from unittest.mock import AsyncMock
 from urllib.parse import parse_qs, urlparse
 
+import httpx
 import yaml
 from cryptography import x509
 from cryptography.hazmat.primitives.hashes import SHA256
@@ -21,7 +23,7 @@ from starlette.types import Message
 from auth_server.api import init_auth_server_api
 from auth_server.cert_utils import rfc8705_fingerprint, serialize_certificate, wrong_rfc8705_fingerprint
 from auth_server.config import ClientKey, load_config
-from auth_server.db.transaction_state import AuthSource, TransactionState
+from auth_server.db.transaction_state import AuthSource, FlowState, TransactionState
 from auth_server.middleware import JOSEPreparer
 from auth_server.models.gnap import (
     AccessTokenFlags,
@@ -194,6 +196,24 @@ class TestAuthServer(TestCase):
             authn_info=authn_info,
         )
         self._save_transaction_state(transaction_state)
+
+    @staticmethod
+    def _get_csrf_token(consent_page: str) -> str:
+        match = re.search(r'name="csrf_token"\s+value="([^"]+)"', consent_page)
+        assert match is not None, "no csrf token found in the consent page"
+        return match.group(1)
+
+    def _do_consent(
+        self: Self, transaction_id: str, decision: str = "approve", follow_redirects: bool = False
+    ) -> httpx.Response:
+        """load the consent screen and answer it the way a user would"""
+        response = self.client.get(f"/interaction/redirect/{transaction_id}")
+        assert response.status_code == 200
+        return self.client.post(
+            f"/interaction/consent/{transaction_id}",
+            data={"csrf_token": self._get_csrf_token(response.text), "decision": decision},
+            follow_redirects=follow_redirects,
+        )
 
     def test_get_status_healty(self: Self) -> None:
         response = self.client.get("/status/healthy")
@@ -827,9 +847,192 @@ class TestAuthServer(TestCase):
         self._fake_saml_authentication(transaction_id=transaction_id)
 
         # complete interaction
-        response = self.client.get(interaction_response["redirect"])
+        response = self._do_consent(transaction_id=transaction_id)
         assert response.status_code == 200
         assert "<h3>Interaction finished</h3>" in response.text
+
+    def test_interaction_requires_consent_after_authentication(self: Self) -> None:
+        self.config["auth_flows"] = json.dumps(["TestFlow"])
+        self.config["pysaml2_config_path"] = str(Path(__file__).with_name("data") / "saml" / "saml2_settings.py")
+        self.config["saml2_discovery_service_url"] = "https://disco.example.com/ds/"
+        self._update_app_config(config=self.config)
+
+        grant_request = {
+            "access_token": {"flags": ["bearer"], "access": ["some_access"]},
+            "client": {"key": {"proof": "test"}},
+            "interact": {"start": ["redirect"]},
+        }
+        response = self.client.post("/transaction", json=grant_request)
+        assert response.status_code == 200
+        interaction_response = response.json()["interact"]
+        transaction_id = interaction_response["redirect"].split("http://testserver/interaction/redirect/")[1]
+
+        # start the interaction and authenticate
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
+        assert response.status_code == 303
+        self._fake_saml_authentication(transaction_id=transaction_id)
+
+        # returning after authentication must show a consent screen, not finish the interaction
+        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
+        assert response.status_code == 200
+        assert "<h3>Approve access</h3>" in response.text
+        assert "some_access" in response.text
+
+        # authentication alone must not approve the transaction
+        assert self._get_transaction_state_by_id(transaction_id).flow_state is FlowState.PENDING
+
+    def test_interaction_consent_approve(self: Self) -> None:
+        self.config["auth_flows"] = json.dumps(["TestFlow"])
+        self.config["pysaml2_config_path"] = str(Path(__file__).with_name("data") / "saml" / "saml2_settings.py")
+        self.config["saml2_discovery_service_url"] = "https://disco.example.com/ds/"
+        self._update_app_config(config=self.config)
+
+        grant_request = {
+            "access_token": {"flags": ["bearer"]},
+            "client": {"key": {"proof": "test"}},
+            "interact": {"start": ["redirect"]},
+        }
+        response = self.client.post("/transaction", json=grant_request)
+        assert response.status_code == 200
+        interaction_response = response.json()["interact"]
+        transaction_id = interaction_response["redirect"].split("http://testserver/interaction/redirect/")[1]
+
+        self.client.get(interaction_response["redirect"], follow_redirects=False)
+        self._fake_saml_authentication(transaction_id=transaction_id)
+
+        response = self._do_consent(transaction_id=transaction_id, decision="approve")
+        assert response.status_code == 200
+        assert "<h3>Interaction finished</h3>" in response.text
+        assert self._get_transaction_state_by_id(transaction_id).flow_state is FlowState.APPROVED
+
+    def test_interaction_consent_deny(self: Self) -> None:
+        self.config["auth_flows"] = json.dumps(["TestFlow"])
+        self.config["pysaml2_config_path"] = str(Path(__file__).with_name("data") / "saml" / "saml2_settings.py")
+        self.config["saml2_discovery_service_url"] = "https://disco.example.com/ds/"
+        self._update_app_config(config=self.config)
+
+        grant_request = {
+            "access_token": {"flags": ["bearer"]},
+            "client": {"key": {"proof": "test"}},
+            "interact": {"start": ["redirect"]},
+        }
+        response = self.client.post("/transaction", json=grant_request)
+        assert response.status_code == 200
+        continue_response = response.json()["continue"]
+        interaction_response = response.json()["interact"]
+        transaction_id = interaction_response["redirect"].split("http://testserver/interaction/redirect/")[1]
+
+        self.client.get(interaction_response["redirect"], follow_redirects=False)
+        self._fake_saml_authentication(transaction_id=transaction_id)
+
+        response = self._do_consent(transaction_id=transaction_id, decision="deny")
+        assert response.status_code == 200
+        assert "<h3>Access denied</h3>" in response.text
+        assert self._get_transaction_state_by_id(transaction_id).flow_state is FlowState.DENIED
+
+        # the client must be told the user said no instead of being kept polling
+        response = self.client.post(
+            continue_response["uri"],
+            json={},
+            headers={"Authorization": f"GNAP {continue_response['access_token']['value']}"},
+        )
+        assert response.status_code == 403
+        assert response.json()["error"]["code"] == "user_denied"
+
+    def test_interaction_consent_rejects_wrong_csrf_token(self: Self) -> None:
+        self.config["auth_flows"] = json.dumps(["TestFlow"])
+        self.config["pysaml2_config_path"] = str(Path(__file__).with_name("data") / "saml" / "saml2_settings.py")
+        self.config["saml2_discovery_service_url"] = "https://disco.example.com/ds/"
+        self._update_app_config(config=self.config)
+
+        grant_request = {
+            "access_token": {"flags": ["bearer"]},
+            "client": {"key": {"proof": "test"}},
+            "interact": {"start": ["redirect"]},
+        }
+        response = self.client.post("/transaction", json=grant_request)
+        assert response.status_code == 200
+        interaction_response = response.json()["interact"]
+        transaction_id = interaction_response["redirect"].split("http://testserver/interaction/redirect/")[1]
+
+        self.client.get(interaction_response["redirect"], follow_redirects=False)
+        self._fake_saml_authentication(transaction_id=transaction_id)
+        # load the consent screen so a csrf token exists to get wrong
+        assert self.client.get(interaction_response["redirect"]).status_code == 200
+
+        response = self.client.post(
+            f"/interaction/consent/{transaction_id}",
+            data={"csrf_token": "not_the_csrf_token", "decision": "approve"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 403
+        assert self._get_transaction_state_by_id(transaction_id).flow_state is FlowState.PENDING
+
+    def test_interaction_consent_rejects_other_browser(self: Self) -> None:
+        self.config["auth_flows"] = json.dumps(["TestFlow"])
+        self.config["pysaml2_config_path"] = str(Path(__file__).with_name("data") / "saml" / "saml2_settings.py")
+        self.config["saml2_discovery_service_url"] = "https://disco.example.com/ds/"
+        self._update_app_config(config=self.config)
+
+        grant_request = {
+            "access_token": {"flags": ["bearer"]},
+            "client": {"key": {"proof": "test"}},
+            "interact": {"start": ["redirect"]},
+        }
+        response = self.client.post("/transaction", json=grant_request)
+        assert response.status_code == 200
+        interaction_response = response.json()["interact"]
+        transaction_id = interaction_response["redirect"].split("http://testserver/interaction/redirect/")[1]
+
+        self.client.get(interaction_response["redirect"], follow_redirects=False)
+        self._fake_saml_authentication(transaction_id=transaction_id)
+        response = self.client.get(interaction_response["redirect"])
+        assert response.status_code == 200
+        csrf_token = self._get_csrf_token(response.text)
+
+        # a browser that did not start the interaction must not be able to see or answer the consent screen,
+        # even if it knows the transaction id and the csrf token
+        other_browser = TestClient(self.app)
+        response = other_browser.get(interaction_response["redirect"], follow_redirects=False)
+        assert response.status_code == 403
+
+        response = other_browser.post(
+            f"/interaction/consent/{transaction_id}",
+            data={"csrf_token": csrf_token, "decision": "approve"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 403
+        assert self._get_transaction_state_by_id(transaction_id).flow_state is FlowState.PENDING
+
+    def test_interaction_consent_two_transactions_in_one_browser(self: Self) -> None:
+        self.config["auth_flows"] = json.dumps(["TestFlow"])
+        self.config["pysaml2_config_path"] = str(Path(__file__).with_name("data") / "saml" / "saml2_settings.py")
+        self.config["saml2_discovery_service_url"] = "https://disco.example.com/ds/"
+        self._update_app_config(config=self.config)
+
+        grant_request = {
+            "access_token": {"flags": ["bearer"]},
+            "client": {"key": {"proof": "test"}},
+            "interact": {"start": ["redirect"]},
+        }
+
+        transaction_ids = []
+        for _ in range(2):
+            response = self.client.post("/transaction", json=grant_request)
+            assert response.status_code == 200
+            redirect_url = response.json()["interact"]["redirect"]
+            transaction_id = redirect_url.split("http://testserver/interaction/redirect/")[1]
+            transaction_ids.append(transaction_id)
+            # start both interactions in the same browser before finishing either of them
+            assert self.client.get(redirect_url, follow_redirects=False).status_code == 303
+            self._fake_saml_authentication(transaction_id=transaction_id)
+
+        # starting a second interaction must not lock the browser out of the first one
+        for transaction_id in transaction_ids:
+            response = self._do_consent(transaction_id=transaction_id)
+            assert response.status_code == 200
+            assert "<h3>Interaction finished</h3>" in response.text
+            assert self._get_transaction_state_by_id(transaction_id).flow_state is FlowState.APPROVED
 
     def test_transaction_interact_redirect_finish(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["TestFlow"])
@@ -866,7 +1069,7 @@ class TestAuthServer(TestCase):
         # fake a completed SAML authentication
         self._fake_saml_authentication(transaction_id=transaction_id)
 
-        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
+        response = self._do_consent(transaction_id=transaction_id)
         assert response.status_code == 303
 
     @mock.patch("aiohttp.ClientSession.post", new_callable=AsyncMock)
@@ -907,7 +1110,7 @@ class TestAuthServer(TestCase):
         # fake a completed SAML authentication
         self._fake_saml_authentication(transaction_id=transaction_id)
 
-        response = self.client.get(interaction_response["redirect"])
+        response = self._do_consent(transaction_id=transaction_id)
         assert response.status_code == 200
         assert mock_response.return_value.accessed_status == 1
 
@@ -936,7 +1139,6 @@ class TestAuthServer(TestCase):
         assert response.status_code == 303
 
         transaction_id = response.headers["location"].split("http://testserver/interaction/redirect/")[1]
-        redirect_interaction_endpoint = response.headers["location"]
 
         # check redirect to SAML SP
         response = self.client.get(response.headers["location"], follow_redirects=False)
@@ -946,8 +1148,8 @@ class TestAuthServer(TestCase):
         # fake a completed SAML authentication
         self._fake_saml_authentication(transaction_id=transaction_id)
 
-        # the user will be redirected to this endpoint after a successful SAML authentication
-        response = self.client.get(redirect_interaction_endpoint)
+        # the user is sent back to the interaction endpoint after a successful SAML authentication
+        response = self._do_consent(transaction_id=transaction_id)
         assert response.status_code == 200
         assert "<h3>Interaction finished</h3>" in response.text
 
@@ -978,7 +1180,6 @@ class TestAuthServer(TestCase):
         assert response.status_code == 303
 
         transaction_id = response.headers["location"].split("http://testserver/interaction/redirect/")[1]
-        redirect_interaction_endpoint = response.headers["location"]
 
         # check redirect to SAML SP
         response = self.client.get(response.headers["location"], follow_redirects=False)
@@ -988,7 +1189,7 @@ class TestAuthServer(TestCase):
         # fake a completed SAML authentication
         self._fake_saml_authentication(transaction_id=transaction_id)
 
-        response = self.client.get(redirect_interaction_endpoint)
+        response = self._do_consent(transaction_id=transaction_id)
         assert response.status_code == 200
         assert "<h3>Interaction finished</h3>" in response.text
 
@@ -1026,7 +1227,7 @@ class TestAuthServer(TestCase):
         self._fake_saml_authentication(transaction_id=transaction_id)
 
         # complete interaction
-        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
+        response = self._do_consent(transaction_id=transaction_id)
         assert response.status_code == 200
         assert "<h3>Interaction finished</h3>" in response.text
 
@@ -1080,7 +1281,7 @@ class TestAuthServer(TestCase):
         self._fake_saml_authentication(transaction_id=transaction_id)
 
         # complete interaction
-        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
+        response = self._do_consent(transaction_id=transaction_id)
         assert response.status_code == 200
         assert "<h3>Interaction finished</h3>" in response.text
 
@@ -1137,7 +1338,7 @@ class TestAuthServer(TestCase):
         self._fake_saml_authentication(transaction_id=transaction_id)
 
         # complete interaction
-        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
+        response = self._do_consent(transaction_id=transaction_id)
         assert response.status_code == 200
         assert "<h3>Interaction finished</h3>" in response.text
 
@@ -1297,7 +1498,7 @@ class TestAuthServer(TestCase):
         self._fake_saml_authentication(transaction_id=transaction_id)
 
         # complete interaction
-        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
+        response = self._do_consent(transaction_id=transaction_id)
         assert response.status_code == 200
         assert "<h3>Interaction finished</h3>" in response.text
 
@@ -1366,7 +1567,7 @@ class TestAuthServer(TestCase):
         self._fake_saml_authentication(transaction_id=transaction_id)
 
         # complete interaction
-        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
+        response = self._do_consent(transaction_id=transaction_id)
         assert response.status_code == 200
         assert "<h3>Interaction finished</h3>" in response.text
 
@@ -1458,7 +1659,7 @@ class TestAuthServer(TestCase):
         self._fake_saml_authentication(transaction_id=transaction_id)
 
         # complete interaction
-        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
+        response = self._do_consent(transaction_id=transaction_id)
         assert response.status_code == 303
 
         # "receive" redirect back to our endpoint and pick out hash and interact_ref
@@ -1564,7 +1765,7 @@ class TestAuthServer(TestCase):
         self._fake_saml_authentication(transaction_id=transaction_id)
 
         # complete interaction
-        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
+        response = self._do_consent(transaction_id=transaction_id)
         assert response.status_code == 200
         assert "<h3>Interaction finished</h3>" in response.text
 
@@ -1643,7 +1844,7 @@ class TestAuthServer(TestCase):
         self._fake_saml_authentication(transaction_id=transaction_id)
 
         # complete interaction
-        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
+        response = self._do_consent(transaction_id=transaction_id)
         assert response.status_code == 200
         assert "<h3>Interaction finished</h3>" in response.text
 
@@ -1681,7 +1882,7 @@ class TestAuthServer(TestCase):
 
         # fake a completed SAML authentication, then complete the interaction
         self._fake_saml_authentication(transaction_id=transaction_id)
-        response = self.client.get(interaction_response["redirect"], follow_redirects=False)
+        response = self._do_consent(transaction_id=transaction_id)
 
         # RFC 9635 requires 303 for the interaction finish redirect
         assert response.status_code == 303

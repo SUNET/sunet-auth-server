@@ -213,6 +213,14 @@ async def continue_transaction(
             description="grant is finalized and can not be continued",
         )
 
+    if transaction_state.flow_state is FlowState.DENIED:
+        logger.debug(f"transaction state: {transaction_state.flow_state}. The user denied the request.")
+        raise GNAPErrorException(
+            status_code=403,
+            error_code=ErrorCode.USER_DENIED,
+            description="the user denied the request",
+        )
+
     if transaction_state.flow_state != FlowState.APPROVED:
         logger.debug(f"transaction state: {transaction_state.flow_state}. Can not continue yet.")
         # every continuation request must be signed with the same key as the grant request (RFC 9635 7.2)

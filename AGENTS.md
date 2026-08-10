@@ -137,11 +137,11 @@ From `ruff.toml`:
 - Use `list[str]` not `List[str]`
 
 ```python
-def load_config() -> AuthServerConfig:
-    ...
+def load_config() -> AuthServerConfig: ...
 
-async def transaction(self: Self) -> GrantResponse | None:
-    ...
+
+async def transaction(self: Self) -> GrantResponse | None: ...
+
 
 class Key(GnapBaseModel):
     jwk: ECJWK | RSAJWK | SymmetricJWK | None = None
@@ -177,14 +177,19 @@ Custom exceptions for flow control in `flows.py`:
 ```python
 class NextFlowException(HTTPException):
     """Skip to next authentication flow"""
+
     pass
+
 
 class InteractionNeededException(HTTPException):
     """Pause flow for user interaction"""
+
     pass
+
 
 class StopTransactionException(HTTPException):
     """Return error to client"""
+
     pass
 ```
 
@@ -199,6 +204,7 @@ class ConfigurationError(Exception):
 
 ```python
 import logging
+
 logger = logging.getLogger(__name__)
 
 # Usage
@@ -257,6 +263,5 @@ The server runs through configured authentication flows until one succeeds:
 ```python
 class BaseAuthFlow(ABC):
     @abstractmethod
-    async def transaction(self: Self) -> GrantResponse | None:
-        ...
+    async def transaction(self: Self) -> GrantResponse | None: ...
 ```

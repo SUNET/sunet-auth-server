@@ -1,3 +1,4 @@
+import asyncio
 from datetime import timedelta
 from typing import Self
 from unittest import IsolatedAsyncioTestCase
@@ -9,7 +10,8 @@ from pymongo.errors import DuplicateKeyError
 
 from auth_server.db.client import BaseDB, MultipleDocumentsReturned
 from auth_server.db.mongo_cache import MongoCache
-from auth_server.db.transaction_state import TransactionStateDB
+from auth_server.db.transaction_state import FlowState, TestState, TransactionStateDB
+from auth_server.models.gnap import AccessTokenFlags, AccessTokenRequest, Client, GrantRequest, Key, Proof, ProofMethod
 from auth_server.testing import MongoTemporaryInstance
 
 __author__ = "lundberg"
@@ -199,3 +201,59 @@ class TestTransactionStateDB(IsolatedAsyncioTestCase):
         self.mongo_db = MongoTemporaryInstance.get_instance()
         self.db_client = AsyncIOMotorClient(self.mongo_db.uri, tz_aware=True)
         self.transaction_state_db = TransactionStateDB(db_client=self.db_client)
+
+    async def asyncTearDown(self: Self) -> None:
+        await self.transaction_state_db._drop_whole_collection()
+
+    async def _save_pending_state(self: Self) -> TestState:
+        state = TestState(
+            flow_name="TestFlow",
+            grant_request=GrantRequest(
+                client=Client(key=Key(proof=Proof(method=ProofMethod.TEST))),
+                access_token=AccessTokenRequest(flags=[AccessTokenFlags.BEARER]),
+            ),
+            flow_state=FlowState.PENDING,
+        )
+        await self.transaction_state_db.save(state=state, expires_in=timedelta(minutes=10))
+        return state
+
+    async def test_start_interaction_only_binds_one_browser(self: Self) -> None:
+        state = await self._save_pending_state()
+
+        # two browsers hitting the interaction endpoint at the same time must not overwrite each other's binding
+        results = await asyncio.gather(
+            *[
+                self.transaction_state_db.start_interaction(
+                    transaction_id=state.transaction_id,
+                    interaction_session_id=f"session_{i}",
+                    interaction_csrf_token=f"csrf_{i}",
+                )
+                for i in range(2)
+            ]
+        )
+        assert sorted(results) == [False, True]
+
+        winner = results.index(True)
+        stored = await self.transaction_state_db.get_state_by_transaction_id(transaction_id=state.transaction_id)
+        assert stored is not None
+        assert stored.interaction_session_id == f"session_{winner}"
+        assert stored.interaction_csrf_token == f"csrf_{winner}"
+
+    async def test_start_interaction_does_not_extend_the_transaction_lifetime(self: Self) -> None:
+        state = await self._save_pending_state()
+        stored = await self.transaction_state_db.get_state_by_transaction_id(transaction_id=state.transaction_id)
+        assert stored is not None
+        expires_at_before = stored.expires_at
+
+        assert (
+            await self.transaction_state_db.start_interaction(
+                transaction_id=state.transaction_id,
+                interaction_session_id="session",
+                interaction_csrf_token="csrf",
+            )
+            is True
+        )
+
+        stored = await self.transaction_state_db.get_state_by_transaction_id(transaction_id=state.transaction_id)
+        assert stored is not None
+        assert stored.expires_at == expires_at_before
