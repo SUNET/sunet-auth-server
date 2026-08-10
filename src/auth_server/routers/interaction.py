@@ -1,7 +1,6 @@
 __author__ = "lundberg"
 
 import logging
-from datetime import timedelta
 from hmac import compare_digest
 from pathlib import Path
 
@@ -48,12 +47,25 @@ async def redirect(request: ContextRequest, transaction_id: str) -> Response:
     started_interaction = False
     if transaction_state.interaction_session_id is None:
         # the first browser to show up starts the interaction and gets bound to the transaction
-        transaction_state.interaction_session_id = get_hex_uuid4()
-        transaction_state.interaction_csrf_token = get_hex_uuid4()
-        # do not extend the transaction lifetime, see the note on TransactionStateDB.save
-        await transaction_db.save(state=transaction_state, expires_in=timedelta(0))
-        started_interaction = True
-    elif not _interaction_session_matches(request=request, transaction_state=transaction_state):
+        interaction_session_id = get_hex_uuid4()
+        interaction_csrf_token = get_hex_uuid4()
+        started_interaction = await transaction_db.start_interaction(
+            transaction_id=transaction_state.transaction_id,
+            interaction_session_id=interaction_session_id,
+            interaction_csrf_token=interaction_csrf_token,
+        )
+        if started_interaction:
+            transaction_state.interaction_session_id = interaction_session_id
+            transaction_state.interaction_csrf_token = interaction_csrf_token
+        else:
+            # another request bound the transaction first, reload what it stored
+            transaction_state = await transaction_db.get_state_by_transaction_id(transaction_id)
+            if transaction_state is None:
+                raise HTTPException(status_code=404, detail="transaction not found")
+
+    if not started_interaction and not _interaction_session_matches(
+        request=request, transaction_state=transaction_state
+    ):
         logger.error(f"interaction session mismatch for transaction {transaction_state.transaction_id}")
         raise HTTPException(status_code=403, detail="the interaction was started in another browser")
 

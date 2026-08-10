@@ -167,6 +167,29 @@ class TransactionStateDB(BaseDB):
             return None
         return TransactionState.from_dict(state=doc)
 
+    async def start_interaction(
+        self: Self, transaction_id: str, interaction_session_id: str, interaction_csrf_token: str
+    ) -> bool:
+        """
+        Bind an interaction to the browser that started it.
+
+        The update is conditional on no other browser having started the interaction already, so that concurrent
+        requests for the same transaction can not overwrite each other's binding. Returns True if this call started
+        the interaction, False if another one got there first.
+        """
+        # a missing interaction_session_id also matches None, which is what an untouched transaction looks like
+        # as the state is stored with exclude_none
+        res = await self._coll.update_one(
+            {"transaction_id": transaction_id, "interaction_session_id": None},
+            {
+                "$set": {
+                    "interaction_session_id": interaction_session_id,
+                    "interaction_csrf_token": interaction_csrf_token,
+                }
+            },
+        )
+        return res.modified_count == 1
+
     async def remove_state(self: Self, transaction_id: str) -> None:
         await self.remove_document({"transaction_id": transaction_id})
 
