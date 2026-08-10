@@ -21,6 +21,8 @@ SUNET Auth Server is an authentication server that implements the GNAP protocol 
   - TLS-FED (TLS Federation) metadata support
   - SAML metadata trust (MDQ - Metadata Query Protocol)
   - Custom CA certificate chains
+- **User Interaction**: Redirect and user code start modes, with an explicit resource owner consent step bound
+  to the browser that started the interaction
 - **Flexible Configuration**: Support for both static and dynamic client registration
 - **Production-Ready**: Built with FastAPI, includes health checks, comprehensive logging, and Docker support
 
@@ -196,7 +198,7 @@ curl -X POST https://auth.example.com/transaction \
       }
     },
     "interact": {
-      "start": ["user_code_uri"],     
+      "start": ["user_code_uri"]
     }
   }'
 ```
@@ -208,9 +210,29 @@ Continue an in-progress GNAP transaction.
 
 ### User Interaction
 
-**GET** `/interaction/{interaction_id}`
+**GET** `/interaction/redirect/{transaction_id}`
 
-Handle user interaction flow (SAML2 authentication).
+Start the interaction. The first browser to arrive is bound to the transaction: the server stores an
+interaction session id and a CSRF token and sets an `httponly` per-transaction session cookie. Later
+requests from any other browser are rejected with `403`.
+
+If the user is not authenticated yet, this redirects to the SAML2 SP (`/saml2/sp/authn/{transaction_id}`).
+Once authentication is done, the same URL renders the consent screen listing the requested access and the
+subject information the client asked for.
+
+**POST** `/interaction/consent/{transaction_id}`
+
+Submit the resource owner's decision from the consent screen. Form fields: `decision` (`approve`, anything
+else counts as a denial) and `csrf_token`. Requires the interaction session cookie set by the redirect
+endpoint. Approval sets the transaction to `approved`, denial sets it to `denied`; either way the agreed
+`finish` method (redirect or push) is triggered.
+
+Continuing a denied transaction fails with `403` and the GNAP error code `user_denied`.
+
+**GET** / **POST** `/interaction/code`
+
+Show and submit the user code for the `user_code` / `user_code_uri` interaction start modes. A valid code
+redirects to `/interaction/redirect/{transaction_id}`.
 
 ### Health Check
 
@@ -260,12 +282,62 @@ Integrates SAML2 SP for user authentication flows.
 
 - Redirects user to SAML IdP
 - Processes SAML assertions
+- Asks the resource owner to approve or deny the request on a consent screen before the transaction is
+  approved — authentication alone is not approval
+- Binds the interaction to the browser that started it, so an interaction URL handed to someone else can
+  not be used to approve the transaction
 - Issues access tokens based on authentication
 - Supports discovery service for IdP selection
 
+The consent screen does not name the client: `InteractionFlow` clients are anonymous and `client.display` is
+self-asserted (RFC 9635 2.3), so showing it would be misleading.
+
 ### 6. TestFlow
 
-For development and testing purposes only. **Do not use in production.**
+For development and testing purposes only. **Do not use in production** — it issues access tokens to anyone
+who asks, with no key proof at all.
+
+Enable it in the configuration:
+
+```yaml
+auth_flows:
+  - TestFlow
+```
+
+Or as an environment variable (the value is a JSON list):
+
+```bash
+AUTH_FLOWS='["TestFlow"]'
+```
+
+Then send a grant request with the `test` proof method and no key material:
+
+```bash
+curl -X POST http://localhost:8080/transaction \
+  -H "Content-Type: application/json" \
+  -d '{
+    "access_token": [{
+      "flags": ["bearer"],
+      "access": [{"type": "example-api", "scope": "example.org"}]
+    }],
+    "client": {
+      "key": {
+        "proof": "test"
+      }
+    }
+  }'
+```
+
+The response contains a signed access token right away, with `auth_source: test` and `source: test mode` in
+the claims. The `bearer` flag is still required — see [Known Limitations](#known-limitations).
+
+TestFlow also accepts the real proof methods (`mtls`, `jws`, `jwsd`): if `proof` is anything but `test`, the
+proof is verified as usual, only the client key is not looked up in any trust source. This is how the test
+suite exercises proof verification without an MDQ server or a CA bundle.
+
+Flows are tried in the order they are configured, and `TestFlow` never rejects a request whose proof verifies
+against the key in the request itself, so a configured `TestFlow` short circuits every flow after it. Leave it
+out of any deployment that serves real clients.
 
 ## Development
 
@@ -322,9 +394,10 @@ src/auth_server/
 │   └── claims.py      # JWT claims models
 ├── routers/            # FastAPI route handlers
 │   ├── root.py        # Grant request endpoints
-│   ├── interaction.py # User interaction endpoints
+│   ├── interaction.py # User interaction and consent endpoints
 │   ├── saml2_sp.py    # SAML2 SP endpoints
-│   └── status.py      # Health check endpoints
+│   ├── status.py      # Health check endpoints
+│   └── templates/     # Consent, user code and result pages (Jinja2)
 ├── proof/              # Proof verification (mTLS, JWS, etc.)
 ├── db/                 # Database models and operations
 └── tests/              # Test suite
@@ -342,7 +415,6 @@ The following GNAP features are not yet implemented:
 - Access token **introspection** (RFC 9767)
 - **App** interaction start mode
 - Subject **`sub_ids`**
-- RO **consent** step (authentication is currently treated as approval)
 
 Note: revoking an access token (`DELETE /token/{ref}`) removes AS-side state only — the JWT remains valid to offline validators until it expires.
 
