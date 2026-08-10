@@ -533,6 +533,20 @@ class InteractionFlow(CommonFlow):
     def load_state(cls: type[InteractionFlow], state: Mapping[str, Any]) -> InteractionState:
         return InteractionState.from_dict(state=state)
 
+    async def handle_interaction(self: Self) -> GrantResponse | None:
+        if not isinstance(self.state.grant_request.interact, InteractionRequest):
+            # this flow authenticates the resource owner through an interaction, so a grant request without one
+            # can never be approved here. CommonFlow would approve it as there is nothing to wait for.
+            raise NextFlowException(status_code=400, detail="interaction is required in this flow")
+        return await super().handle_interaction()
+
+    async def create_auth_token(self: Self) -> GrantResponse | None:
+        if self.state.saml_session_info is None:
+            # the interaction is only approved after a completed authentication, so this should not happen
+            logger.error("no authenticated resource owner in interaction flow, aborting")
+            raise NextFlowException(status_code=401, detail="no authenticated resource owner")
+        return await super().create_auth_token()
+
 
 class ConfigFlow(CommonFlow):
     @classmethod

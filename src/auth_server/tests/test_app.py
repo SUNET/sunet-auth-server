@@ -1455,6 +1455,22 @@ class TestAuthServer(TestCase):
         response = self.client.delete(manage["uri"], headers={"Authorization": f"GNAP {mgmt_token}"})
         assert response.status_code == 404
 
+    def test_transaction_interaction_flow_requires_interaction(self: Self) -> None:
+        # a grant request without an interaction request must not be approved by the interaction flow,
+        # as the flow has no resource owner authentication to base the approval on
+        self.config["auth_flows"] = json.dumps(["InteractionFlow"])
+        self._update_app_config(config=self.config)
+
+        req = GrantRequest(
+            client=Client(key=Key(proof=Proof(method=ProofMethod.MTLS), cert=self.client_cert_str)),
+            access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
+        )
+        client_header = {"Client-Cert": self.client_cert_str}
+        response = self.client.post("/transaction", json=req.dict(exclude_none=True), headers=client_header)
+
+        assert response.status_code == 401
+        assert response.json()["error"]["code"] == "request_denied"
+
     def test_transaction_mtls_continue(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["InteractionFlow"])
         self._update_app_config(config=self.config)
