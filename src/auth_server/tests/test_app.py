@@ -849,7 +849,7 @@ class TestAuthServer(TestCase):
         # complete interaction
         response = self._do_consent(transaction_id=transaction_id)
         assert response.status_code == 200
-        assert "<h3>Interaction finished</h3>" in response.text
+        assert "<h1>Interaction finished</h1>" in response.text
 
     def test_interaction_requires_consent_after_authentication(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["TestFlow"])
@@ -875,7 +875,7 @@ class TestAuthServer(TestCase):
         # returning after authentication must show a consent screen, not finish the interaction
         response = self.client.get(interaction_response["redirect"], follow_redirects=False)
         assert response.status_code == 200
-        assert "<h3>Approve access</h3>" in response.text
+        assert "<h1>Approve access</h1>" in response.text
         assert "some_access" in response.text
 
         # authentication alone must not approve the transaction
@@ -902,7 +902,7 @@ class TestAuthServer(TestCase):
 
         response = self._do_consent(transaction_id=transaction_id, decision="approve")
         assert response.status_code == 200
-        assert "<h3>Interaction finished</h3>" in response.text
+        assert "<h1>Interaction finished</h1>" in response.text
         assert self._get_transaction_state_by_id(transaction_id).flow_state is FlowState.APPROVED
 
     def test_interaction_consent_deny(self: Self) -> None:
@@ -927,7 +927,7 @@ class TestAuthServer(TestCase):
 
         response = self._do_consent(transaction_id=transaction_id, decision="deny")
         assert response.status_code == 200
-        assert "<h3>Access denied</h3>" in response.text
+        assert "<h1>Access denied</h1>" in response.text
         assert self._get_transaction_state_by_id(transaction_id).flow_state is FlowState.DENIED
 
         # the client must be told the user said no instead of being kept polling
@@ -1031,7 +1031,7 @@ class TestAuthServer(TestCase):
         for transaction_id in transaction_ids:
             response = self._do_consent(transaction_id=transaction_id)
             assert response.status_code == 200
-            assert "<h3>Interaction finished</h3>" in response.text
+            assert "<h1>Interaction finished</h1>" in response.text
             assert self._get_transaction_state_by_id(transaction_id).flow_state is FlowState.APPROVED
 
     def test_transaction_interact_redirect_finish(self: Self) -> None:
@@ -1131,7 +1131,7 @@ class TestAuthServer(TestCase):
 
         response = self.client.get("/interaction/code")
         assert response.status_code == 200
-        assert "<h4>Input your code</h4>" in response.text
+        assert "<label for=\"user-code\">Input your code</label>" in response.text
 
         response = self.client.post(
             "/interaction/code", data={"user_code": interaction_response["user_code"]}, follow_redirects=False
@@ -1151,7 +1151,7 @@ class TestAuthServer(TestCase):
         # the user is sent back to the interaction endpoint after a successful SAML authentication
         response = self._do_consent(transaction_id=transaction_id)
         assert response.status_code == 200
-        assert "<h3>Interaction finished</h3>" in response.text
+        assert "<h1>Interaction finished</h1>" in response.text
 
     def test_transaction_interact_user_code_uri_start(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["TestFlow"])
@@ -1170,7 +1170,7 @@ class TestAuthServer(TestCase):
 
         response = self.client.get(interaction_response["user_code_uri"]["uri"])
         assert response.status_code == 200
-        assert "<h4>Input your code</h4>" in response.text
+        assert "<label for=\"user-code\">Input your code</label>" in response.text
 
         response = self.client.post(
             "/interaction/code",
@@ -1191,7 +1191,7 @@ class TestAuthServer(TestCase):
 
         response = self._do_consent(transaction_id=transaction_id)
         assert response.status_code == 200
-        assert "<h3>Interaction finished</h3>" in response.text
+        assert "<h1>Interaction finished</h1>" in response.text
 
     def test_transaction_continue(self: Self) -> None:
         self.config["auth_flows"] = json.dumps(["TestFlow"])
@@ -1229,7 +1229,7 @@ class TestAuthServer(TestCase):
         # complete interaction
         response = self._do_consent(transaction_id=transaction_id)
         assert response.status_code == 200
-        assert "<h3>Interaction finished</h3>" in response.text
+        assert "<h1>Interaction finished</h1>" in response.text
 
         # continue request after interaction is completed
         authorization_header = f"GNAP {continue_response['access_token']['value']}"
@@ -1283,7 +1283,7 @@ class TestAuthServer(TestCase):
         # complete interaction
         response = self._do_consent(transaction_id=transaction_id)
         assert response.status_code == 200
-        assert "<h3>Interaction finished</h3>" in response.text
+        assert "<h1>Interaction finished</h1>" in response.text
 
         # continue request after interaction is completed -> grant finalized
         authorization_header = f"GNAP {continue_response['access_token']['value']}"
@@ -1340,7 +1340,7 @@ class TestAuthServer(TestCase):
         # complete interaction
         response = self._do_consent(transaction_id=transaction_id)
         assert response.status_code == 200
-        assert "<h3>Interaction finished</h3>" in response.text
+        assert "<h1>Interaction finished</h1>" in response.text
 
         # continue request after interaction is completed
         authorization_header = f"GNAP {continue_response['access_token']['value']}"
@@ -1516,7 +1516,7 @@ class TestAuthServer(TestCase):
         # complete interaction
         response = self._do_consent(transaction_id=transaction_id)
         assert response.status_code == 200
-        assert "<h3>Interaction finished</h3>" in response.text
+        assert "<h1>Interaction finished</h1>" in response.text
 
         # continue request after interaction is completed
         response = self.client.post(continue_response["uri"], json={}, headers=client_header)
@@ -1585,7 +1585,7 @@ class TestAuthServer(TestCase):
         # complete interaction
         response = self._do_consent(transaction_id=transaction_id)
         assert response.status_code == 200
-        assert "<h3>Interaction finished</h3>" in response.text
+        assert "<h1>Interaction finished</h1>" in response.text
 
         # continue request after interaction is completed
         jws_header["uri"] = continue_response["uri"]
@@ -1783,7 +1783,7 @@ class TestAuthServer(TestCase):
         # complete interaction
         response = self._do_consent(transaction_id=transaction_id)
         assert response.status_code == 200
-        assert "<h3>Interaction finished</h3>" in response.text
+        assert "<h1>Interaction finished</h1>" in response.text
 
         # continue request after interaction is completed
         jws_header["uri"] = continue_response["uri"]
@@ -1862,7 +1862,7 @@ class TestAuthServer(TestCase):
         # complete interaction
         response = self._do_consent(transaction_id=transaction_id)
         assert response.status_code == 200
-        assert "<h3>Interaction finished</h3>" in response.text
+        assert "<h1>Interaction finished</h1>" in response.text
 
         # continue request after interaction is completed
         authorization_header = f"GNAP {continue_response['access_token']['value']}"

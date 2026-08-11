@@ -1,16 +1,6 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Interaction finished</title>
-    <link href="{{ url_for('static', path='/styles.css') }}" rel="stylesheet">
-</head>
-<body>
-    <div class="section">
-        <h3>Interaction finished</h3>
-    </div>
-    <div class="section">
-        <p>Return to your client to continue the authentication flow.</p>
-    </div>
-</body>
-</html>
+{% extends "base.jinja2" %}
+{% block title %}Interaction finished{% endblock %}
+{% block content %}
+    <h1>Interaction finished</h1>
+    <p class="lead">Return to your client to continue the authentication flow.</p>
+{% endblock %}

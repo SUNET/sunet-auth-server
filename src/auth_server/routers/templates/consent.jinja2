@@ -1,19 +1,11 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Approve access</title>
-    <link href="{{ url_for('static', path='/styles.css') }}" rel="stylesheet">
-</head>
-<body>
-    <div class="section">
-        <h3>Approve access</h3>
-    </div>
-    <div class="section">
-        <p>An application is requesting access to your identity.</p>
-    </div>
-    <div class="section">
-        <h4>Requested access</h4>
+{% extends "base.jinja2" %}
+{% block title %}Approve access{% endblock %}
+{% block content %}
+    <h1>Approve access</h1>
+    <p class="lead">An application is requesting access to your identity.</p>
+
+    <section class="section">
+        <h2>Requested access</h2>
         {% if requested_access %}
         <ul>
             {% for access in requested_access %}
@@ -21,11 +13,12 @@
             {% endfor %}
         </ul>
         {% else %}
-        <p>No specific access was requested.</p>
+        <p class="empty">No specific access was requested.</p>
         {% endif %}
-    </div>
-    <div class="section">
-        <h4>Requested information about you</h4>
+    </section>
+
+    <section class="section">
+        <h2>Requested information about you</h2>
         {% if requested_subject %}
         <ul>
             {% for subject in requested_subject %}
@@ -33,21 +26,18 @@
             {% endfor %}
         </ul>
         {% else %}
-        <p>No information about you was requested.</p>
+        <p class="empty">No information about you was requested.</p>
         {% endif %}
-    </div>
-    <div class="section">
-        <p>
-            The authorization server cannot verify which application made this request.
-            Only continue if you started this yourself.
-        </p>
-    </div>
-    <div class="form">
-        <form action="{{ consent_url }}" method="post">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button type="submit" name="decision" value="deny">Deny</button>
-            <button type="submit" name="decision" value="approve">Approve</button>
-        </form>
-    </div>
-</body>
-</html>
+    </section>
+
+    <p class="notice">
+        The authorization server cannot verify which application made this request.
+        Only continue if you started this yourself.
+    </p>
+
+    <form class="actions" action="{{ consent_url }}" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" name="decision" value="deny" class="button">Deny</button>
+        <button type="submit" name="decision" value="approve" class="button button-primary">Approve</button>
+    </form>
+{% endblock %}

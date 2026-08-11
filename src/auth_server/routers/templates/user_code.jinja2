@@ -1,23 +1,17 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>User code</title>
-    <link href="{{ url_for('static', path='/styles.css') }}" rel="stylesheet">
-</head>
-<body>
-    <div class="section">
-        <h3>User code interaction</h3>
-    </div>
-    <div class="section">
-        <h4>Input your code</h4>
-    </div>
-    <div class="form">
-        <form action="" method="post">
-            <label hidden for="user-code">code:</label>
-            <input type="text" id="user-code" name="user_code" autocomplete="false">
-            <button type="submit">OK</button>
-        </form>
-    </div>
-</body>
-</html>
+{% extends "base.jinja2" %}
+{% block title %}User code{% endblock %}
+{% block content %}
+    <h1>User code interaction</h1>
+    <p class="lead">Enter the code shown by the application you are trying to use.</p>
+
+    <form action="" method="post">
+        <div class="field">
+            <h2><label for="user-code">Input your code</label></h2>
+            <input type="text" id="user-code" name="user_code" autocomplete="off" autocapitalize="off"
+                   autocorrect="off" spellcheck="false" required>
+        </div>
+        <div class="actions">
+            <button type="submit" class="button button-primary">OK</button>
+        </div>
+    </form>
+{% endblock %}
