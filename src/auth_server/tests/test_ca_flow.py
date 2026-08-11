@@ -24,7 +24,16 @@ from auth_server.cert_utils import (
 )
 from auth_server.config import load_config
 from auth_server.db.transaction_state import AuthSource
-from auth_server.models.gnap import AccessTokenFlags, AccessTokenRequest, Client, GrantRequest, Key, Proof, ProofMethod
+from auth_server.models.gnap import (
+    AccessTokenFlags,
+    AccessTokenRequest,
+    Client,
+    ErrorCode,
+    GrantRequest,
+    Key,
+    Proof,
+    ProofMethod,
+)
 from auth_server.tls_fed_auth import get_tls_fed_metadata
 from auth_server.utils import get_signing_key, load_jwks
 
@@ -141,6 +150,11 @@ class TestAuthServer(TestCase):
         client_header = {"Client-Cert": client_cert_str}
         return self.client.post("/transaction", json=req.model_dump(exclude_none=True), headers=client_header)
 
+    def _load_unknown_ca_cert(self: Self) -> Certificate:
+        """a certificate that is valid, but not signed by any CA the flow loads"""
+        with open(f"{self.datadir}/test.cert", "rb") as f:
+            return x509.load_pem_x509_certificate(data=f.read())
+
     def test_mtls_transaction(self: Self) -> None:
         parameters = [
             ("bolag_a.crt", True, "SE5560000167"),
@@ -170,6 +184,41 @@ class TestAuthServer(TestCase):
             else:
                 assert response.status_code == 401
                 assert response.json()["error"]["description"] == expected_result
+
+    def test_mtls_transaction_cert_from_unknown_ca_tries_next_flow(self: Self) -> None:
+        # a certificate from a CA this flow does not know just means the client belongs to another flow
+        self.config["auth_flows"] = json.dumps(["CAFlow", "TestFlow"])
+        self._update_app_config(config=self.config)
+
+        response = self._do_mtls_transaction(cert=self._load_unknown_ca_cert())
+        assert response.status_code == 200
+        access_token = response.json()["access_token"]
+        claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims["auth_source"] == AuthSource.TEST
+
+    def test_mtls_transaction_cert_from_unknown_ca_denied_as_last_flow(self: Self) -> None:
+        # with no other flow to try the transaction ends the way any unauthorized request does
+        response = self._do_mtls_transaction(cert=self._load_unknown_ca_cert())
+        assert response.status_code == 401
+        assert response.json()["error"]["code"] == ErrorCode.REQUEST_DENIED
+
+    def test_mtls_transaction_expired_cert_stops_the_transaction(self: Self) -> None:
+        # an expired certificate must not get a second chance in a flow that accepts a self asserted key
+        self.config["auth_flows"] = json.dumps(["CAFlow", "TestFlow"])
+        self._update_app_config(config=self.config)
+
+        response = self._do_mtls_transaction(cert=self._load_cert(filename="bolag_c.crt"))
+        assert response.status_code == 401
+        assert response.json()["error"]["description"] == "client certificate expired or not yet valid"
+
+    def test_mtls_transaction_revoked_cert_stops_the_transaction(self: Self) -> None:
+        # a revoked certificate must not get a second chance in a flow that accepts a self asserted key
+        self.config["auth_flows"] = json.dumps(["CAFlow", "TestFlow"])
+        self._update_app_config(config=self.config)
+
+        response = self._do_mtls_transaction(cert=self._load_cert(filename="bolag_b.crt"))
+        assert response.status_code == 401
+        assert response.json()["error"]["description"] == "client certificate revoked"
 
 
 class TestAuthServerAsync(IsolatedAsyncioTestCase):

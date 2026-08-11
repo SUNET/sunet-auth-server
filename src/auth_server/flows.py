@@ -595,6 +595,15 @@ class OnlyMTLSProofFlow(CommonFlow):
             raise NextFlowException(status_code=400, detail="MTLS is the only supported proof method")
         if self.request.context.client_cert is None:
             raise NextFlowException(status_code=401, detail="no client certificate found")
+
+        try:
+            client_cert = load_pem_from_str(self.request.context.client_cert)
+        except ValueError:
+            raise NextFlowException(status_code=401, detail="could not load client certificate")
+        # an expired certificate is no use to any mtls flow, so do not let a later flow accept it
+        if not cert_within_validity_period(cert=client_cert):
+            raise StopTransactionException(status_code=401, detail="client certificate expired or not yet valid")
+
         # please mypy, enforced in CommonFlow or previous steps
         assert isinstance(self.state.grant_request.client, Client)
         assert isinstance(self.state.grant_request.client.key, Key)
@@ -757,18 +766,17 @@ class CAFlow(OnlyMTLSProofFlow):
         await super().validate_proof()
         if not self.state.proof_ok:
             raise NextFlowException(status_code=401, detail="client certificate does not match grant request")
-        if not self.request.context.client_cert:
-            raise StopTransactionException(status_code=401, detail="client certificate missing")
 
+        assert self.request.context.client_cert is not None  # please mypy, checked in check_proof
         client_cert = load_pem_from_str(self.request.context.client_cert)
-        if not cert_within_validity_period(cert=client_cert):
-            raise StopTransactionException(status_code=401, detail="client certificate expired or not yet valid")
 
         ca_name = cert_signed_by_ca(cert=client_cert)
         if ca_name is None:
-            raise StopTransactionException(status_code=401, detail="client certificate not signed by CA")
+            # the certificate is not from a CA we know, so this is not a client of this flow
+            raise NextFlowException(status_code=401, detail="client certificate not signed by CA")
 
         if await is_cert_revoked(cert=client_cert) is True:
+            # a revoked certificate must not get another chance in a flow that accepts a self asserted key
             raise StopTransactionException(status_code=401, detail="client certificate revoked")
 
         # set client CN and issuer CN in state for use in claims
