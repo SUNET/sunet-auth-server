@@ -1,4 +1,5 @@
 import json
+from datetime import timedelta
 from os import environ
 from pathlib import Path
 from typing import Any, Self
@@ -34,6 +35,8 @@ from auth_server.models.gnap import (
     Proof,
     ProofMethod,
 )
+from auth_server.tests.utils import create_cert
+from auth_server.time_utils import utc_now
 from auth_server.tls_fed_auth import get_tls_fed_metadata
 from auth_server.utils import get_signing_key, load_jwks
 
@@ -155,6 +158,14 @@ class TestAuthServer(TestCase):
         with open(f"{self.datadir}/test.cert", "rb") as f:
             return x509.load_pem_x509_certificate(data=f.read())
 
+    @staticmethod
+    def _create_expired_unknown_ca_cert() -> Certificate:
+        """an expired certificate that is not signed by any CA the flow loads"""
+        _, cert = create_cert(common_name="test.localhost", days_valid=1, valid_from=utc_now() - timedelta(days=2))
+        assert cert_within_validity_period(cert=cert) is False
+        assert cert_signed_by_ca(cert=cert) is None
+        return cert
+
     def test_mtls_transaction(self: Self) -> None:
         parameters = [
             ("bolag_a.crt", True, "SE5560000167"),
@@ -210,6 +221,17 @@ class TestAuthServer(TestCase):
         response = self._do_mtls_transaction(cert=self._load_cert(filename="bolag_c.crt"))
         assert response.status_code == 401
         assert response.json()["error"]["description"] == "client certificate expired or not yet valid"
+
+    def test_mtls_transaction_expired_cert_from_unknown_ca_tries_next_flow(self: Self) -> None:
+        # validity is only enforced for certificates from a CA this flow knows, others belong to another flow
+        self.config["auth_flows"] = json.dumps(["CAFlow", "TestFlow"])
+        self._update_app_config(config=self.config)
+
+        response = self._do_mtls_transaction(cert=self._create_expired_unknown_ca_cert())
+        assert response.status_code == 200
+        access_token = response.json()["access_token"]
+        claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims["auth_source"] == AuthSource.TEST
 
     def test_mtls_transaction_revoked_cert_stops_the_transaction(self: Self) -> None:
         # a revoked certificate must not get a second chance in a flow that accepts a self asserted key

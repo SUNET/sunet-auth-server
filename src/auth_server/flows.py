@@ -596,14 +596,6 @@ class OnlyMTLSProofFlow(CommonFlow):
         if self.request.context.client_cert is None:
             raise NextFlowException(status_code=401, detail="no client certificate found")
 
-        try:
-            client_cert = load_pem_from_str(self.request.context.client_cert)
-        except ValueError:
-            raise NextFlowException(status_code=401, detail="could not load client certificate")
-        # an expired certificate is no use to any mtls flow, so do not let a later flow accept it
-        if not cert_within_validity_period(cert=client_cert):
-            raise StopTransactionException(status_code=401, detail="client certificate expired or not yet valid")
-
         # please mypy, enforced in CommonFlow or previous steps
         assert isinstance(self.state.grant_request.client, Client)
         assert isinstance(self.state.grant_request.client.key, Key)
@@ -775,7 +767,11 @@ class CAFlow(OnlyMTLSProofFlow):
             # the certificate is not from a CA we know, so this is not a client of this flow
             raise NextFlowException(status_code=401, detail="client certificate not signed by CA")
 
-        if await is_cert_revoked(cert=client_cert) is True:
+        if not cert_within_validity_period(cert=client_cert):
+            # enforce valid timestamps for certs used in this flow
+            raise StopTransactionException(status_code=401, detail="client certificate expired or not yet valid")
+
+        if await is_cert_revoked(cert=client_cert):
             # a revoked certificate must not get another chance in a flow that accepts a self asserted key
             raise StopTransactionException(status_code=401, detail="client certificate revoked")
 

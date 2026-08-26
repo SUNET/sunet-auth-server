@@ -21,7 +21,12 @@ from starlette.testclient import TestClient
 from starlette.types import Message
 
 from auth_server.api import init_auth_server_api
-from auth_server.cert_utils import rfc8705_fingerprint, serialize_certificate, wrong_rfc8705_fingerprint
+from auth_server.cert_utils import (
+    cert_within_validity_period,
+    rfc8705_fingerprint,
+    serialize_certificate,
+    wrong_rfc8705_fingerprint,
+)
 from auth_server.config import ClientKey, load_config
 from auth_server.db.transaction_state import AuthSource, FlowState, TransactionState
 from auth_server.middleware import JOSEPreparer
@@ -654,6 +659,36 @@ class TestAuthServer(TestCase):
         assert claims["organization_id"] == "SE0123456789"
         assert claims["source"] == "metadata.example.com"
 
+    @mock.patch("aiohttp.ClientSession.get", new_callable=AsyncMock)
+    def test_tls_fed_flow_remote_metadata_expired_client_cert(self: Self, mock_metadata: AsyncMock) -> None:
+        # the metadata is what this flow trusts, so certificate validity is not enforced here
+        entity_id = "https://test.localhost"
+        _, expired_client_cert = create_cert(
+            common_name="test.localhost", days_valid=1, valid_from=utc_now() - timedelta(days=2)
+        )
+        assert cert_within_validity_period(cert=expired_client_cert) is False
+        expired_client_cert_str = serialize_certificate(cert=expired_client_cert)
+        metadata_jws = self._setup_remote_tls_fed_test(entity_id=entity_id, client_certs=[expired_client_cert_str])
+        mock_metadata.return_value = MockResponse(content=metadata_jws)
+
+        # Start transaction
+        req = GrantRequest(
+            client=Client(key=entity_id),
+            access_token=[AccessTokenRequest(flags=[AccessTokenFlags.BEARER])],
+        )
+        client_header = {"Client-Cert": expired_client_cert_str}
+        response = self.client.post("/transaction", json=req.model_dump(exclude_none=True), headers=client_header)
+        assert response.status_code == 200
+        assert "access_token" in response.json()
+        access_token = response.json()["access_token"]
+        assert AccessTokenFlags.BEARER.value in access_token["flags"]
+        assert access_token["value"] is not None
+
+        # Verify token and check claims
+        claims = self._get_access_token_claims(access_token=access_token, client=self.client)
+        assert claims["auth_source"] == AuthSource.TLSFED
+        assert claims["entity_id"] == entity_id
+
     def test_tls_fed_flow_local_metadata(self: Self) -> None:
         # Create metadata jws and save it as a temporary file
         with open(f"{self.datadir}/tls_fed_jwks.json") as f:
@@ -1131,7 +1166,7 @@ class TestAuthServer(TestCase):
 
         response = self.client.get("/interaction/code")
         assert response.status_code == 200
-        assert "<label for=\"user-code\">Input your code</label>" in response.text
+        assert '<label for="user-code">Input your code</label>' in response.text
 
         response = self.client.post(
             "/interaction/code", data={"user_code": interaction_response["user_code"]}, follow_redirects=False
@@ -1170,7 +1205,7 @@ class TestAuthServer(TestCase):
 
         response = self.client.get(interaction_response["user_code_uri"]["uri"])
         assert response.status_code == 200
-        assert "<label for=\"user-code\">Input your code</label>" in response.text
+        assert '<label for="user-code">Input your code</label>' in response.text
 
         response = self.client.post(
             "/interaction/code",

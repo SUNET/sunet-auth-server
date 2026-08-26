@@ -90,7 +90,7 @@ def create_tls_fed_metadata(
 
 
 def create_cert(
-    common_name: str, alt_names: list[str] | None = None, days_valid: int = 1
+    common_name: str, alt_names: list[str] | None = None, days_valid: int = 1, valid_from: datetime | None = None
 ) -> tuple[RSAPrivateKey, Certificate]:
     if alt_names is None:
         alt_names = list()
@@ -105,7 +105,8 @@ def create_cert(
         ]
     )
     _alt_names = [x509.DNSName(alt_name) for alt_name in alt_names]
-    now = utc_now()
+    # valid_from in the past together with a low days_valid creates an already expired certificate
+    now = valid_from if valid_from is not None else utc_now()
     cert = (
         x509.CertificateBuilder()
         .subject_name(subject)
