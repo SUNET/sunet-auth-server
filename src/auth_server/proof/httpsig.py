@@ -331,7 +331,8 @@ async def check_httpsig_proof(request: ContextRequest, gnap_key: Key, access_tok
             if nonce is not None:
                 ttl = config.proof_httpsig_max_age + 3 * config.proof_httpsig_clock_skew + timedelta(seconds=60)
                 nonce_store = await get_proof_nonce_store(ttl=ttl)
-                if not await nonce_store.check_and_store(keyid=client_key.kid, nonce=nonce):
+                # scoped to the validated key material, the kid is client chosen and not unique across clients
+                if not await nonce_store.check_and_store(key_fingerprint=client_key.fingerprint, nonce=nonce):
                     raise _reject("nonce has already been used")
         except GNAPErrorException as e:
             error = e

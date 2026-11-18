@@ -32,15 +32,19 @@ class ProofNonceDB(BaseDB):
                 "key": [("created_at", 1)],
                 "expireAfterSeconds": int(ttl.total_seconds()),
             },
-            "unique-keyid-nonce": {"key": [("keyid", 1), ("nonce", 1)], "unique": True},
+            "unique-key-fingerprint-nonce": {"key": [("key_fingerprint", 1), ("nonce", 1)], "unique": True},
         }
+        # leftovers from before nonces were scoped by key fingerprint would all collide in the unique index
+        await db._coll.delete_many({"key_fingerprint": {"$exists": False}})
         await db.setup_indexes(indexes=indexes)
         return db
 
-    async def check_and_store(self: Self, keyid: str, nonce: str) -> bool:
-        """Store the nonce. Returns False if the nonce has been seen before for this key id."""
+    async def check_and_store(self: Self, key_fingerprint: str, nonce: str) -> bool:
+        """Store the nonce. Returns False if the nonce has been seen before for this key.
+
+        The key fingerprint identifies the key material and proof parameters, not the client chosen kid."""
         try:
-            await self._coll.insert_one({"keyid": keyid, "nonce": nonce, "created_at": utc_now()})
+            await self._coll.insert_one({"key_fingerprint": key_fingerprint, "nonce": nonce, "created_at": utc_now()})
         except DuplicateKeyError:
             return False
         return True
@@ -55,16 +59,16 @@ class InMemoryProofNonceStore:
         # the ttl is the same for every nonce so they expire in the order they were stored
         self._expiry_queue: deque[tuple[float, tuple[str, str]]] = deque()
 
-    async def check_and_store(self: Self, keyid: str, nonce: str) -> bool:
+    async def check_and_store(self: Self, key_fingerprint: str, nonce: str) -> bool:
         now = monotonic()
         while self._expiry_queue and self._expiry_queue[0][0] <= now:
             _, expired = self._expiry_queue.popleft()
             self._seen.pop(expired, None)
-        if (keyid, nonce) in self._seen:
+        if (key_fingerprint, nonce) in self._seen:
             return False
         expires = now + self.ttl.total_seconds()
-        self._seen[(keyid, nonce)] = expires
-        self._expiry_queue.append((expires, (keyid, nonce)))
+        self._seen[(key_fingerprint, nonce)] = expires
+        self._expiry_queue.append((expires, (key_fingerprint, nonce)))
         return True
 
 

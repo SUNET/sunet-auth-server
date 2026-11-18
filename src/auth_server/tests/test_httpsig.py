@@ -564,6 +564,30 @@ class TestHttpsig(TestCase):
         assert self._post_transaction(body, headers=headers).status_code == 200
         self._assert_invalid_client(self._post_transaction(body, headers=headers))
 
+    def test_same_nonce_and_kid_for_different_keys_accepted(self: Self) -> None:
+        nonce = uuid.uuid4().hex
+        for _ in range(2):
+            key = generate_key("ES256")  # same kid, different key material
+            body = self._grant_body(public_jwk(key, alg="ES256"))
+            assert self._post_transaction(body, key=key, nonce=nonce).status_code == 200
+
+    def test_replay_with_same_key_still_rejected(self: Self) -> None:
+        body = self._grant_body(public_jwk(self.key, alg="ES256"))
+        headers = self._signed_headers("POST", f"{BASE_URL}/transaction", body, nonce=uuid.uuid4().hex)
+        assert self._post_transaction(body, headers=headers).status_code == 200
+        self._assert_invalid_client(self._post_transaction(body, headers=headers))
+
+    def test_other_client_with_same_kid_can_not_burn_nonce(self: Self) -> None:
+        nonce = uuid.uuid4().hex
+        key_b = generate_key("ES256")  # same kid as self.key
+        body_b = self._grant_body(public_jwk(key_b, alg="ES256"))
+        assert self._post_transaction(body_b, key=key_b, nonce=nonce).status_code == 200
+        body_a = self._grant_body(public_jwk(self.key, alg="ES256"))
+        assert self._post_transaction(body_a, nonce=nonce).status_code == 200
+        # and the nonce is burnt for each of them
+        self._assert_invalid_client(self._post_transaction(body_a, nonce=nonce))
+        self._assert_invalid_client(self._post_transaction(body_b, key=key_b, nonce=nonce))
+
     def test_different_nonces_accepted(self: Self) -> None:
         body = self._grant_body(public_jwk(self.key, alg="ES256"))
         for _ in range(2):
@@ -962,11 +986,11 @@ class TestProofNonceDB(IsolatedAsyncioTestCase):
 
     async def test_nonce_store(self: Self) -> None:
         db = await ProofNonceDB.init(db_client=self.client, ttl=timedelta(minutes=6))
-        assert await db.check_and_store(keyid="key", nonce="n1") is True
-        assert await db.check_and_store(keyid="key", nonce="n1") is False
+        assert await db.check_and_store(key_fingerprint="key", nonce="n1") is True
+        assert await db.check_and_store(key_fingerprint="key", nonce="n1") is False
         # nonces are per key
-        assert await db.check_and_store(keyid="other", nonce="n1") is True
-        assert await db.check_and_store(keyid="key", nonce="n2") is True
+        assert await db.check_and_store(key_fingerprint="other", nonce="n1") is True
+        assert await db.check_and_store(key_fingerprint="key", nonce="n2") is True
 
     async def test_indexes(self: Self) -> None:
         await ProofNonceDB.init(db_client=self.client, ttl=timedelta(minutes=6))
@@ -977,17 +1001,17 @@ class TestProofNonceDB(IsolatedAsyncioTestCase):
         assert len(ttl_indexes) == 1
         assert next(iter(ttl_indexes.values()))["expireAfterSeconds"] == 420
         unique = [info for info in indexes.values() if info.get("unique")]
-        assert [info["key"] for info in unique] == [[("keyid", 1), ("nonce", 1)]]
+        assert [info["key"] for info in unique] == [[("key_fingerprint", 1), ("nonce", 1)]]
 
     async def test_in_memory_store(self: Self) -> None:
         store = InMemoryProofNonceStore(ttl=timedelta(minutes=1))
-        assert await store.check_and_store(keyid="key", nonce="n1") is True
-        assert await store.check_and_store(keyid="key", nonce="n1") is False
-        assert await store.check_and_store(keyid="other", nonce="n1") is True
+        assert await store.check_and_store(key_fingerprint="key", nonce="n1") is True
+        assert await store.check_and_store(key_fingerprint="key", nonce="n1") is False
+        assert await store.check_and_store(key_fingerprint="other", nonce="n1") is True
 
         short = InMemoryProofNonceStore(ttl=timedelta(seconds=0))
-        assert await short.check_and_store(keyid="key", nonce="n1") is True
-        assert await short.check_and_store(keyid="key", nonce="n1") is True  # expired right away
+        assert await short.check_and_store(key_fingerprint="key", nonce="n1") is True
+        assert await short.check_and_store(key_fingerprint="key", nonce="n1") is True  # expired right away
 
 
 class TestProofModels(TestCase):
