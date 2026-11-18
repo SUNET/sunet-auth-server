@@ -1,11 +1,19 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Self, cast
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+    model_validator,
+)
 
 from auth_server.models.jose import (
     ECJWK,
+    OKPJWK,
     RSAJWK,
     JOSEHeader,
     SupportedAlgorithms,
@@ -36,22 +44,36 @@ class ProofMethod(StrEnum):
 
 class Proof(GnapBaseModel):
     method: ProofMethod
+    # httpsig object form (RFC 9635 7.3.1): alg is an RFC 9421 algorithm name, content-digest-alg an RFC 9530 one
+    alg: str | None = None
+    content_digest_alg: str | None = Field(default=None, alias="content-digest-alg")
 
-
-class Key(GnapBaseModel):
-    proof: Proof
-    jwk: ECJWK | RSAJWK | SymmetricJWK | None = None
-    cert: str | None = None
-    cert_S256: str | None = Field(default=None, alias="cert#S256")
-
-    @field_validator("proof", mode="before")
+    @model_validator(mode="before")
     @classmethod
-    def expand_proof(cls: type["Key"], v: str | dict[str, Any]) -> dict[str, Any]:
+    def expand_proof(cls: type["Proof"], v: object) -> object:
         # If additional parameters are not required or used for a specific method,
         # the method MAY be passed as a string instead of an object.
         if isinstance(v, str):
             return {"method": v}
+        # alg is REQUIRED when httpsig is given in object form
+        if isinstance(v, dict) and v.get("method") == ProofMethod.HTTPSIG and not v.get("alg"):
+            raise ValueError("alg is required for the httpsig proof method in object form")
         return v
+
+    @model_serializer(mode="wrap")
+    def serialize_proof(self: Self, handler: SerializerFunctionWrapHandler) -> dict[str, object] | str:
+        # An httpsig proof without alg is the string form, keep it that way when stored so that it is not mistaken
+        # for an object form missing the required alg when it is loaded again.
+        if self.method is ProofMethod.HTTPSIG and self.alg is None and self.content_digest_alg is None:
+            return self.method.value
+        return cast(dict[str, object], handler(self))
+
+
+class Key(GnapBaseModel):
+    proof: Proof
+    jwk: OKPJWK | ECJWK | RSAJWK | SymmetricJWK | None = None
+    cert: str | None = None
+    cert_S256: str | None = Field(default=None, alias="cert#S256")
 
 
 class Access(GnapBaseModel):

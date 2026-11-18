@@ -14,7 +14,7 @@ SUNET Auth Server is an authentication server that implements the GNAP protocol 
 - **GNAP Protocol**: Full implementation targeting RFC 9635
 - **Multiple Authentication Methods**:
   - Mutual TLS (mTLS) with certificate validation
-  - JWK-based authentication (JWS)
+  - JWK-based authentication (JWS, detached JWS and HTTP Message Signatures `httpsig`)
   - SAML2 Service Provider integration
   - Certificate Authority (CA) trust validation
 - **Trust Frameworks**:
@@ -141,6 +141,59 @@ client_keys:
       scope: "example.org"
       custom_claim: "value"
 ```
+
+### Key Proofs (httpsig, jws and jwsd)
+
+#### httpsig
+
+`httpsig` (RFC 9635 7.3.1, RFC 9421 and RFC 9530) is supported for keys sent by value (public JWK) and for keys
+in `client_keys`. The proof is given either as a string or as an object:
+
+```json
+"proof": "httpsig"
+"proof": {"method": "httpsig", "alg": "ecdsa-p256-sha256", "content-digest-alg": "sha-512"}
+```
+
+- String form: the algorithm comes from the `alg` (a JWS name) of the JWK, which is then required. Supported:
+  `ES256` (ecdsa-p256-sha256), `ES384` (ecdsa-p384-sha384), `RS256` (rsa-v1_5-sha256), `PS512` (rsa-pss-sha512)
+  and `EdDSA` (ed25519, an `OKP` JWK with `crv` `Ed25519`). The Content-Digest algorithm is `sha-256`.
+- Object form: `alg` is required and must match the key (and the JWK `alg` if there is one).
+  `content-digest-alg` is `sha-256` (default) or `sha-512`.
+- The JWK needs a `kid`, it must be the `keyid` of the signature. Private keys (`d` etc.) sent by value are
+  rejected. HMAC (`oct` keys) is not supported. The algorithm is never taken from the message, an explicit `alg`
+  signature parameter is rejected.
+- Signature parameters: `tag` must be `gnap`, `created` is required and must be at most
+  `proof_httpsig_max_age` old (and not more than `proof_httpsig_clock_skew` in the future), `expires` must not
+  have passed. A signed `nonce` is required by default and can only be used once per key.
+- Covered components: `@method` and `@target-uri` always, `content-digest` when the request has a body and
+  `authorization` for requests carrying an access token (continuation and token management requests).
+- Several signatures can be sent. The request is accepted if one of them is valid.
+- Requests to `/continue` and `/token` must be signed with the key of the grant request.
+
+Nonces are stored in MongoDB (`proof_nonces`, expiring). Without `mongo_uri` they are only remembered by the
+running process, which does not protect a deployment with several workers or instances.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PROOF_HTTPSIG_MAX_AGE` | How old a signature's `created` may be | 5 minutes |
+| `PROOF_HTTPSIG_CLOCK_SKEW` | Accepted clock difference between client and server | 30 seconds |
+| `PROOF_HTTPSIG_REQUIRE_CONTENT_TYPE` | Require `content-type` to be signed when there is a body | `false` |
+| `PROOF_HTTPSIG_NONCE_REQUIRED` | Require a signed `nonce`. Disabling it leaves requests replayable until `proof_httpsig_max_age` expires | `true` |
+| `PROOF_EXTERNAL_BASE_URL` | Scheme and authority clients sign, see below | None |
+
+#### Running behind a proxy
+
+`@target-uri` (httpsig) and `uri` (jws and jwsd) must match the URL the client used. A proxy that terminates TLS or
+rewrites host or port makes the server see another URL than the client signed. Either set
+`proof_external_base_url` to the public base URL (scheme, host and port only, no credentials, path, query or
+fragment, for example `https://auth.example.com`), which is the recommended option, or run uvicorn/gunicorn with proxy
+headers support (`--proxy-headers --forwarded-allow-ips=<proxy address>`) so the scheme and host are restored.
+Forwarded headers are never read by the auth server itself. The path and query must be the same after the proxy as
+they were for the client.
+
+If you use `--forwarded-allow-ips`, list only the proxy address. Any address in that list can set the scheme and host
+the server reconstructs, so a broad list (such as `*` or client-routable space) lets a client sign a forged authority
+and the URI binding loses its meaning.
 
 ## API Endpoints
 
@@ -407,7 +460,7 @@ src/auth_server/
 
 The following GNAP features are not yet implemented:
 
-- **HTTPSIG** proof method support
+- **HTTPSIG** key rotation (`gnap-rotate` signatures) and HMAC algorithms (asymmetric keys only)
 - **Key-bound** access tokens — grant requests must include the `bearer` access token flag; requests without it are rejected with `invalid_request`
 - **Multiple access token requests** (array of token requests in a single grant)
 - **Client/user by reference**

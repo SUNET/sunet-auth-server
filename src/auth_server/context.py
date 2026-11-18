@@ -4,7 +4,7 @@ from typing import Any, Self
 from fastapi import Request, Response
 from fastapi.routing import APIRoute
 from jwcrypto import jws
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 __author__ = "lundberg"
 
@@ -18,6 +18,8 @@ class Context(BaseModel):
     jws_obj: jws.JWS | None = None
     detached_jws: str | None = None
     detached_jws_body: str | None = None
+    # httpsig signatures already verified for this request, so that a nonce is only used once per request
+    httpsig_verified: set[str] = Field(default_factory=set)
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def to_dict(self: Self) -> dict[str, Any]:

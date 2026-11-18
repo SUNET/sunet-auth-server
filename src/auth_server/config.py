@@ -13,7 +13,7 @@ from pydantic import AnyUrl, BaseModel, Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from auth_server.models.gnap import Proof
-from auth_server.models.jose import ECJWK, RSAJWK, SymmetricJWK
+from auth_server.models.jose import ECJWK, OKPJWK, RSAJWK, SymmetricJWK
 
 __author__ = "lundberg"
 
@@ -45,7 +45,7 @@ class FlowName(StrEnum):
 
 class ClientKey(BaseModel):
     proof: Proof
-    jwk: ECJWK | RSAJWK | SymmetricJWK | None = None
+    jwk: OKPJWK | ECJWK | RSAJWK | SymmetricJWK | None = None
     cert: str | None = None
     cert_S256: str | None = None
     claims: dict[str, Any] = {}
@@ -80,6 +80,14 @@ class AuthServerConfig(BaseSettings):
     auth_token_audience: str | None = Field(default=None)
     auth_token_expires_in: timedelta = Field(default=timedelta(hours=10))
     proof_jws_max_age: timedelta = Field(default=timedelta(minutes=5))
+    proof_httpsig_max_age: timedelta = Field(default=timedelta(minutes=5))
+    proof_httpsig_clock_skew: timedelta = Field(default=timedelta(seconds=30))
+    # Public base URL (scheme and authority) clients sign for httpsig and jws proofs, set when running behind a
+    # proxy that rewrites scheme, host or port. Never derived from forwarded headers.
+    proof_external_base_url: AnyUrl | None = None
+    proof_httpsig_require_content_type: bool = False  # require content-type to be signed when there is a body
+    # require a signed nonce in every httpsig signature, without one a request can be replayed until max age expires
+    proof_httpsig_nonce_required: bool = True
     client_keys: dict[str, ClientKey] = Field(default_factory=dict)
     mongo_uri: str | None = None
     transaction_state_expires_in: timedelta = Field(default=timedelta(minutes=10))
@@ -95,6 +103,17 @@ class AuthServerConfig(BaseSettings):
     def application_root_must_not_end_with_slash(cls: type["AuthServerConfig"], v: str) -> str:
         if v.endswith("/"):
             v = v.removesuffix("/")
+        return v
+
+    @field_validator("proof_external_base_url")
+    @classmethod
+    def proof_external_base_url_must_be_origin(cls: type["AuthServerConfig"], v: AnyUrl | None) -> AnyUrl | None:
+        if v is None:
+            return v
+        if v.scheme not in ("http", "https"):
+            raise ValueError("proof_external_base_url must be an http or https url")
+        if v.username or v.password or v.query or v.fragment or v.path not in (None, "", "/"):
+            raise ValueError("proof_external_base_url must only contain scheme, host and port")
         return v
 
     model_config = SettingsConfigDict(frozen=True)

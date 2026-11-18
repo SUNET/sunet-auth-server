@@ -27,7 +27,7 @@ from auth_server.models.gnap import (
     GrantResponse,
     SubjectAssertionFormat,
 )
-from auth_server.models.jose import ECJWK, JWKS, RSAJWK, SymmetricJWK
+from auth_server.models.jose import ECJWK, JWKS, OKPJWK, RSAJWK, SymmetricJWK
 from auth_server.utils import get_hex_uuid4, get_signing_key, load_jwks
 
 __author__ = "lundberg"
@@ -44,7 +44,7 @@ async def get_jwks(jwks: JWKSet = Depends(load_jwks)) -> dict:
 
 
 @root_router.get(
-    "/.well-known/jwk.json", response_model=ECJWK | RSAJWK | SymmetricJWK, response_model_exclude_unset=True
+    "/.well-known/jwk.json", response_model=OKPJWK | ECJWK | RSAJWK | SymmetricJWK, response_model_exclude_unset=True
 )
 async def get_jwk(signing_key: JWK = Depends(get_signing_key)) -> dict:
     return signing_key.export(private_key=False, as_dict=True)

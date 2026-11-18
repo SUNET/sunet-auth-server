@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import AnyUrl, BaseModel, Field
 
@@ -13,6 +13,7 @@ class KeyType(StrEnum):
     EC = "EC"
     RSA = "RSA"
     OCT = "oct"
+    OKP = "OKP"
 
 
 class KeyUse(StrEnum):
@@ -100,12 +101,21 @@ class RSAJWK(JWK):
     t: str | None = None
 
 
+class OKPJWK(JWK):
+    """Octet key pair (RFC 8037), e.g. Ed25519 for the EdDSA algorithm"""
+
+    kty: Literal[KeyType.OKP] = KeyType.OKP
+    crv: str | None = None
+    x: str | None = None
+    d: str | None = None
+
+
 class SymmetricJWK(JWK):
     k: str | None = None
 
 
 class JWKS(BaseModel):
-    keys: list[ECJWK | RSAJWK | SymmetricJWK]
+    keys: list[OKPJWK | ECJWK | RSAJWK | SymmetricJWK]
 
 
 class SupportedJWSTypeLegacy(StrEnum):
@@ -122,7 +132,7 @@ class JOSEHeader(BaseModel):
     kid: str | None = None
     alg: SupportedAlgorithms
     jku: AnyUrl | None = None
-    jwk: ECJWK | RSAJWK | SymmetricJWK | None = None
+    jwk: OKPJWK | ECJWK | RSAJWK | SymmetricJWK | None = None
     x5u: str | None = None
     x5c: str | None = None
     x5t: str | None = None

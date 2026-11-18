@@ -1959,7 +1959,7 @@ class TestAuthServer(TestCase):
         assert body["grant_request_endpoint"] == "http://testserver/transaction"
         assert body["interaction_start_modes_supported"] == ["redirect", "user_code", "user_code_uri"]
         assert body["interaction_finish_methods_supported"] == ["redirect", "push"]
-        assert body["key_proofs_supported"] == ["mtls", "jws", "jwsd"]
+        assert body["key_proofs_supported"] == ["mtls", "jws", "jwsd", "httpsig"]
         assert body["assertion_formats_supported"] == ["saml2"]
         assert body["key_rotation_supported"] is False
 
