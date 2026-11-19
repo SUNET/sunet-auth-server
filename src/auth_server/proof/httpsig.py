@@ -195,7 +195,7 @@ def _parse_dictionary_header(request: ContextRequest, name: str) -> dict[str, SF
                 on_duplicate_key=reject_duplicate,
             ),
         )
-    except (ValueError, TypeError, UnicodeError) as e:
+    except (ValueError, TypeError) as e:  # UnicodeError is a ValueError
         raise _reject(f"malformed {name} header: {e}")
 
 
@@ -225,7 +225,7 @@ class _RequestData:
     access_token: str | None
 
 
-async def _verify_signature(
+def _verify_signature(
     label: str, signature_input: SFMember, signature: SFMember, data: _RequestData, client_key: _ClientKey
 ) -> str | None:
     """Verify one signature. Returns the nonce of the signature, if any."""
@@ -325,7 +325,7 @@ async def check_httpsig_proof(request: ContextRequest, gnap_key: Key, access_tok
             signature = signatures.get(label)
             if signature is None or not isinstance(signature[0], bytes):
                 raise _reject(f"no signature found for signature input {label}")
-            nonce = await _verify_signature(
+            nonce = _verify_signature(
                 label=label, signature_input=signature_input, signature=signature, data=data, client_key=client_key
             )
         except GNAPErrorException as e:

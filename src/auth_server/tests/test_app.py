@@ -231,7 +231,7 @@ class TestAuthServer(TestCase):
         assert response.status_code == 200
         assert "keys" in response.json()
         keys = response.json()["keys"]
-        assert 1 == len(keys)
+        assert len(keys) == 1
         assert ECJWK(**keys[0]).dict(exclude_none=True) == keys[0]
 
     def test_read_jwk(self: Self) -> None:
