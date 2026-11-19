@@ -5,7 +5,7 @@ from time import monotonic
 from typing import Self
 
 from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import BulkWriteError
 
 from auth_server.config import load_config
 from auth_server.db.client import BaseDB, get_motor_client
@@ -14,6 +14,8 @@ from auth_server.time_utils import utc_now
 __author__ = "lundberg"
 
 logger = logging.getLogger(__name__)
+
+DUPLICATE_KEY_ERROR_CODE = 11000
 
 
 class ProofNonceDB(BaseDB):
@@ -40,13 +42,31 @@ class ProofNonceDB(BaseDB):
         return db
 
     async def check_and_store(self: Self, key_fingerprint: str, nonce: str) -> bool:
-        """Store the nonce. Returns False if the nonce has been seen before for this key.
+        """Store the nonce. Returns False if the nonce has been seen before for this key."""
+        return await self.check_and_store_all(key_fingerprint=key_fingerprint, nonces=[nonce])
 
-        The key fingerprint identifies the key material and proof parameters, not the client chosen kid."""
+    async def check_and_store_all(self: Self, key_fingerprint: str, nonces: list[str]) -> bool:
+        """
+        Store all the nonces. Returns False if any of them has been seen before for this key.
+
+        The key fingerprint identifies the key material and proof parameters, not the client chosen kid.
+
+        The nonces are inserted in one unordered bulk write. If some of them were already stored the others are still
+        inserted and kept: the caller rejects the request, and a retry of the same request must stay rejected.
+        """
+        now = utc_now()
+        documents = [
+            {"key_fingerprint": key_fingerprint, "nonce": nonce, "created_at": now}
+            for nonce in dict.fromkeys(nonces)  # the same nonce twice in one request is one nonce
+        ]
+        if not documents:
+            return True
         try:
-            await self._coll.insert_one({"key_fingerprint": key_fingerprint, "nonce": nonce, "created_at": utc_now()})
-        except DuplicateKeyError:
-            return False
+            await self._coll.insert_many(documents, ordered=False)
+        except BulkWriteError as e:
+            if all(error.get("code") == DUPLICATE_KEY_ERROR_CODE for error in e.details.get("writeErrors", [])):
+                return False
+            raise
         return True
 
 
@@ -60,15 +80,21 @@ class InMemoryProofNonceStore:
         self._expiry_queue: deque[tuple[float, tuple[str, str]]] = deque()
 
     async def check_and_store(self: Self, key_fingerprint: str, nonce: str) -> bool:
+        return await self.check_and_store_all(key_fingerprint=key_fingerprint, nonces=[nonce])
+
+    async def check_and_store_all(self: Self, key_fingerprint: str, nonces: list[str]) -> bool:
+        """Store all the nonces, or none of them if any has been seen before for this key."""
         now = monotonic()
         while self._expiry_queue and self._expiry_queue[0][0] <= now:
             _, expired = self._expiry_queue.popleft()
             self._seen.pop(expired, None)
-        if (key_fingerprint, nonce) in self._seen:
+        keys = [(key_fingerprint, nonce) for nonce in dict.fromkeys(nonces)]
+        if any(key in self._seen for key in keys):
             return False
         expires = now + self.ttl.total_seconds()
-        self._seen[(key_fingerprint, nonce)] = expires
-        self._expiry_queue.append((expires, (key_fingerprint, nonce)))
+        for key in keys:
+            self._seen[key] = expires
+            self._expiry_queue.append((expires, key))
         return True
 
 

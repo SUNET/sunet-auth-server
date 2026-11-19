@@ -588,6 +588,56 @@ class TestHttpsig(TestCase):
         self._assert_invalid_client(self._post_transaction(body_a, nonce=nonce))
         self._assert_invalid_client(self._post_transaction(body_b, key=key_b, nonce=nonce))
 
+    def _two_signature_headers(
+        self: Self, body: bytes, nonces: tuple[str, str], second_valid: bool = True
+    ) -> dict[str, str]:
+        url = f"{BASE_URL}/transaction"
+        base_headers = self._signed_headers("POST", url, body)
+        components = ["@method", "@target-uri", "content-digest"]
+        signatures = [
+            make_signature(
+                self.key if valid else generate_key("ES256"),
+                "ecdsa-p256-sha256",
+                "POST",
+                url,
+                base_headers,
+                components,
+                label=label,
+                nonce=nonce,
+            )
+            for label, nonce, valid in [("one", nonces[0], True), ("two", nonces[1], second_valid)]
+        ]
+        headers = {k: v for k, v in base_headers.items() if k not in ("Signature", "Signature-Input")}
+        headers.update(combine(*signatures))
+        return headers
+
+    def test_two_valid_signatures_with_different_nonces_accepted_once(self: Self) -> None:
+        body = self._grant_body(public_jwk(self.key, alg="ES256"))
+        headers = self._two_signature_headers(body, (uuid.uuid4().hex, uuid.uuid4().hex))
+        assert self._post_transaction(body, headers=headers).status_code == 200
+        self._assert_invalid_client(self._post_transaction(body, headers=headers))
+
+    def test_replay_with_only_second_nonce_fresh_rejected(self: Self) -> None:
+        body = self._grant_body(public_jwk(self.key, alg="ES256"))
+        used = uuid.uuid4().hex
+        first = self._two_signature_headers(body, (used, uuid.uuid4().hex))
+        assert self._post_transaction(body, headers=first).status_code == 200
+        # the first nonce is used, the second is fresh
+        second = self._two_signature_headers(body, (used, uuid.uuid4().hex))
+        self._assert_invalid_client(self._post_transaction(body, headers=second))
+        # and the fresh nonce is burnt as well
+        third = self._two_signature_headers(body, (uuid.uuid4().hex, uuid.uuid4().hex))
+        assert self._post_transaction(body, headers=third).status_code == 200
+
+    def test_invalid_signature_never_consumes_nonce(self: Self) -> None:
+        body = self._grant_body(public_jwk(self.key, alg="ES256"))
+        invalid_nonce = uuid.uuid4().hex
+        headers = self._two_signature_headers(body, (uuid.uuid4().hex, invalid_nonce), second_valid=False)
+        assert self._post_transaction(body, headers=headers).status_code == 200
+        self._assert_invalid_client(self._post_transaction(body, headers=headers))
+        # the nonce of the invalid signature is still free to use
+        assert self._post_transaction(body, nonce=invalid_nonce).status_code == 200
+
     def test_different_nonces_accepted(self: Self) -> None:
         body = self._grant_body(public_jwk(self.key, alg="ES256"))
         for _ in range(2):
@@ -1002,6 +1052,20 @@ class TestProofNonceDB(IsolatedAsyncioTestCase):
         assert next(iter(ttl_indexes.values()))["expireAfterSeconds"] == 420
         unique = [info for info in indexes.values() if info.get("unique")]
         assert [info["key"] for info in unique] == [[("key_fingerprint", 1), ("nonce", 1)]]
+
+    async def test_check_and_store_all(self: Self) -> None:
+        db = await ProofNonceDB.init(db_client=self.client, ttl=timedelta(minutes=6))
+        assert await db.check_and_store_all(key_fingerprint="key", nonces=["a", "b"]) is True
+        # one used nonce makes the whole call fail, the others are still stored
+        assert await db.check_and_store_all(key_fingerprint="key", nonces=["c", "a"]) is False
+        assert await db.check_and_store(key_fingerprint="key", nonce="c") is False
+        assert await db.check_and_store_all(key_fingerprint="key", nonces=["d", "d"]) is True
+
+    async def test_in_memory_store_all_or_nothing(self: Self) -> None:
+        store = InMemoryProofNonceStore(ttl=timedelta(minutes=1))
+        assert await store.check_and_store_all(key_fingerprint="key", nonces=["a"]) is True
+        assert await store.check_and_store_all(key_fingerprint="key", nonces=["b", "a"]) is False
+        assert await store.check_and_store(key_fingerprint="key", nonce="b") is True
 
     async def test_in_memory_store(self: Self) -> None:
         store = InMemoryProofNonceStore(ttl=timedelta(minutes=1))

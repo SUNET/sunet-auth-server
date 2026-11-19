@@ -316,8 +316,10 @@ async def check_httpsig_proof(request: ContextRequest, gnap_key: Key, access_tok
         access_token=access_token,
     )
 
-    # the request is accepted if any one signature satisfies every check
+    # The request is accepted if any one signature is valid. Invalid signatures are ignored.
     error: GNAPErrorException | None = None
+    valid_labels: list[str] = []
+    nonces: list[str] = []
     for label, signature_input in signature_inputs.items():
         try:
             signature = signatures.get(label)
@@ -326,19 +328,26 @@ async def check_httpsig_proof(request: ContextRequest, gnap_key: Key, access_tok
             nonce = await _verify_signature(
                 label=label, signature_input=signature_input, signature=signature, data=data, client_key=client_key
             )
-            # The nonce is only stored for a verified signature so that unauthenticated requests can not use up
-            # nonces. The ttl has a margin over the longest time a signature can be accepted.
-            if nonce is not None:
-                ttl = config.proof_httpsig_max_age + 3 * config.proof_httpsig_clock_skew + timedelta(seconds=60)
-                nonce_store = await get_proof_nonce_store(ttl=ttl)
-                # scoped to the validated key material, the kid is client chosen and not unique across clients
-                if not await nonce_store.check_and_store(key_fingerprint=client_key.fingerprint, nonce=nonce):
-                    raise _reject("nonce has already been used")
         except GNAPErrorException as e:
             error = e
             continue
-        logger.info(f"httpsig signature {label} verified")
-        request.context.httpsig_verified.add(verified_key)
-        return True
-    assert error is not None  # please mypy, signature_inputs is not empty
-    raise error
+        valid_labels.append(label)
+        if nonce is not None:
+            nonces.append(nonce)
+    if not valid_labels:
+        assert error is not None  # please mypy, signature_inputs is not empty
+        raise error
+
+    # The nonces are only stored for verified signatures so that unauthenticated requests can not use up nonces.
+    # The nonces of all valid signatures are consumed, a replay must not be accepted because another valid signature
+    # in the request has a nonce that is still fresh. The ttl has a margin over the longest time a signature can be
+    # accepted. Nonces stored before a used one was found are kept, the request is rejected and so is a retry.
+    if nonces:
+        ttl = config.proof_httpsig_max_age + 3 * config.proof_httpsig_clock_skew + timedelta(seconds=60)
+        nonce_store = await get_proof_nonce_store(ttl=ttl)
+        # scoped to the validated key material, the kid is client chosen and not unique across clients
+        if not await nonce_store.check_and_store_all(key_fingerprint=client_key.fingerprint, nonces=nonces):
+            raise _reject("nonce has already been used")
+    logger.info(f"httpsig signatures verified: {valid_labels}")
+    request.context.httpsig_verified.add(verified_key)
+    return True
