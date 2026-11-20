@@ -1,6 +1,9 @@
+import asyncio
 import logging
+import threading
 from collections.abc import AsyncGenerator, Mapping
 from typing import Any, Self
+from weakref import WeakKeyDictionary
 
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -13,11 +16,60 @@ __author__ = "lundberg"
 logger = logging.getLogger(__name__)
 
 
+# Motor clients are bound to the event loop they are used in, so there is one client per running loop.
+# Value: (mongo uri the client was created for, client). The client references its loop, so the weak key alone
+# does not free an entry; entries for closed loops are pruned explicitly in get_motor_client.
+_motor_clients: WeakKeyDictionary[asyncio.AbstractEventLoop, tuple[str, AsyncIOMotorClient]] = WeakKeyDictionary()
+
+
+_motor_clients_lock = threading.Lock()
+
+
+def _close_client(client: AsyncIOMotorClient) -> None:
+    try:
+        client.close()
+    except Exception as e:  # closing a client whose loop is already gone must not break the caller
+        logger.warning(f"failed to close mongo client: {e}")
+
+
+def clear_motor_client_cache() -> None:
+    """Close all cached clients and forget them. Sync so that it can be used from test helpers."""
+    with _motor_clients_lock:
+        clients = [client for _, client in _motor_clients.values()]
+        _motor_clients.clear()
+    for client in clients:
+        _close_client(client)
+
+
+async def close_motor_clients() -> None:
+    """Close all cached motor clients. Safe to call more than once."""
+    clear_motor_client_cache()
+
+
 async def get_motor_client() -> AsyncIOMotorClient | None:
+    """Return the motor client for the running event loop and configured mongo uri, creating it if needed."""
     config = load_config()
     if config.mongo_uri is None:
         return None
-    return AsyncIOMotorClient(config.mongo_uri, tz_aware=True)
+    loop = asyncio.get_running_loop()
+    to_close: list[AsyncIOMotorClient] = []
+    with _motor_clients_lock:
+        # drop clients of loops that have been closed (a new loop per request, as the test client does)
+        for old_loop, (_, old_client) in list(_motor_clients.items()):
+            if old_loop.is_closed():
+                del _motor_clients[old_loop]
+                to_close.append(old_client)
+        cached = _motor_clients.get(loop)
+        if cached is not None and cached[0] == config.mongo_uri:
+            client = cached[1]
+        else:
+            if cached is not None:
+                to_close.append(cached[1])
+            client = AsyncIOMotorClient(config.mongo_uri, tz_aware=True)
+            _motor_clients[loop] = (config.mongo_uri, client)
+    for old_client in to_close:
+        _close_client(old_client)
+    return client
 
 
 async def get_mongo_client() -> MongoClient | None:
