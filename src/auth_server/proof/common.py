@@ -1,4 +1,5 @@
 import logging
+from urllib.parse import unquote
 
 from starlette.requests import Request
 
@@ -55,21 +56,49 @@ async def lookup_client_key_from_config(key_reference: str) -> Key | None:
     return client_key
 
 
+def _get_raw_path(request: Request) -> str:
+    """
+    The path as the client sent it, still percent-encoded. A request to /%74ransaction is routed to /transaction but
+    that is not what the client signed.
+
+    uvicorn (checked with 0.49) and the Starlette TestClient (checked with 1.3) provide scope["raw_path"] next to a
+    decoded scope["path"]. uvicorn prefixes both with root_path, the TestClient prefixes neither, so raw_path is
+    used as is. A server that does something else with raw_path, or does not provide it, gets the decoded path.
+    """
+    path: str = request.scope["path"]
+    raw_path = request.scope.get("raw_path")
+    if not raw_path:
+        return path
+    try:
+        raw = raw_path.split(b"?", 1)[0].decode("ascii")
+    except UnicodeDecodeError:
+        return path
+    if unquote(raw) != path:
+        # not the same path, e.g. a raw_path without root_path. Better to not trust it.
+        return path
+    return raw
+
+
 def get_target_uri(request: Request) -> str:
     """
     The URI a client signs for a request (RFC 9421 @target-uri, GNAP jws/jwsd uri).
 
-    If proof_external_base_url is set, scheme and authority are taken from it and the rest from the request. The
-    scheme and host are never taken from forwarded headers, as they would be client controlled.
+    The path and query are the ones the client sent, byte for byte. If proof_external_base_url is set, scheme and
+    authority are taken from it and the rest from the request. The scheme and host are never taken from forwarded
+    headers, as they would be client controlled.
     """
     config = load_config()
     if config.proof_external_base_url is None:
-        return str(request.url)
-    base = config.proof_external_base_url
-    authority = base.host or ""
-    if base.port is not None and base.port != {"http": 80, "https": 443}.get(base.scheme):
-        authority = f"{authority}:{base.port}"
-    uri = f"{base.scheme}://{authority}{request.url.path}"
-    if request.url.query:
-        uri = f"{uri}?{request.url.query}"
+        url = request.url
+        origin = f"{url.scheme}://{url.netloc}"
+    else:
+        base = config.proof_external_base_url
+        authority = base.host or ""
+        if base.port is not None and base.port != {"http": 80, "https": 443}.get(base.scheme):
+            authority = f"{authority}:{base.port}"
+        origin = f"{base.scheme}://{authority}"
+    uri = f"{origin}{_get_raw_path(request)}"
+    query = request.scope.get("query_string", b"").decode("latin-1")
+    if query:
+        uri = f"{uri}?{query}"
     return uri

@@ -779,6 +779,87 @@ class TestHttpsig(TestCase):
         self._update_app_config(proof_external_base_url="https://auth.example.com:443")
         assert get_target_uri(request) == "https://auth.example.com/x"
 
+    def _post_to_path(self: Self, target: str, sign_url: str, body: bytes) -> httpx.Response:
+        headers = self._signed_headers("POST", sign_url, body)
+        return self.client.post(target, content=body, headers=headers)
+
+    def test_percent_encoded_path_is_signed_as_sent(self: Self) -> None:
+        # TestClient passes raw_path on to the app, /%74ransaction is routed to /transaction
+        body = self._grant_body(public_jwk(self.key, alg="ES256"))
+        assert self._post_to_path("/%74ransaction", f"{BASE_URL}/%74ransaction", body).status_code == 200
+        # the decoded form is not what the client sent
+        self._assert_invalid_client(self._post_to_path("/%74ransaction", f"{BASE_URL}/transaction", body))
+        # and the other way around
+        self._assert_invalid_client(self._post_to_path("/transaction", f"{BASE_URL}/%74ransaction", body))
+        assert self._post_to_path("/transaction", f"{BASE_URL}/transaction", body).status_code == 200
+
+    def test_percent_encoded_path_with_external_base_url(self: Self) -> None:
+        self._update_app_config(proof_external_base_url="https://auth.example.com")
+        body = self._grant_body(public_jwk(self.key, alg="ES256"))
+        assert self._post_to_path("/%74ransaction", "https://auth.example.com/%74ransaction", body).status_code == 200
+        self._assert_invalid_client(self._post_to_path("/%74ransaction", "https://auth.example.com/transaction", body))
+
+    def test_query_is_signed_as_sent(self: Self) -> None:
+        query = "a=%2F&b=1&a=2&c=%e2%82%AC"
+        body = self._grant_body(public_jwk(self.key, alg="ES256"))
+        assert self._post_to_path(f"/transaction?{query}", f"{BASE_URL}/transaction?{query}", body).status_code == 200
+        # decoded or normalised forms are not what was sent
+        for other in ["a=/&b=1&a=2&c=%e2%82%AC", "a=%2f&b=1&a=2&c=%e2%82%AC", "b=1&a=%2F&a=2&c=%e2%82%AC"]:
+            self._assert_invalid_client(
+                self._post_to_path(f"/transaction?{query}", f"{BASE_URL}/transaction?{other}", body)
+            )
+
+    def test_get_target_uri_uses_raw_path_and_query(self: Self) -> None:
+        def make_request(**scope: Any) -> Request:
+            return Request(
+                {
+                    "type": "http",
+                    "method": "GET",
+                    "scheme": "http",
+                    "server": ("internal", 8080),
+                    "headers": [(b"host", b"internal:8080")],
+                    **scope,
+                }
+            )
+
+        request = make_request(path="/a b/t", raw_path=b"/a%20b/%74", query_string=b"a=%2F&b=1&a=2")
+        assert get_target_uri(request) == "http://internal:8080/a%20b/%74?a=%2F&b=1&a=2"
+        self._update_app_config(proof_external_base_url="https://auth.example.com")
+        assert get_target_uri(request) == "https://auth.example.com/a%20b/%74?a=%2F&b=1&a=2"
+
+    def test_get_target_uri_without_raw_path(self: Self) -> None:
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "scheme": "http",
+                "server": ("internal", 8080),
+                "path": "/x",
+                "query_string": b"q=1",
+                "headers": [(b"host", b"internal:8080")],
+            }
+        )
+        assert get_target_uri(request) == "http://internal:8080/x?q=1"
+        self._update_app_config(proof_external_base_url="https://auth.example.com")
+        assert get_target_uri(request) == "https://auth.example.com/x?q=1"
+
+    def test_get_target_uri_distrusts_raw_path_that_does_not_match_path(self: Self) -> None:
+        # e.g. a server where path has the root_path and raw_path does not
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "scheme": "http",
+                "server": ("internal", 8080),
+                "root_path": "/auth",
+                "path": "/auth/x",
+                "raw_path": b"/x",
+                "query_string": b"",
+                "headers": [(b"host", b"internal:8080")],
+            }
+        )
+        assert get_target_uri(request) == "http://internal:8080/auth/x"
+
     def test_external_base_url_validation(self: Self) -> None:
         for url in [
             "https://auth.example.com/prefix",
@@ -816,24 +897,27 @@ class TestHttpsig(TestCase):
             "client": {"key": {"proof": "jws", "jwk": client_jwk.export_public(as_dict=True)}},
         }
 
-        def post() -> httpx.Response:
+        def post(target: str = "/transaction", uri: str = "https://auth.example.com/transaction") -> httpx.Response:
             header = {
                 "typ": "gnap-binding-jws",
                 "alg": "ES256",
                 "kid": "default",
                 "htm": "POST",
-                "uri": "https://auth.example.com/transaction",
+                "uri": uri,
                 "created": int(utc_now().timestamp()),
             }
             _jws = jws.JWS(payload=json.dumps(grant))
             _jws.add_signature(key=client_jwk, protected=json.dumps(header))
             return self.client.post(
-                "/transaction", content=_jws.serialize(compact=True), headers={"Content-Type": "application/jose"}
+                target, content=_jws.serialize(compact=True), headers={"Content-Type": "application/jose"}
             )
 
         self._assert_invalid_client(post())
         self._update_app_config(proof_external_base_url="https://auth.example.com")
         assert post().status_code == 200
+        # the uri is compared as the client sent it
+        assert post("/%74ransaction", "https://auth.example.com/%74ransaction").status_code == 200
+        self._assert_invalid_client(post("/%74ransaction", "https://auth.example.com/transaction"))
 
     # key bound to the grant
 
