@@ -70,23 +70,25 @@ def release_motor_lifespan() -> None:
         _close_client(client)
 
 
+def _pop_closed_loop_clients() -> list[AsyncIOMotorClient]:
+    """Remove and return the clients of closed loops (a new loop per request, as the test client does)."""
+    with _motor_clients_lock:
+        closed = [(loop, client) for loop, (_, client) in _motor_clients.items() if loop.is_closed()]
+        for loop, _ in closed:
+            del _motor_clients[loop]
+    return [client for _, client in closed]
+
+
 async def get_motor_client() -> AsyncIOMotorClient | None:
     """Return the motor client for the running event loop and configured mongo uri, creating it if needed."""
-    config = load_config()
-    if config.mongo_uri is None:
-        return None
-    loop = asyncio.get_running_loop()
-    uri = config.mongo_uri
-    to_close: list[AsyncIOMotorClient] = []
+    to_close = _pop_closed_loop_clients()
     try:
+        config = load_config()
+        if config.mongo_uri is None:
+            return None
+        uri = config.mongo_uri
+        loop = asyncio.get_running_loop()
         with _motor_clients_lock:
-            # drop clients of loops that have been closed (a new loop per request, as the test client does)
-            closed = [
-                (old_loop, old_client) for old_loop, (_, old_client) in _motor_clients.items() if old_loop.is_closed()
-            ]
-            for old_loop, old_client in closed:
-                del _motor_clients[old_loop]
-                to_close.append(old_client)
             cached = _motor_clients.get(loop)
             if cached is not None and cached[0] == uri:
                 return cached[1]
@@ -104,7 +106,7 @@ async def get_motor_client() -> AsyncIOMotorClient | None:
             _motor_clients[loop] = (uri, client)
         return client
     finally:
-        # also runs when the constructor raised, so clients already removed from the cache are not leaked
+        # also runs on the None return and when the constructor raised, so pruned clients are never leaked
         for old_client in to_close:
             _close_client(old_client)
 

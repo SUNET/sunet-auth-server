@@ -69,6 +69,20 @@ class TestMotorClientCache(IsolatedAsyncioTestCase):
             load_config.cache_clear()
             assert await get_motor_client() is None
 
+    async def test_no_mongo_uri_still_prunes_closed_loops(self: Self) -> None:
+        current = await get_motor_client()  # client on the active loop must survive
+        loop = asyncio.new_event_loop()
+        stale = AsyncIOMotorClient(self.mongo_db.uri)
+        db_client._motor_clients[loop] = (self.mongo_db.uri, stale)
+        loop.close()
+        with patch.dict(environ), patch.object(AsyncIOMotorClient, "close") as mock_close:
+            environ.pop("mongo_uri")
+            load_config.cache_clear()
+            assert await get_motor_client() is None
+        mock_close.assert_called_once()
+        assert all(c is not stale for _, c in db_client._motor_clients.values())
+        assert db_client._motor_clients[asyncio.get_running_loop()][1] is current
+
     async def test_changed_uri_new_client(self: Self) -> None:
         first = await get_motor_client()
         with patch.dict(environ, {"mongo_uri": "mongodb://localhost:1/other"}):
