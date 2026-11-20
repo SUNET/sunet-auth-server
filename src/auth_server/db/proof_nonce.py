@@ -8,7 +8,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import BulkWriteError
 
 from auth_server.config import load_config
-from auth_server.db.client import BaseDB, get_motor_client
+from auth_server.db.client import BaseDB, clear_motor_client_cache, get_motor_client
 from auth_server.time_utils import utc_now
 
 __author__ = "lundberg"
@@ -105,10 +105,11 @@ _indexes_ready: set[tuple[str, int]] = set()
 
 
 def clear_proof_nonce_cache() -> None:
-    """Forget cached state. For use in tests that drop the collection or change the configuration."""
+    """Forget cached state, including the shared mongo clients. For tests that drop the collection or change config."""
     global _in_memory_store  # noqa: PLW0603
     _in_memory_store = None
     _indexes_ready.clear()
+    clear_motor_client_cache()
 
 
 async def get_proof_nonce_store(ttl: timedelta) -> ProofNonceDB | InMemoryProofNonceStore:

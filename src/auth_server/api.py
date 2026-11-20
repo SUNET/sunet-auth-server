@@ -1,4 +1,6 @@
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Self, cast
 
 from fastapi import FastAPI
@@ -10,6 +12,7 @@ from starlette.staticfiles import StaticFiles
 
 from auth_server.config import AuthServerConfig, ConfigurationError, FlowName, load_config
 from auth_server.context import ContextRequestRoute
+from auth_server.db.client import acquire_motor_lifespan, release_motor_lifespan
 from auth_server.errors import GNAPErrorException
 from auth_server.flows import BaseAuthFlow, CAFlow, ConfigFlow, InteractionFlow, MDQFlow, TestFlow, TLSFEDFlow
 from auth_server.logging import init_logging
@@ -26,10 +29,19 @@ __author__ = "lundberg"
 logger = logging.getLogger(__name__)
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    acquire_motor_lifespan()
+    try:
+        yield
+    finally:
+        release_motor_lifespan()
+
+
 class AuthServer(FastAPI):
     def __init__(self: Self) -> None:
         config = load_config()
-        super().__init__(root_path=config.application_root)
+        super().__init__(root_path=config.application_root, lifespan=lifespan)
         init_logging(config=config)
 
         # Load flows

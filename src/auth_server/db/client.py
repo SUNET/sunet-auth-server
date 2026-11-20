@@ -1,6 +1,9 @@
+import asyncio
 import logging
+import threading
 from collections.abc import AsyncGenerator, Mapping
 from typing import Any, Self
+from weakref import WeakKeyDictionary
 
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -13,11 +16,92 @@ __author__ = "lundberg"
 logger = logging.getLogger(__name__)
 
 
+# Motor clients are bound to the event loop they are used in, so there is one client per running loop and uri.
+# Value: {mongo uri: client}. After a uri change the previous client is kept, as in-flight requests may still use it,
+# until the loop's last lifespan ends or the loop is closed. The client references its loop, so the weak key alone
+# does not free an entry; entries for closed loops are pruned explicitly in get_motor_client.
+_motor_clients: WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, AsyncIOMotorClient]] = WeakKeyDictionary()
+
+
+_motor_clients_lock = threading.Lock()
+
+
+def _close_client(client: AsyncIOMotorClient) -> None:
+    try:
+        client.close()
+    except Exception as e:  # closing a client whose loop is already gone must not break the caller
+        logger.warning(f"failed to close mongo client: {e}")
+
+
+def clear_motor_client_cache() -> None:
+    """Close all cached clients and forget them. Sync so that it can be used from test helpers."""
+    with _motor_clients_lock:
+        clients = [client for by_uri in _motor_clients.values() for client in by_uri.values()]
+        _motor_clients.clear()
+    for client in clients:
+        _close_client(client)
+
+
+# Number of running lifespans per loop. Lifespans only close the client of their own loop, and only the last
+# one on a loop does so, so overlapping lifespans do not close each other's client.
+_lifespan_users: WeakKeyDictionary[asyncio.AbstractEventLoop, int] = WeakKeyDictionary()
+
+
+def acquire_motor_lifespan() -> None:
+    """Register an app lifespan running on the current event loop."""
+    loop = asyncio.get_running_loop()
+    with _motor_clients_lock:
+        _lifespan_users[loop] = _lifespan_users.get(loop, 0) + 1
+
+
+def release_motor_lifespan() -> None:
+    """Unregister an app lifespan; close the current loop's client when it was the last one on this loop."""
+    loop = asyncio.get_running_loop()
+    clients: list[AsyncIOMotorClient] = []
+    with _motor_clients_lock:
+        users = _lifespan_users.get(loop, 0) - 1
+        if users > 0:
+            _lifespan_users[loop] = users
+            return
+        _lifespan_users.pop(loop, None)
+        clients = list(_motor_clients.pop(loop, {}).values())
+    for client in clients:
+        _close_client(client)
+
+
+def _pop_closed_loop_clients() -> list[AsyncIOMotorClient]:
+    """Remove and return the clients of closed loops (a new loop per request, as the test client does)."""
+    with _motor_clients_lock:
+        closed = [loop for loop in _motor_clients if loop.is_closed()]
+        return [client for loop in closed for client in _motor_clients.pop(loop).values()]
+
+
 async def get_motor_client() -> AsyncIOMotorClient | None:
-    config = load_config()
-    if config.mongo_uri is None:
-        return None
-    return AsyncIOMotorClient(config.mongo_uri, tz_aware=True)
+    """Return the motor client for the running event loop and configured mongo uri, creating it if needed."""
+    to_close = _pop_closed_loop_clients()
+    try:
+        config = load_config()
+        if config.mongo_uri is None:
+            return None
+        uri = config.mongo_uri
+        loop = asyncio.get_running_loop()
+        with _motor_clients_lock:
+            cached = _motor_clients.get(loop, {}).get(uri)
+            if cached is not None:
+                return cached
+        # Construct outside the lock: an SRV uri does blocking DNS resolution that must not stall other loops.
+        client = AsyncIOMotorClient(uri, tz_aware=True)
+        with _motor_clients_lock:
+            by_uri = _motor_clients.setdefault(loop, {})
+            current = by_uri.setdefault(uri, client)
+        if current is not client:
+            # lost a race for this loop and uri; use the published client and discard ours
+            to_close.append(client)
+        return current
+    finally:
+        # also runs on the None return and when the constructor raised, so pruned clients are never leaked
+        for old_client in to_close:
+            _close_client(old_client)
 
 
 async def get_mongo_client() -> MongoClient | None:
