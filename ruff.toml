@@ -1,6 +1,6 @@
 # Set the maximum line length to 120.
 line-length = 120
-target-version = "py311"
+target-version = "py313"
 
 [lint]
 select = ["E", "F", "W", "I", "ASYNC", "UP", "FLY", "PERF", "FURB", "ERA", "ANN", "PIE", "PL"]

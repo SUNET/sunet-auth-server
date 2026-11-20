@@ -30,7 +30,7 @@ SUNET Auth Server is an authentication server that implements the GNAP protocol 
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.13+
 - MongoDB (for transaction state storage)
 - Docker (optional, for containerized deployment)
 

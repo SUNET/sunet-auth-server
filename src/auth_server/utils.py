@@ -62,7 +62,7 @@ def import_class(class_path: str) -> Callable:
     return klass
 
 
-def get_values(key: str, obj: Mapping | Sequence) -> Generator[Any, None, None]:
+def get_values(key: str, obj: Mapping | Sequence) -> Generator[Any]:
     """
     Recurse through a dict-like object and return all values for the specified key
 
