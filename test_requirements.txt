@@ -762,6 +762,7 @@ cryptography==49.0.0 \
     --hash=sha256:f89660a348f4f78a92366240a61404e337586ef7f5909a2fef59ca88ef505493 \
     --hash=sha256:fc1e275c2f1d97b1a6450b8b0ea3ebfa6e087a611c2b26cb2404d48588abab7b
     # via
+    #   http-message-signatures
     #   jwcrypto
     #   pki-tools
     #   pyopenssl
@@ -930,6 +931,14 @@ h11==0.16.0 \
     # via
     #   httpcore
     #   uvicorn
+http-message-signatures==3.0.0 \
+    --hash=sha256:c289966e1b2950517cd57aed166be5e981de96f0cd29f69173f09ac547a8552a \
+    --hash=sha256:fcb26b157462483b4d6b264df8c9c1a796439a78a3d42ad412bcbf507f39db01
+    # via -r requirements.in
+http-sf==1.5.0 \
+    --hash=sha256:031282bd376549b04fcaa397d9ef351acdc5bd383435cccd1d8ea17b1661c80e \
+    --hash=sha256:b54cfa55f428dd7cb1cfcc6fbd5020f967060df136ffa37cab5b9798f647612f
+    # via http-message-signatures
 httpcore==1.0.9 \
     --hash=sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55 \
     --hash=sha256:6e34463af53fd2ab5d807f399a9b45ea31c3dfa2276f15a2c3f00afff6e176e8
@@ -2027,6 +2036,7 @@ typing-extensions==4.15.0 \
     #   anyio
     #   exceptiongroup
     #   fastapi
+    #   http-sf
     #   jwcrypto
     #   motor-types
     #   mypy

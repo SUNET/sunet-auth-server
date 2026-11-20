@@ -11,6 +11,7 @@ from auth_server.context import ContextRequest
 from auth_server.errors import GNAPErrorException
 from auth_server.models.gnap import ErrorCode, GNAPJOSEHeader, Key
 from auth_server.models.jose import JWK, SupportedAlgorithms, SupportedJWSType, SupportedJWSTypeLegacy
+from auth_server.proof.common import get_target_uri
 from auth_server.time_utils import utc_now
 from auth_server.utils import hash_with
 
@@ -66,8 +67,9 @@ async def verify_gnap_jws(
         )
 
     # The HTTP URI used for this request, including all path and query components.
-    if request.url != jws_header.uri:
-        logger.error(f"http uri mismatch. request: {request.url} != header: {jws_header.uri}")
+    target_uri = get_target_uri(request)
+    if target_uri != str(jws_header.uri):
+        logger.error(f"http uri mismatch. request: {target_uri} != header: {jws_header.uri}")
         raise GNAPErrorException(
             status_code=400, error_code=ErrorCode.INVALID_CLIENT, description="http uri does not match"
         )

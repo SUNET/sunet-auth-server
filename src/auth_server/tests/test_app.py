@@ -231,7 +231,7 @@ class TestAuthServer(TestCase):
         assert response.status_code == 200
         assert "keys" in response.json()
         keys = response.json()["keys"]
-        assert 1 == len(keys)
+        assert len(keys) == 1
         assert ECJWK(**keys[0]).dict(exclude_none=True) == keys[0]
 
     def test_read_jwk(self: Self) -> None:
@@ -1959,7 +1959,7 @@ class TestAuthServer(TestCase):
         assert body["grant_request_endpoint"] == "http://testserver/transaction"
         assert body["interaction_start_modes_supported"] == ["redirect", "user_code", "user_code_uri"]
         assert body["interaction_finish_methods_supported"] == ["redirect", "push"]
-        assert body["key_proofs_supported"] == ["mtls", "jws", "jwsd"]
+        assert body["key_proofs_supported"] == ["mtls", "jws", "jwsd", "httpsig"]
         assert body["assertion_formats_supported"] == ["saml2"]
         assert body["key_rotation_supported"] is False
 

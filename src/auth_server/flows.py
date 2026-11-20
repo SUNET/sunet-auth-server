@@ -60,6 +60,7 @@ from auth_server.models.gnap import (
     UserCodeURI,
 )
 from auth_server.proof.common import lookup_client_key_from_config
+from auth_server.proof.httpsig import check_httpsig_proof
 from auth_server.proof.jws import check_jws_proof, check_jwsd_proof
 from auth_server.proof.mtls import check_mtls_proof
 from auth_server.time_utils import utc_now
@@ -78,7 +79,7 @@ SUPPORTED_START_METHODS = [
     StartInteractionMethod.USER_CODE_URI,
 ]
 SUPPORTED_FINISH_METHODS = [FinishInteractionMethod.REDIRECT, FinishInteractionMethod.PUSH]
-SUPPORTED_KEY_PROOFS = [ProofMethod.MTLS, ProofMethod.JWS, ProofMethod.JWSD]
+SUPPORTED_KEY_PROOFS = [ProofMethod.MTLS, ProofMethod.JWS, ProofMethod.JWSD, ProofMethod.HTTPSIG]
 
 
 # Use this to go to next flow
@@ -199,7 +200,9 @@ class BaseAuthFlow(ABC):
             return await check_mtls_proof(gnap_key=gnap_key, cert=self.request.context.client_cert)
         # HTTPSIG
         elif gnap_key.proof.method is ProofMethod.HTTPSIG:
-            raise NextFlowException(status_code=400, detail="httpsig proof method is not implemented")
+            if "signature" not in self.request.headers or "signature-input" not in self.request.headers:
+                raise NextFlowException(status_code=400, detail="no http signature headers found")
+            return await check_httpsig_proof(request=self.request, gnap_key=gnap_key, access_token=access_token)
         # JWS
         elif gnap_request and gnap_key.proof.method is ProofMethod.JWS:
             return await check_jws_proof(
