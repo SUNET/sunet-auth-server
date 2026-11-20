@@ -129,10 +129,10 @@ class TestMotorClientCache(IsolatedAsyncioTestCase):
             patch.dict(environ, {"mongo_uri": "mongodb://other-host:27017"}),
             patch("auth_server.db.client.AsyncIOMotorClient", side_effect=RuntimeError("boom")),
             patch.object(AsyncIOMotorClient, "close") as mock_close,
-            self.assertRaises(RuntimeError),
         ):
             load_config.cache_clear()
-            await get_motor_client()
+            with self.assertRaises(RuntimeError):
+                await get_motor_client()
         mock_close.assert_called_once()  # the pruned client of the closed loop
         assert all(c is not stale for by_uri in db_client._motor_clients.values() for c in by_uri.values())
         # the current loop's old client is still cached
