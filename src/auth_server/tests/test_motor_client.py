@@ -11,7 +11,7 @@ from starlette.testclient import TestClient
 from auth_server.api import init_auth_server_api
 from auth_server.config import load_config
 from auth_server.db import client as db_client
-from auth_server.db.client import clear_motor_client_cache, close_motor_clients, get_motor_client
+from auth_server.db.client import clear_motor_client_cache, get_motor_client
 from auth_server.testing import MongoTemporaryInstance
 
 __author__ = "lundberg"
@@ -64,36 +64,37 @@ class TestMotorClientCache(IsolatedAsyncioTestCase):
         assert len(db_client._motor_clients) == 1
 
     async def test_no_mongo_uri(self: Self) -> None:
-        environ.pop("mongo_uri")
-        load_config.cache_clear()
-        assert await get_motor_client() is None
+        with patch.dict(environ):
+            environ.pop("mongo_uri")
+            load_config.cache_clear()
+            assert await get_motor_client() is None
 
     async def test_changed_uri_new_client(self: Self) -> None:
         first = await get_motor_client()
-        environ["mongo_uri"] = "mongodb://localhost:1/other"
-        load_config.cache_clear()
-        second = await get_motor_client()
-        assert second is not first
-        assert await get_motor_client() is second
-        assert len(db_client._motor_clients) == 1
+        with patch.dict(environ, {"mongo_uri": "mongodb://localhost:1/other"}):
+            load_config.cache_clear()
+            second = await get_motor_client()
+            assert second is not first
+            assert await get_motor_client() is second
+            assert len(db_client._motor_clients) == 1
 
-    async def test_close_motor_clients(self: Self) -> None:
+    async def test_clear_motor_client_cache(self: Self) -> None:
         client = await get_motor_client()
         assert client is not None
         with patch.object(AsyncIOMotorClient, "close") as mock_close:
-            await close_motor_clients()
+            clear_motor_client_cache()
             mock_close.assert_called_once()
         assert len(db_client._motor_clients) == 0
         # idempotent, also when nothing is cached
-        await close_motor_clients()
-        await close_motor_clients()
+        clear_motor_client_cache()
+        clear_motor_client_cache()
         assert len(db_client._motor_clients) == 0
 
     async def test_close_failure_is_swallowed(self: Self) -> None:
         client = await get_motor_client()
         assert client is not None
         with patch.object(AsyncIOMotorClient, "close", side_effect=RuntimeError("Event loop is closed")):
-            await close_motor_clients()
+            clear_motor_client_cache()
         assert len(db_client._motor_clients) == 0
 
     async def test_constructor_failure_still_closes_pruned_clients(self: Self) -> None:
@@ -103,13 +104,13 @@ class TestMotorClientCache(IsolatedAsyncioTestCase):
         stale = AsyncIOMotorClient(self.mongo_db.uri)
         db_client._motor_clients[loop] = (self.mongo_db.uri, stale)
         loop.close()
-        environ["mongo_uri"] = "mongodb://other-host:27017"
-        load_config.cache_clear()
         with (
+            patch.dict(environ, {"mongo_uri": "mongodb://other-host:27017"}),
             patch("auth_server.db.client.AsyncIOMotorClient", side_effect=RuntimeError("boom")),
             patch.object(AsyncIOMotorClient, "close") as mock_close,
             self.assertRaises(RuntimeError),
         ):
+            load_config.cache_clear()
             await get_motor_client()
         mock_close.assert_called_once()  # the pruned client of the closed loop
         assert all(c is not stale for _, c in db_client._motor_clients.values())
@@ -120,9 +121,9 @@ class TestMotorClientCache(IsolatedAsyncioTestCase):
         db_client.acquire_motor_lifespan()
         db_client.acquire_motor_lifespan()
         assert await get_motor_client() is not None
-        await db_client.release_motor_lifespan()
+        db_client.release_motor_lifespan()
         assert len(db_client._motor_clients) == 1
-        await db_client.release_motor_lifespan()
+        db_client.release_motor_lifespan()
         assert len(db_client._motor_clients) == 0
 
 

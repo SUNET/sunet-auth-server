@@ -53,7 +53,7 @@ def acquire_motor_lifespan() -> None:
         _lifespan_users[loop] = _lifespan_users.get(loop, 0) + 1
 
 
-async def release_motor_lifespan() -> None:
+def release_motor_lifespan() -> None:
     """Unregister an app lifespan; close the current loop's client when it was the last one on this loop."""
     loop = asyncio.get_running_loop()
     client: AsyncIOMotorClient | None = None
@@ -70,11 +70,6 @@ async def release_motor_lifespan() -> None:
         _close_client(client)
 
 
-async def close_motor_clients() -> None:
-    """Close all cached motor clients. Safe to call more than once."""
-    clear_motor_client_cache()
-
-
 async def get_motor_client() -> AsyncIOMotorClient | None:
     """Return the motor client for the running event loop and configured mongo uri, creating it if needed."""
     config = load_config()
@@ -85,10 +80,12 @@ async def get_motor_client() -> AsyncIOMotorClient | None:
     try:
         with _motor_clients_lock:
             # drop clients of loops that have been closed (a new loop per request, as the test client does)
-            for old_loop, (_, old_client) in list(_motor_clients.items()):
-                if old_loop.is_closed():
-                    del _motor_clients[old_loop]
-                    to_close.append(old_client)
+            closed = [
+                (old_loop, old_client) for old_loop, (_, old_client) in _motor_clients.items() if old_loop.is_closed()
+            ]
+            for old_loop, old_client in closed:
+                del _motor_clients[old_loop]
+                to_close.append(old_client)
             cached = _motor_clients.get(loop)
             if cached is not None and cached[0] == config.mongo_uri:
                 return cached[1]

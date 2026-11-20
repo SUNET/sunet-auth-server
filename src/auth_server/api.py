@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
-        await release_motor_lifespan()
+        release_motor_lifespan()
 
 
 class AuthServer(FastAPI):
