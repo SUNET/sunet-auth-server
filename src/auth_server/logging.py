@@ -1,5 +1,8 @@
+import atexit
 import logging
 import logging.config
+import logging.handlers
+import queue
 import time
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
@@ -61,6 +64,44 @@ class RequireDebugFalse(logging.Filter):
         return not self.app_debug
 
 
+class DroppingQueueHandler(logging.handlers.QueueHandler):
+    """
+    QueueHandler that never blocks the caller. If the queue is full the record is dropped and counted.
+
+    handleError is deliberately not called: it writes to stderr synchronously, which is what the queue avoids.
+    """
+
+    def __init__(self: Self, queue: queue.Queue[Any]) -> None:
+        super().__init__(queue)
+        self.dropped: int = 0
+
+    def enqueue(self: Self, record: logging.LogRecord) -> None:
+        try:
+            self.queue.put_nowait(record)
+        except queue.Full:
+            self.dropped += 1
+
+
+_atexit_registered = False
+
+
+def _queue_handlers() -> list[DroppingQueueHandler]:
+    return [h for h in logging.getLogger().handlers if isinstance(h, DroppingQueueHandler)]
+
+
+def stop_logging() -> None:
+    """Stop queue listeners on the root logger, flushing queued records. Safe to call repeatedly."""
+    for handler in _queue_handlers():
+        listener = getattr(handler, "listener", None)
+        if listener is None:
+            continue
+        try:
+            listener.stop()
+        except queue.Full:
+            # Sentinel could not be enqueued. The listener thread is a daemon thread, leave it.
+            pass
+
+
 def merge_config(base_config: dict[str, Any], new_config: dict[str, Any]) -> dict[str, Any]:
     """Recursively merge two dictConfig dicts."""
 
@@ -88,12 +129,22 @@ def init_logging(config: AuthServerConfig) -> None:
 
     Merges optional dictConfig from settings before initializing (config key 'logging_config').
     """
+    global _atexit_registered
+    stop_logging()
+    if not _atexit_registered:
+        atexit.register(stop_logging)
+        _atexit_registered = True
+
     local_context = make_local_context(config)
     logging_config = make_dictConfig(local_context)
 
     logging_config = merge_config(logging_config, config.logging_config)
 
     logging.config.dictConfig(logging_config)
+    # dictConfig creates the listener (as handler.listener) but does not start it
+    for handler in _queue_handlers():
+        if handler.listener is not None:
+            handler.listener.start()
     if config.debug:
         logging.debug(f"Logging config:\n{pformat(logging_config)}")
     logging.info("Logging configured")
@@ -107,6 +158,7 @@ class LocalContext:
     app_debug: bool  # Is the app in debug mode? Corresponding to current_app.debug
     filters: Sequence[LoggingFilters] = field(default_factory=list)  # filters to activate
     relative_time: bool = False  # use relative time as {asctime}
+    queue_size: int = 10000  # max number of log records buffered for the listener thread
 
     def to_dict(self: Self) -> dict[str, Any]:
         res = asdict(self)
@@ -138,6 +190,7 @@ def make_local_context(config: AuthServerConfig) -> LocalContext:
             app_debug=config.debug,
             filters=config.log_filters,
             relative_time=relative_time,
+            queue_size=config.log_queue_size,
         )
     except (KeyError, AttributeError) as e:
         raise ConfigurationError(f"Could not initialize logging local_context. {type(e).__name__}: {e}")
@@ -156,12 +209,12 @@ def make_dictConfig(local_context: LocalContext) -> dict[str, Any]:
     _available_filters = {
         # Only log debug messages if Flask app.debug is False
         LoggingFilters.DEBUG_FALSE: {
-            "()": "eduid.common.logging.RequireDebugFalse",
+            "()": "auth_server.logging.RequireDebugFalse",
             "app_debug": "cfg://local_context.app_debug",
         },
         # Only log debug messages if Flask app.debug is True
         LoggingFilters.DEBUG_TRUE: {
-            "()": "eduid.common.logging.RequireDebugTrue",
+            "()": "auth_server.logging.RequireDebugTrue",
             "app_debug": "cfg://local_context.app_debug",
         },
     }
@@ -194,10 +247,18 @@ def make_dictConfig(local_context: LocalContext) -> dict[str, Any]:
                 "formatter": "default",
                 "filters": local_context.filters,
             },
+            # Root logs to this non-blocking queue, a listener thread feeds the console handler
+            "queue": {
+                "class": "auth_server.logging.DroppingQueueHandler",
+                "handlers": ["console"],
+                "respect_handler_level": True,
+                # Literal int: dictConfig does not resolve cfg:// in the kwargs of the nested queue factory
+                "queue": {"()": "queue.Queue", "maxsize": local_context.queue_size},
+            },
         },
         # Loggers
         "root": {
-            "handlers": ["console"],
+            "handlers": ["queue"],
             "level": "cfg://local_context.level",
         },
     }

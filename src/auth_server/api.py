@@ -15,7 +15,7 @@ from auth_server.context import ContextRequestRoute
 from auth_server.db.client import acquire_motor_lifespan, release_motor_lifespan
 from auth_server.errors import GNAPErrorException
 from auth_server.flows import BaseAuthFlow, CAFlow, ConfigFlow, InteractionFlow, MDQFlow, TestFlow, TLSFEDFlow
-from auth_server.logging import init_logging
+from auth_server.logging import init_logging, stop_logging
 from auth_server.middleware import JOSEMiddleware
 from auth_server.models.gnap import ErrorCode, GNAPErrorDetail, GrantResponse
 from auth_server.routers.interaction import interaction_router
@@ -36,6 +36,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         release_motor_lifespan()
+        stop_logging()
 
 
 class AuthServer(FastAPI):
