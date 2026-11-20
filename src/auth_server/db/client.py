@@ -76,6 +76,7 @@ async def get_motor_client() -> AsyncIOMotorClient | None:
     if config.mongo_uri is None:
         return None
     loop = asyncio.get_running_loop()
+    uri = config.mongo_uri
     to_close: list[AsyncIOMotorClient] = []
     try:
         with _motor_clients_lock:
@@ -87,14 +88,21 @@ async def get_motor_client() -> AsyncIOMotorClient | None:
                 del _motor_clients[old_loop]
                 to_close.append(old_client)
             cached = _motor_clients.get(loop)
-            if cached is not None and cached[0] == config.mongo_uri:
+            if cached is not None and cached[0] == uri:
                 return cached[1]
-            # construct first: if it raises (e.g. unresolvable SRV uri) the current cache entry stays in place
-            client = AsyncIOMotorClient(config.mongo_uri, tz_aware=True)
-            if cached is not None:
-                to_close.append(cached[1])
-            _motor_clients[loop] = (config.mongo_uri, client)
-            return client
+        # Construct outside the lock: an SRV uri does blocking DNS resolution that must not stall other loops.
+        # If it raises, the current cache entry stays in place.
+        client = AsyncIOMotorClient(uri, tz_aware=True)
+        with _motor_clients_lock:
+            current = _motor_clients.get(loop)
+            if current is not None and current[0] == uri:
+                # lost a race for this loop; use the published client and discard ours
+                to_close.append(client)
+                return current[1]
+            if current is not None:
+                to_close.append(current[1])
+            _motor_clients[loop] = (uri, client)
+        return client
     finally:
         # also runs when the constructor raised, so clients already removed from the cache are not leaked
         for old_client in to_close:
