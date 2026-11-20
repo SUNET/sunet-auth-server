@@ -265,5 +265,6 @@ async def finish_interaction(
                 url=transaction_state.grant_request.interact.finish.uri,
                 interaction_hash=interaction_hash,
                 interaction_reference=interact_ref,
+                timeout=load_config().http_client_timeout,
             )
     return templates.TemplateResponse(request=request, name=finished_template, context={"request": request})

@@ -66,6 +66,7 @@ class AuthServerConfig(BaseSettings):
     log_format: str | None = None
     log_level: str = "INFO"
     log_filters: list[LoggingFilters] = Field(default_factory=list)
+    log_queue_size: int = Field(default=10000, gt=0)
     logging_config: dict = Field(default_factory=dict)
     host: str = Field(default="0.0.0.0")
     port: int = Field(default=8080)
@@ -74,11 +75,13 @@ class AuthServerConfig(BaseSettings):
     mdq_server: str | None = Field(default=None)
     tls_fed_metadata: list[TLSFEDMetadata] = Field(default_factory=list)
     tls_fed_metadata_cache_ttl: timedelta = Field(default=timedelta(hours=1))
+    tls_fed_metadata_retry_interval: timedelta = Field(default=timedelta(minutes=1))
     keystore_path: Path = Field(default=Path("keystore.jwks"))
     signing_key_id: str = Field(default="default")
     auth_token_issuer: str
     auth_token_audience: str | None = Field(default=None)
     auth_token_expires_in: timedelta = Field(default=timedelta(hours=10))
+    http_client_timeout: timedelta = Field(default=timedelta(seconds=10))
     proof_jws_max_age: timedelta = Field(default=timedelta(minutes=5))
     proof_httpsig_max_age: timedelta = Field(default=timedelta(minutes=5))
     proof_httpsig_clock_skew: timedelta = Field(default=timedelta(seconds=30))

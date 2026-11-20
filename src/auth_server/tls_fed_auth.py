@@ -1,20 +1,21 @@
+import asyncio
 import json
 import logging
 from collections.abc import Mapping
-from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
 import aiohttp
 import anyio
 from aiofiles import open as async_open
-from async_lru import alru_cache
 from cryptography.x509 import load_pem_x509_certificate
 from jwcrypto import jwk, jws
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from auth_server.cert_utils import rfc8705_fingerprint
-from auth_server.config import TLSFEDMetadata, load_config
+from auth_server.config import AuthServerConfig, TLSFEDMetadata, load_config
 from auth_server.models.gnap import Key, Proof, ProofMethod
 from auth_server.models.tls_fed_metadata import Entity, TLSFEDJOSEHeader
 from auth_server.models.tls_fed_metadata import Model as TLSFEDMetadataModel
@@ -63,21 +64,20 @@ async def load_jwks(path: Path) -> jwk.JWKSet | None:
     return None
 
 
-async def get_remote_metadata(url: str) -> str | None:
+async def get_remote_metadata(url: str, timeout: timedelta) -> str | None:  # noqa: ASYNC109
     # Get remote metadata jws
-    session = aiohttp.ClientSession()
     logger.debug(f"Trying {url}")
     try:
-        response = await session.get(url=url)
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout.total_seconds())) as session:
+            response = await session.get(url=url)
+            if response.status != 200:
+                logger.error(f"{url} returned {response.status}")
+                return None
+            text = await response.text()
     except (aiohttp.ClientError, TimeoutError):
         logger.exception(f"Failed to get remote metadata from {url}")
         return None
-    if response.status != 200:
-        logger.error(f"{url} returned {response.status}")
-        return None
-    text = await response.text()
     logger.debug(f"Received {text}")
-    await session.close()
     return text
 
 
@@ -191,59 +191,175 @@ async def load_metadata_source(
     return MetadataSource(issued_at=iat, expires_at=exp, issuer=iss, metadata=metadata)
 
 
+def _build_issuer_metadata(metadata_source: MetadataSource, now: datetime, cache_ttl: timedelta) -> IssuerMetadata:
+    logger.info(f"loading metadata for issuer: {metadata_source.issuer}")
+    # Set renew_at to the issuer's cache_ttl if available, otherwise the configured default
+    renew_at = now + cache_ttl
+    if metadata_source.metadata.cache_ttl is not None:
+        renew_at = now + timedelta(seconds=metadata_source.metadata.cache_ttl)
+    logger.info(f"metadata from {metadata_source.issuer} should be renewed at {renew_at}")
+    # Parse entities
+    entities = {}
+    for entity in metadata_source.metadata.entities:
+        entities[str(entity.entity_id)] = MetadataEntity(
+            issuer=metadata_source.issuer,
+            expires_at=metadata_source.expires_at,
+            **entity.model_dump(exclude_unset=True),
+        )
+    return IssuerMetadata(
+        issuer=metadata_source.issuer,
+        issued_at=metadata_source.issued_at,
+        renew_at=renew_at,
+        expires_at=metadata_source.expires_at,
+        entities=entities,
+    )
+
+
 async def load_metadata(metadata_sources: list[MetadataSource], cache_ttl: timedelta) -> Metadata:
     now = utc_now()
-    renew_at = now + cache_ttl  # Set default renew time
     loaded_metadata: dict[str, IssuerMetadata] = {}
     for metadata_source in metadata_sources:
-        logger.info(f"loading metadata for issuer: {metadata_source.issuer}")
-        # Set renew_at to the issuer's cache_ttl if available
-        if metadata_source.metadata.cache_ttl is not None:
-            renew_at = now + timedelta(seconds=metadata_source.metadata.cache_ttl)
-        logger.info(f"metadata from {metadata_source.issuer} should be renewed at {renew_at}")
-        # Parse entities
-        entities = {}
-        for entity in metadata_source.metadata.entities:
-            entities[str(entity.entity_id)] = MetadataEntity(
-                issuer=metadata_source.issuer,
-                expires_at=metadata_source.expires_at,
-                **entity.model_dump(exclude_unset=True),
-            )
         key = metadata_source.issuer
         if key is None:
             key = str(uuid4())
-        loaded_metadata[key] = IssuerMetadata(
-            issuer=metadata_source.issuer,
-            issued_at=metadata_source.issued_at,
-            renew_at=renew_at,
-            expires_at=metadata_source.expires_at,
-            entities=entities,
-        )
+        loaded_metadata[key] = _build_issuer_metadata(metadata_source, now=now, cache_ttl=cache_ttl)
     return Metadata(issuer_metadata=loaded_metadata)
 
 
-@alru_cache
+async def _load_source(source: TLSFEDMetadata, cache_ttl: timedelta, timeout: timedelta) -> IssuerMetadata | None:  # noqa: ASYNC109
+    raw_jws = None
+    jwks = await load_jwks(source.jwks)
+    # Try local source if it exists
+    if source.local is not None:
+        logger.info(f"loading metadata from: {source.local}")
+        raw_jws = await get_local_metadata(source.local)
+        logger.debug(f"{source.local} returned jws: {raw_jws}")
+    # if there is no local source try remote source if it exists
+    elif source.remote is not None:
+        logger.info(f"loading metadata from: {source.remote}")
+        raw_jws = await get_remote_metadata(str(source.remote), timeout=timeout)
+        logger.debug(f"{source.remote} returned jws: {raw_jws}")
+    metadata_source = await load_metadata_source(raw_jws=raw_jws, jwks=jwks, source=source)
+    if metadata_source is None:
+        return None
+    logger.debug(f"loaded metadata source: {metadata_source}")
+    issuer_metadata = _build_issuer_metadata(metadata_source, now=utc_now(), cache_ttl=cache_ttl)
+    if utc_now() > issuer_metadata.expires_at:
+        logger.warning(f"metadata from {issuer_metadata.issuer} is already expired {issuer_metadata.expires_at}")
+        return None
+    return issuer_metadata
+
+
+@dataclass
+class _SourceState:
+    issuer_metadata: IssuerMetadata | None = None  # last good data
+    refresh_at: datetime = datetime.min.replace(tzinfo=UTC)  # due immediately
+    failures: int = 0
+
+
+@dataclass
+class _TLSFedMetadataCache:
+    states: dict[int, _SourceState] = field(default_factory=dict)
+    _refresh_task: asyncio.Task[None] | None = None
+
+    def reset(self) -> None:
+        task = self._refresh_task
+        self._refresh_task = None
+        self.states = {}
+        if task is not None and not task.done():
+            try:
+                task.cancel()
+            except RuntimeError:
+                # task belongs to a closed event loop
+                pass
+
+    def _state(self, index: int) -> _SourceState:
+        return self.states.setdefault(index, _SourceState())
+
+    def due_sources(self, config: AuthServerConfig, now: datetime) -> list[int]:
+        return [i for i in range(len(config.tls_fed_metadata)) if now >= self._state(i).refresh_at]
+
+    def is_usable(self, index: int, now: datetime) -> bool:
+        issuer_metadata = self._state(index).issuer_metadata
+        return issuer_metadata is not None and now <= issuer_metadata.expires_at
+
+    def build_metadata(self, config: AuthServerConfig) -> Metadata:
+        loaded: dict[str, IssuerMetadata] = {}
+        for i in range(len(config.tls_fed_metadata)):
+            issuer_metadata = self._state(i).issuer_metadata
+            if issuer_metadata is not None:
+                loaded[issuer_metadata.issuer] = issuer_metadata
+        return Metadata(issuer_metadata=loaded)
+
+    async def _refresh_source(self, index: int, config: AuthServerConfig) -> None:
+        source = config.tls_fed_metadata[index]
+        state = self._state(index)
+        try:
+            result = await _load_source(
+                source, cache_ttl=config.tls_fed_metadata_cache_ttl, timeout=config.http_client_timeout
+            )
+        except Exception:
+            logger.exception(f"unexpected error loading tls fed metadata source {index}")
+            result = None
+        now = utc_now()
+        if result is not None:
+            state.issuer_metadata = result
+            state.refresh_at = min(result.renew_at, result.expires_at)
+            state.failures = 0
+            return
+        delay = min(
+            config.tls_fed_metadata_retry_interval * 2 ** min(state.failures, 16), config.tls_fed_metadata_cache_ttl
+        )
+        state.refresh_at = now + delay
+        state.failures += 1
+        logger.warning(
+            f"failed to refresh tls fed metadata source {index}, keeping last good data, retrying at {state.refresh_at}"
+        )
+
+    async def _refresh(self, indices: list[int], config: AuthServerConfig) -> None:
+        try:
+            await asyncio.gather(*[self._refresh_source(i, config) for i in indices])
+        except Exception:
+            logger.exception("tls fed metadata refresh failed")
+
+    def ensure_task(self, indices: list[int], config: AuthServerConfig) -> asyncio.Task[None]:
+        task = self._refresh_task
+        if task is not None:
+            try:
+                usable = (
+                    not task.done()
+                    and task.get_loop() is asyncio.get_running_loop()
+                    and not task.get_loop().is_closed()
+                )
+            except RuntimeError:
+                usable = False
+            if usable:
+                return task
+        task = asyncio.create_task(self._refresh(indices, config))
+        self._refresh_task = task
+        return task
+
+
+_cache = _TLSFedMetadataCache()
+
+
+def clear_tls_fed_metadata_cache() -> None:
+    _cache.reset()
+
+
 async def get_tls_fed_metadata() -> Metadata:
     config = load_config()
-    metadata_sources = []
-    for source in config.tls_fed_metadata:
-        raw_jws = None
-        jwks = await load_jwks(source.jwks)
-        # Try local source if it exists
-        if source.local is not None:
-            logger.info(f"loading metadata from: {source.local}")
-            raw_jws = await get_local_metadata(source.local)
-            logger.debug(f"{source.local} returned jws: {raw_jws}")
-        # if local source didn't return any metadata try remote source if it exists
-        elif source.remote is not None:
-            logger.info(f"loading metadata from: {source.remote}")
-            raw_jws = await get_remote_metadata(str(source.remote))
-            logger.debug(f"{source.remote} returned jws: {raw_jws}")
-        metadata_source = await load_metadata_source(raw_jws=raw_jws, jwks=jwks, source=source)
-        if metadata_source is not None:
-            logger.debug(f"loaded metadata source: {metadata_source}")
-            metadata_sources.append(metadata_source)
-    return await load_metadata(metadata_sources=metadata_sources, cache_ttl=config.tls_fed_metadata_cache_ttl)
+    while True:
+        now = utc_now()
+        due = _cache.due_sources(config, now)
+        if not due:
+            break
+        task = _cache.ensure_task(due, config)
+        if all(_cache.is_usable(i, now) for i in due):
+            # serve last good data while refreshing in the background
+            break
+        await asyncio.shield(task)
+    return _cache.build_metadata(config)
 
 
 async def get_entity(entity_id: str) -> MetadataEntity | None:
@@ -251,14 +367,6 @@ async def get_entity(entity_id: str) -> MetadataEntity | None:
     now = utc_now()
 
     for issuer, issuer_metadata in metadata.issuer_metadata.items():
-        # Check if metadata should be refreshed
-        if now > issuer_metadata.renew_at:
-            logger.info(f"{issuer} metadata cache has expired {issuer_metadata.renew_at}")
-            logger.debug(f"Cache info: {get_tls_fed_metadata.cache_info()}")
-            # clear lru_cache and reload metadata
-            get_tls_fed_metadata.cache_clear()
-            return await get_entity(entity_id=entity_id)
-
         # Check if metadata is valid
         # not before issued_at
         if now < issuer_metadata.issued_at:

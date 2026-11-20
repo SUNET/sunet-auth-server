@@ -4,7 +4,6 @@ aiohttp[speedups]
 pyyaml
 aiofiles
 jinja2
-async_lru
 jwcrypto
 http-message-signatures==3.0.0
 xmltodict

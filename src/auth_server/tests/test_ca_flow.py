@@ -37,7 +37,7 @@ from auth_server.models.gnap import (
 )
 from auth_server.tests.utils import create_cert
 from auth_server.time_utils import utc_now
-from auth_server.tls_fed_auth import get_tls_fed_metadata
+from auth_server.tls_fed_auth import clear_tls_fed_metadata_cache
 from auth_server.utils import get_signing_key, load_jwks
 
 __author__ = "lundberg"
@@ -106,7 +106,7 @@ class TestAuthServer(TestCase):
         load_config.cache_clear()
         load_jwks.cache_clear()
         get_signing_key.cache_clear()
-        get_tls_fed_metadata.cache_clear()
+        clear_tls_fed_metadata_cache()
 
     def tearDown(self: Self) -> None:
         self.app = None  # type: ignore

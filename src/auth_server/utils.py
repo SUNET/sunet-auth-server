@@ -3,7 +3,7 @@ import json
 import logging
 from base64 import urlsafe_b64encode
 from collections.abc import Callable, Generator, Mapping, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from typing import Any
 from uuid import uuid4
@@ -154,16 +154,21 @@ def get_interaction_hash(
     return urlsafe_b64encode(hash_res).decode(encoding="utf-8").rstrip("=")
 
 
-async def push_interaction_finish(url: str, interaction_hash: str, interaction_reference: str) -> None:
+async def push_interaction_finish(
+    url: str,
+    interaction_hash: str,
+    interaction_reference: str,
+    timeout: timedelta,  # noqa: ASYNC109
+) -> None:
     logger.debug(f"Trying interaction PUSH finish to {url}")
     body = {"hash": interaction_hash, "interact_ref": interaction_reference}
     try:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout.total_seconds())) as session:
             response = await session.post(url=url, json=body)
-    except aiohttp.ClientError as e:
-        logger.error(f"PUSH finish to {url} failed: {e}")
-        return None
-    if response.status != 200:
-        logger.error(f"PUSH finish to {url} returned {response.status}")
+            if response.status != 200:
+                logger.error(f"PUSH finish to {url} returned {response.status}")
+                return None
+    except (aiohttp.ClientError, TimeoutError) as e:
+        logger.error(f"PUSH finish to {url} failed: {e!r}")
         return None
     logger.info(f"Successfully delivered interaction PUSH finish to {url}")
