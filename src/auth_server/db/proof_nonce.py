@@ -82,9 +82,8 @@ class InMemoryProofNonceStore:
     async def check_and_store(self: Self, key_fingerprint: str, nonce: str) -> bool:
         return await self.check_and_store_all(key_fingerprint=key_fingerprint, nonces=[nonce])
 
-    async def check_and_store_all(  # NOSONAR: async to match the interface of ProofNonceDB
-        self: Self, key_fingerprint: str, nonces: list[str]
-    ) -> bool:
+    # async to match the interface of ProofNonceDB, nothing here needs to wait
+    async def check_and_store_all(self: Self, key_fingerprint: str, nonces: list[str]) -> bool:  # NOSONAR
         """Store all the nonces, or none of them if any has been seen before for this key."""
         now = monotonic()
         while self._expiry_queue and self._expiry_queue[0][0] <= now:
