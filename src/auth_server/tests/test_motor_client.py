@@ -96,6 +96,26 @@ class TestMotorClientCache(IsolatedAsyncioTestCase):
             await close_motor_clients()
         assert len(db_client._motor_clients) == 0
 
+    async def test_constructor_failure_still_closes_pruned_clients(self: Self) -> None:
+        current = await get_motor_client()
+        assert current is not None
+        loop = asyncio.new_event_loop()
+        stale = AsyncIOMotorClient(self.mongo_db.uri)
+        db_client._motor_clients[loop] = (self.mongo_db.uri, stale)
+        loop.close()
+        environ["mongo_uri"] = "mongodb://other-host:27017"
+        load_config.cache_clear()
+        with (
+            patch("auth_server.db.client.AsyncIOMotorClient", side_effect=RuntimeError("boom")),
+            patch.object(AsyncIOMotorClient, "close") as mock_close,
+            self.assertRaises(RuntimeError),
+        ):
+            await get_motor_client()
+        mock_close.assert_called_once()  # the pruned client of the closed loop
+        assert all(c is not stale for _, c in db_client._motor_clients.values())
+        # the current loop's old client is still cached
+        assert db_client._motor_clients[asyncio.get_running_loop()][1] is current
+
     async def test_last_lifespan_on_loop_closes_client(self: Self) -> None:
         db_client.acquire_motor_lifespan()
         db_client.acquire_motor_lifespan()

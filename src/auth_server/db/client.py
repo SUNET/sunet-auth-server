@@ -82,23 +82,26 @@ async def get_motor_client() -> AsyncIOMotorClient | None:
         return None
     loop = asyncio.get_running_loop()
     to_close: list[AsyncIOMotorClient] = []
-    with _motor_clients_lock:
-        # drop clients of loops that have been closed (a new loop per request, as the test client does)
-        for old_loop, (_, old_client) in list(_motor_clients.items()):
-            if old_loop.is_closed():
-                del _motor_clients[old_loop]
-                to_close.append(old_client)
-        cached = _motor_clients.get(loop)
-        if cached is not None and cached[0] == config.mongo_uri:
-            client = cached[1]
-        else:
+    try:
+        with _motor_clients_lock:
+            # drop clients of loops that have been closed (a new loop per request, as the test client does)
+            for old_loop, (_, old_client) in list(_motor_clients.items()):
+                if old_loop.is_closed():
+                    del _motor_clients[old_loop]
+                    to_close.append(old_client)
+            cached = _motor_clients.get(loop)
+            if cached is not None and cached[0] == config.mongo_uri:
+                return cached[1]
+            # construct first: if it raises (e.g. unresolvable SRV uri) the current cache entry stays in place
+            client = AsyncIOMotorClient(config.mongo_uri, tz_aware=True)
             if cached is not None:
                 to_close.append(cached[1])
-            client = AsyncIOMotorClient(config.mongo_uri, tz_aware=True)
             _motor_clients[loop] = (config.mongo_uri, client)
-    for old_client in to_close:
-        _close_client(old_client)
-    return client
+            return client
+    finally:
+        # also runs when the constructor raised, so clients already removed from the cache are not leaked
+        for old_client in to_close:
+            _close_client(old_client)
 
 
 async def get_mongo_client() -> MongoClient | None:
