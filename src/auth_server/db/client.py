@@ -41,6 +41,35 @@ def clear_motor_client_cache() -> None:
         _close_client(client)
 
 
+# Number of running lifespans per loop. Lifespans only close the client of their own loop, and only the last
+# one on a loop does so, so overlapping lifespans do not close each other's client.
+_lifespan_users: WeakKeyDictionary[asyncio.AbstractEventLoop, int] = WeakKeyDictionary()
+
+
+def acquire_motor_lifespan() -> None:
+    """Register an app lifespan running on the current event loop."""
+    loop = asyncio.get_running_loop()
+    with _motor_clients_lock:
+        _lifespan_users[loop] = _lifespan_users.get(loop, 0) + 1
+
+
+async def release_motor_lifespan() -> None:
+    """Unregister an app lifespan; close the current loop's client when it was the last one on this loop."""
+    loop = asyncio.get_running_loop()
+    client: AsyncIOMotorClient | None = None
+    with _motor_clients_lock:
+        users = _lifespan_users.get(loop, 0) - 1
+        if users > 0:
+            _lifespan_users[loop] = users
+            return
+        _lifespan_users.pop(loop, None)
+        cached = _motor_clients.pop(loop, None)
+        if cached is not None:
+            client = cached[1]
+    if client is not None:
+        _close_client(client)
+
+
 async def close_motor_clients() -> None:
     """Close all cached motor clients. Safe to call more than once."""
     clear_motor_client_cache()

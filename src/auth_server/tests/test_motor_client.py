@@ -96,6 +96,15 @@ class TestMotorClientCache(IsolatedAsyncioTestCase):
             await close_motor_clients()
         assert len(db_client._motor_clients) == 0
 
+    async def test_last_lifespan_on_loop_closes_client(self: Self) -> None:
+        db_client.acquire_motor_lifespan()
+        db_client.acquire_motor_lifespan()
+        assert await get_motor_client() is not None
+        await db_client.release_motor_lifespan()
+        assert len(db_client._motor_clients) == 1
+        await db_client.release_motor_lifespan()
+        assert len(db_client._motor_clients) == 0
+
 
 class TestMotorClientApp(TestCase):
     def setUp(self: Self) -> None:
@@ -118,10 +127,24 @@ class TestMotorClientApp(TestCase):
             assert len(db_client._motor_clients) == 1
         assert len(db_client._motor_clients) == 0
 
-    def test_lifespan_shutdown_calls_close(self: Self) -> None:
-        with patch("auth_server.api.close_motor_clients") as mock_close, TestClient(self.app):
+    def test_lifespan_shutdown_calls_release(self: Self) -> None:
+        with patch("auth_server.api.release_motor_lifespan") as mock_release, TestClient(self.app):
             pass
-        mock_close.assert_called_once()
+        mock_release.assert_called_once()
+
+    def test_overlapping_lifespans_do_not_close_each_other(self: Self) -> None:
+        with TestClient(self.app) as client_a:
+            assert client_a.get("/status/healthy").json()["status"] == "STATUS_OK_"
+            with TestClient(self.app) as client_b:
+                assert client_b.get("/status/healthy").json()["status"] == "STATUS_OK_"
+                assert len(db_client._motor_clients) == 2
+            # B's lifespan ended: only B's loop client is closed, A's is still cached and usable
+            assert len(db_client._motor_clients) == 1
+            with patch.object(AsyncIOMotorClient, "close") as mock_close:
+                assert client_a.get("/status/healthy").json()["status"] == "STATUS_OK_"
+            mock_close.assert_not_called()
+            assert len(db_client._motor_clients) == 1
+        assert len(db_client._motor_clients) == 0
 
     def test_many_requests_do_not_grow_cache(self: Self) -> None:
         client = TestClient(self.app)  # no context manager: a new event loop for every request
