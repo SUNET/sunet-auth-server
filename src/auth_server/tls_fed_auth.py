@@ -25,6 +25,10 @@ __author__ = "lundberg"
 
 logger = logging.getLogger(__name__)
 
+# upper bound on refresh rounds a single call awaits, guards against zero length refresh delays
+MAX_REFRESH_ROUNDS = 3
+MIN_REFRESH_DELAY = timedelta(seconds=1)
+
 
 class MetadataSource(BaseModel):
     issued_at: datetime
@@ -255,6 +259,8 @@ class _SourceState:
     issuer_metadata: IssuerMetadata | None = None  # last good data
     refresh_at: datetime = datetime.min.replace(tzinfo=UTC)  # due immediately
     failures: int = 0
+    stale_warned: bool = False  # stale-serving warning already logged this refresh cycle
+    dropped_logged: bool = False  # grace-elapsed error already logged this refresh cycle
 
 
 @dataclass
@@ -279,16 +285,46 @@ class _TLSFedMetadataCache:
     def due_sources(self, config: AuthServerConfig, now: datetime) -> list[int]:
         return [i for i in range(len(config.tls_fed_metadata)) if now >= self._state(i).refresh_at]
 
-    def is_usable(self, index: int, now: datetime) -> bool:
+    def is_usable(self, index: int, now: datetime, config: AuthServerConfig) -> bool:
+        """Data may be used for decisions until renew_at, then only for a short grace while refreshes fail."""
         issuer_metadata = self._state(index).issuer_metadata
-        return issuer_metadata is not None and now <= issuer_metadata.expires_at
+        if issuer_metadata is None or now > issuer_metadata.expires_at:
+            return False
+        if now <= issuer_metadata.renew_at:
+            return True
+        return now <= issuer_metadata.renew_at + config.tls_fed_metadata_stale_grace
 
-    def build_metadata(self, config: AuthServerConfig) -> Metadata:
+    def build_metadata(self, config: AuthServerConfig, now: datetime) -> Metadata:
+        """Only sources that are usable per is_usable are included, so stale data can not outlive the grace."""
         loaded: dict[str, IssuerMetadata] = {}
         for i in range(len(config.tls_fed_metadata)):
-            issuer_metadata = self._state(i).issuer_metadata
-            if issuer_metadata is not None:
-                loaded[issuer_metadata.issuer] = issuer_metadata
+            state = self._state(i)
+            issuer_metadata = state.issuer_metadata
+            if issuer_metadata is None:
+                continue
+            if not self.is_usable(i, now, config):
+                if not state.dropped_logged:
+                    state.dropped_logged = True
+                    if now > issuer_metadata.expires_at:
+                        logger.error(
+                            f"tls fed metadata source {i} ({issuer_metadata.issuer}) metadata expired at "
+                            f"{issuer_metadata.expires_at}, dropping it"
+                        )
+                    else:
+                        logger.error(
+                            f"tls fed metadata source {i} ({issuer_metadata.issuer}) grace period elapsed without a "
+                            f"successful refresh, dropping it (renew_at {issuer_metadata.renew_at}, "
+                            f"grace ended {issuer_metadata.renew_at + config.tls_fed_metadata_stale_grace})"
+                        )
+                continue
+            if now > issuer_metadata.renew_at and not state.stale_warned:
+                state.stale_warned = True
+                logger.warning(
+                    f"serving stale tls fed metadata for source {i} ({issuer_metadata.issuer}), renew_at "
+                    f"{issuer_metadata.renew_at} passed and refresh failing, "
+                    f"grace ends {issuer_metadata.renew_at + config.tls_fed_metadata_stale_grace}"
+                )
+            loaded[issuer_metadata.issuer] = issuer_metadata
         return Metadata(issuer_metadata=loaded)
 
     async def _refresh_source(self, index: int, config: AuthServerConfig) -> None:
@@ -306,9 +342,18 @@ class _TLSFedMetadataCache:
             state.issuer_metadata = result
             state.refresh_at = min(result.renew_at, result.expires_at)
             state.failures = 0
+            state.stale_warned = False
+            state.dropped_logged = False
             return
-        delay = min(
-            config.tls_fed_metadata_retry_interval * 2 ** min(state.failures, 16), config.tls_fed_metadata_cache_ttl
+        # never back off longer than the stale grace, or a recovered remote stays rejected after the source is dropped
+        # the floor keeps the delay positive whatever the config says (config.model_construct skips validation)
+        delay = max(
+            MIN_REFRESH_DELAY,
+            min(
+                config.tls_fed_metadata_retry_interval * 2 ** min(state.failures, 16),
+                config.tls_fed_metadata_cache_ttl,
+                config.tls_fed_metadata_stale_grace,
+            ),
         )
         state.refresh_at = now + delay
         state.failures += 1
@@ -349,17 +394,22 @@ def clear_tls_fed_metadata_cache() -> None:
 
 async def get_tls_fed_metadata() -> Metadata:
     config = load_config()
-    while True:
+    for _ in range(MAX_REFRESH_ROUNDS):
         now = utc_now()
         due = _cache.due_sources(config, now)
         if not due:
             break
         task = _cache.ensure_task(due, config)
-        if all(_cache.is_usable(i, now) for i in due):
-            # serve last good data while refreshing in the background
+        # only block when a due source has never loaded (cold start), everything else refreshes in the background
+        # and is served or dropped according to is_usable
+        if all(_cache.states[i].issuer_metadata is not None for i in due):
             break
-        await asyncio.shield(task)
-    return _cache.build_metadata(config)
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=config.http_client_timeout.total_seconds())
+        except TimeoutError:
+            logger.warning("timed out waiting for initial tls fed metadata load")
+            break
+    return _cache.build_metadata(config, utc_now())
 
 
 async def get_entity(entity_id: str) -> MetadataEntity | None:

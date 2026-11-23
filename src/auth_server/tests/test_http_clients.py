@@ -1,15 +1,17 @@
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import timedelta
+from pathlib import Path
 from typing import Any, Self
 from unittest import IsolatedAsyncioTestCase, mock
 from unittest.mock import AsyncMock
 
 import aiohttp
 
+from auth_server.config import AuthServerConfig, TLSFEDMetadata
 from auth_server.mdq import MDQData, xml_mdq_get
 from auth_server.tests.test_app import MockResponse
-from auth_server.tls_fed_auth import get_remote_metadata
+from auth_server.tls_fed_auth import clear_tls_fed_metadata_cache, get_remote_metadata, get_tls_fed_metadata
 from auth_server.utils import push_interaction_finish
 
 __author__ = "lundberg"
@@ -90,3 +92,25 @@ class TestHttpClients(IsolatedAsyncioTestCase):
             "post", lambda: push_interaction_finish("http://example.com/p", "h", "r", TIMEOUT), b""
         )
         assert result is None
+
+
+class TestHttpClientTimeoutPlumbing(IsolatedAsyncioTestCase):
+    async def test_config_timeout_reaches_tls_fed_fetch(self: Self) -> None:
+        """The configured http_client_timeout, not a default, must end up in the ClientSession used for the fetch."""
+        config = AuthServerConfig(
+            auth_token_issuer="https://auth.example.com",
+            tls_fed_metadata=[
+                TLSFEDMetadata(remote="https://metadata.example.com/md.jws", jwks=Path("/nonexistent/jwks.json"))
+            ],
+            http_client_timeout=timedelta(seconds=7),
+        )
+        clear_tls_fed_metadata_cache()
+        self.addCleanup(clear_tls_fed_metadata_cache)
+        with (
+            mock.patch("auth_server.tls_fed_auth.load_config", return_value=config),
+            patched_session("get", return_value=MockResponse(status_code=500)) as (_, close_mock, init_kwargs),
+        ):
+            await get_tls_fed_metadata()
+        assert init_kwargs, "no ClientSession was created"
+        assert init_kwargs[0]["timeout"].total == 7.0
+        assert close_mock.await_count == 1

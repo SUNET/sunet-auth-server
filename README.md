@@ -127,6 +127,17 @@ tls_fed_metadata:
     jwks: /path/to/trust/jwks.json
 ```
 
+#### TLS federation metadata caching
+
+Metadata is refreshed in the background once it passes its `renew_at` time (the metadata's `cache_ttl`, or
+`tls_fed_metadata_cache_ttl` as default). Failed refreshes are retried with exponential backoff starting at
+`tls_fed_metadata_retry_interval`, never longer than `tls_fed_metadata_cache_ttl` or `tls_fed_metadata_stale_grace`.
+While refreshes fail, the last good metadata is served for at most `tls_fed_metadata_stale_grace` after `renew_at`
+(default 5 minutes). After that the source is dropped and its entities are rejected (fail closed), even if the
+metadata has not reached its `exp` yet. `tls_fed_metadata_stale_grace` must be at least
+`tls_fed_metadata_retry_interval`, and the retry interval and cache ttl must be greater than zero. Requests only wait
+for a metadata source that has never loaded successfully, bounded by `http_client_timeout`.
+
 ### Static Client Configuration
 
 Configure pre-registered clients:

@@ -1,13 +1,15 @@
 import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Self
+from typing import Any, Self
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import AsyncMock, patch
 
 from cryptography.hazmat.primitives.serialization import Encoding
 from jwcrypto import jwk
+from pydantic import ValidationError
 
+from auth_server import tls_fed_auth
 from auth_server.config import AuthServerConfig, TLSFEDMetadata
 from auth_server.models.jose import SupportedAlgorithms
 from auth_server.tests.utils import create_cert, create_tls_fed_metadata, tls_fed_metadata_to_jws
@@ -17,6 +19,7 @@ from auth_server.tls_fed_auth import _cache, clear_tls_fed_metadata_cache, get_e
 __author__ = "lundberg"
 
 RETRY = timedelta(minutes=1)
+GRACE = timedelta(minutes=5)
 URL_A = "https://a.example.com/metadata.jws"
 URL_B = "https://b.example.com/metadata.jws"
 
@@ -105,8 +108,87 @@ class TestTLSFedMetadataCache(IsolatedAsyncioTestCase):
         await task
         assert _cache.states[0].failures == 1
         assert self.mock_remote.await_count == 2
-        # still served after failed refresh
+        # still served after failed refresh, within renew_at + grace
+        self.now += GRACE - timedelta(seconds=10)
         assert await get_entity(self.entity_id) is not None
+
+    async def test_stale_data_dropped_after_grace(self: Self) -> None:
+        self.mock_remote.side_effect = [self.make_jws(cache_ttl=60), None, None, None]
+        assert await get_entity(self.entity_id) is not None
+        renew_at = self.t0 + timedelta(seconds=60)
+        self.now = renew_at + GRACE + timedelta(seconds=1)
+        # fail closed: refresh fails, data older than renew_at + grace must not be served
+        assert await get_entity(self.entity_id) is None
+        assert await get_entity(self.entity_id) is None
+
+    async def test_entity_served_again_after_recovery(self: Self) -> None:
+        self.mock_remote.side_effect = [self.make_jws(cache_ttl=60), None, self.make_jws(cache_ttl=60)]
+        assert await get_entity(self.entity_id) is not None
+        self.now = self.t0 + timedelta(seconds=60) + GRACE + timedelta(seconds=1)
+        assert await self.refresh_round() is None  # background refresh fails
+        # backoff elapses, fetch succeeds
+        self.now += RETRY * 2 + timedelta(seconds=1)
+        assert await self.refresh_round() is None  # refresh runs in the background
+        assert await get_entity(self.entity_id) is not None
+
+    async def test_revoked_entity_rejected_after_refresh(self: Self) -> None:
+        self.mock_remote.side_effect = [
+            self.make_jws(cache_ttl=60),
+            self.make_jws(cache_ttl=60, entity_id="https://other.example.com"),
+        ]
+        assert await get_entity(self.entity_id) is not None
+        self.now = self.t0 + timedelta(seconds=61)
+        # stale copy still contains entity and may be served while refresh runs in the background
+        task = None
+        await get_entity(self.entity_id)
+        task = _cache._refresh_task
+        assert task is not None
+        await task
+        assert await get_entity(self.entity_id) is None
+        assert await get_entity("https://other.example.com") is not None
+
+    async def test_stale_warning_once_per_cycle(self: Self) -> None:
+        self.mock_remote.side_effect = [self.make_jws(cache_ttl=60), None, None, None]
+        assert await get_entity(self.entity_id) is not None
+        self.now = self.t0 + timedelta(seconds=61)
+        with self.assertLogs("auth_server.tls_fed_auth", level="WARNING") as cm:
+            for _ in range(5):
+                assert await get_entity(self.entity_id) is not None
+        stale = [r for r in cm.records if "serving stale" in r.getMessage()]
+        assert len(stale) == 1
+        assert "renew_at" in stale[0].getMessage()
+        # drop error logged once as well
+        task = _cache._refresh_task
+        assert task is not None
+        await task
+        self.now = self.t0 + timedelta(seconds=60) + GRACE + timedelta(seconds=1)
+        with self.assertLogs("auth_server.tls_fed_auth", level="ERROR") as cm:
+            for _ in range(3):
+                assert await get_entity(self.entity_id) is None
+        dropped = [r for r in cm.records if "dropping it" in r.getMessage()]
+        assert len(dropped) == 1
+
+    async def test_is_usable_boundaries(self: Self) -> None:
+        self.mock_remote.side_effect = [self.make_jws(cache_ttl=60)]
+        await get_entity(self.entity_id)
+        config = tls_fed_auth.load_config()
+        renew_at = self.t0 + timedelta(seconds=60)
+        eps = timedelta(microseconds=1)
+        assert _cache.is_usable(0, renew_at, config)
+        assert _cache.is_usable(0, renew_at + eps, config)
+        assert _cache.is_usable(0, renew_at + GRACE, config)
+        assert not _cache.is_usable(0, renew_at + GRACE + eps, config)
+        assert not _cache.is_usable(5, renew_at, config)
+
+    async def test_is_usable_expires_before_grace_end(self: Self) -> None:
+        self.mock_remote.side_effect = [self.make_jws(cache_ttl=60, expires=timedelta(seconds=90))]
+        await get_entity(self.entity_id)
+        config = tls_fed_auth.load_config()
+        expires_at = _cache.states[0].issuer_metadata.expires_at  # type: ignore[union-attr]
+        eps = timedelta(microseconds=1)
+        assert expires_at < self.t0 + timedelta(seconds=60) + GRACE
+        assert _cache.is_usable(0, expires_at, config)
+        assert not _cache.is_usable(0, expires_at + eps, config)
 
     async def test_expiry_forces_reload(self: Self) -> None:
         later = self.t0 + timedelta(minutes=10, seconds=30)
@@ -116,7 +198,11 @@ class TestTLSFedMetadataCache(IsolatedAsyncioTestCase):
         ]
         assert await get_entity(self.entity_id) is not None
         self.now = self.t0 + timedelta(minutes=11)
-        # old data expired, must wait for fresh data
+        # old data expired, dropped at once while the refresh runs in the background
+        assert await get_entity(self.entity_id) is None
+        task = _cache._refresh_task
+        assert task is not None
+        await task
         assert await get_entity("https://other.example.com") is not None
         assert await get_entity(self.entity_id) is None
         assert self.mock_remote.await_count == 2
@@ -156,3 +242,104 @@ class TestTLSFedMetadataCache(IsolatedAsyncioTestCase):
         assert await get_entity(self.entity_id) is None
         assert _cache.states[0].failures == 1
         assert _cache.states[1].failures == 0
+
+    async def refresh_round(self: Self, entity_id: str | None = None) -> object:
+        result = await get_entity(entity_id or self.entity_id)
+        task = _cache._refresh_task
+        if task is not None:
+            await task
+        return result
+
+    async def test_backoff_capped_by_grace(self: Self) -> None:
+        self.mock_remote.side_effect = [self.make_jws(cache_ttl=60)] + [None] * 8 + [self.make_jws(cache_ttl=60)]
+        assert await get_entity(self.entity_id) is not None
+        self.now = self.t0 + timedelta(seconds=60) + GRACE + timedelta(seconds=1)
+        for _ in range(8):
+            assert await self.refresh_round() is None
+            assert _cache.states[0].refresh_at - self.now <= GRACE
+            self.now += GRACE + timedelta(seconds=1)
+        assert _cache.states[0].failures == 8
+        # remote recovers, entity served within one grace
+        assert await self.refresh_round() is None
+        assert _cache.states[0].failures == 0
+        assert await get_entity(self.entity_id) is not None
+
+    async def test_zero_delay_terminates(self: Self) -> None:
+        config = AuthServerConfig.model_construct(
+            auth_token_issuer="https://auth.example.com",
+            tls_fed_metadata=[TLSFEDMetadata(remote=URL_A, jwks=self.datadir / "tls_fed_jwks.json")],
+            tls_fed_metadata_retry_interval=timedelta(0),
+            tls_fed_metadata_cache_ttl=timedelta(0),
+            tls_fed_metadata_stale_grace=timedelta(0),
+            http_client_timeout=timedelta(seconds=10),
+        )
+        patch("auth_server.tls_fed_auth.load_config", return_value=config).start()
+        self.mock_remote.return_value = None
+        assert await asyncio.wait_for(get_entity(self.entity_id), timeout=5) is None
+        # the delay floor makes the source not due again at the same instant: one fetch, not a spin
+        assert self.mock_remote.await_count == 1
+        assert await asyncio.wait_for(get_entity(self.entity_id), timeout=5) is None
+        assert self.mock_remote.await_count == 1
+
+    async def test_hanging_refresh_after_grace_does_not_block(self: Self) -> None:
+        event = asyncio.Event()
+        jws_new = self.make_jws(cache_ttl=60)
+
+        async def hang(*args: object, **kwargs: object) -> str:
+            await event.wait()
+            return jws_new
+
+        self.mock_remote.side_effect = [self.make_jws(cache_ttl=60), hang]
+        assert await get_entity(self.entity_id) is not None
+        self.now = self.t0 + timedelta(seconds=60) + GRACE + timedelta(seconds=1)
+        self.mock_remote.side_effect = hang
+        assert await asyncio.wait_for(get_entity(self.entity_id), timeout=1) is None
+        task = _cache._refresh_task
+        assert task is not None
+        assert not task.done()
+        event.set()
+        await task
+        assert await get_entity(self.entity_id) is not None
+
+    async def test_drop_log_messages_distinct(self: Self) -> None:
+        self.mock_remote.side_effect = [self.make_jws(cache_ttl=60), None]
+        assert await get_entity(self.entity_id) is not None
+        self.now = self.t0 + timedelta(seconds=60) + GRACE + timedelta(seconds=1)
+        with self.assertLogs("auth_server.tls_fed_auth", level="ERROR") as cm:
+            for _ in range(2):
+                assert await self.refresh_round() is None
+        msgs = [r.getMessage() for r in cm.records if "dropping it" in r.getMessage()]
+        assert len(msgs) == 1
+        assert "grace period elapsed" in msgs[0]
+
+        clear_tls_fed_metadata_cache()
+        self.mock_remote.side_effect = [self.make_jws(expires=timedelta(minutes=10)), None]
+        assert await get_entity(self.entity_id) is not None
+        self.now = self.t0 + timedelta(minutes=11)
+        with self.assertLogs("auth_server.tls_fed_auth", level="ERROR") as cm:
+            for _ in range(2):
+                assert await self.refresh_round() is None
+        msgs = [r.getMessage() for r in cm.records if "dropping it" in r.getMessage()]
+        assert len(msgs) == 1
+        assert "metadata expired" in msgs[0]
+
+    def test_config_grace_must_cover_retry_interval(self: Self) -> None:
+        kwargs: dict[str, Any] = {"auth_token_issuer": "https://auth.example.com"}
+        with self.assertRaises(ValidationError) as cm:
+            AuthServerConfig(
+                tls_fed_metadata_retry_interval=timedelta(minutes=2),
+                tls_fed_metadata_stale_grace=timedelta(minutes=1),
+                **kwargs,
+            )
+        assert "tls_fed_metadata_stale_grace" in str(cm.exception)
+        AuthServerConfig(
+            tls_fed_metadata_retry_interval=timedelta(minutes=1),
+            tls_fed_metadata_stale_grace=timedelta(minutes=1),
+            **kwargs,
+        )
+
+    def test_config_rejects_non_positive_durations(self: Self) -> None:
+        for name in ("tls_fed_metadata_retry_interval", "tls_fed_metadata_cache_ttl", "http_client_timeout"):
+            for value in (timedelta(0), timedelta(seconds=-1)):
+                with self.assertRaises(ValidationError):
+                    AuthServerConfig(auth_token_issuer="https://auth.example.com", **{name: value})  # type: ignore[arg-type]

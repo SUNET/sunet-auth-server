@@ -44,6 +44,7 @@ class AuthServer(FastAPI):
         config = load_config()
         super().__init__(root_path=config.application_root, lifespan=lifespan)
         init_logging(config=config)
+        logger.info(f"http client timeout: {config.http_client_timeout}")
 
         # Load flows
         self.builtin_flow: dict[FlowName, type[BaseAuthFlow]] = {
