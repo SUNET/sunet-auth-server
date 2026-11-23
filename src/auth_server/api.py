@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -36,7 +37,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         release_motor_lifespan()
-        stop_logging()
+        # Joins the log listener thread (bounded by log_stop_timeout), keep it off the event loop
+        await asyncio.to_thread(stop_logging)
 
 
 class AuthServer(FastAPI):

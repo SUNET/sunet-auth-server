@@ -3,6 +3,8 @@ import logging
 import logging.config
 import logging.handlers
 import queue
+import sys
+import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field
@@ -111,6 +113,7 @@ class DroppingQueueListener(logging.handlers.QueueListener):
         self._clock: Callable[[], float] = time.monotonic
         self._last_reported: int = 0
         self._last_report_time: float | None = None
+        self.abandoned: int = 0  # records still queued when a bounded stop gave up on the listener thread
 
     def attach(self: Self, drop_source: DroppingQueueHandler, report_interval: float) -> None:
         self.drop_source = drop_source
@@ -125,6 +128,33 @@ class DroppingQueueListener(logging.handlers.QueueListener):
         super().stop()
         if had_thread:
             self._report_drops(force=True)
+
+    def stop_bounded(self: Self, timeout: float | None) -> bool:
+        """
+        Stop the listener thread, waiting at most timeout seconds. Returns True if the thread drained and exited.
+
+        If it did not (sink stalled, or the sentinel could not be queued) the daemon thread is abandoned: no handler
+        is called from the caller's thread, the number of still queued records is stored in self.abandoned and this
+        listener is left stopped, so a later stop is a no-op and a new listener is unaffected.
+        """
+        thread = self._thread
+        if thread is None:
+            return True
+        sentinel_queued = True
+        try:
+            self.enqueue_sentinel()
+        except queue.Full:
+            sentinel_queued = False
+        else:
+            thread.join(timeout)
+        if sentinel_queued and not thread.is_alive():
+            self._thread = None
+            self._report_drops(force=True)
+            return True
+        queued: int = self.queue.qsize()  # type: ignore[attr-defined]
+        self.abandoned = max(queued - (1 if sentinel_queued else 0), 0)
+        self._thread = None
+        return False
 
     def _report_drops(self: Self, force: bool = False) -> None:
         source = self.drop_source
@@ -152,6 +182,8 @@ class DroppingQueueListener(logging.handlers.QueueListener):
 
 
 _atexit_registered = False
+DEFAULT_STOP_TIMEOUT = 2.0
+_stop_timeout = DEFAULT_STOP_TIMEOUT  # set from config.log_stop_timeout by init_logging
 
 
 def _queue_handlers() -> list[DroppingQueueHandler]:
@@ -163,17 +195,53 @@ def dropped_log_records() -> int:
     return sum(h.dropped for h in _queue_handlers())
 
 
-def stop_logging() -> None:
-    """Stop queue listeners on the root logger, flushing queued records. Safe to call repeatedly."""
+def _write_stderr(message: str) -> None:
+    try:
+        sys.__stderr__.write(message + "\n")  # type: ignore[union-attr]
+        sys.__stderr__.flush()  # type: ignore[union-attr]
+    except Exception:  # noqa: S110
+        pass
+
+
+def _warn_abandoned(count: int) -> None:
+    """Note abandoned records on the real stderr. Runs in an unjoined daemon thread: stderr may be the stalled sink."""
+    message = f"logging: abandoned {count} queued log records at shutdown (sink stalled?)"
+    try:
+        threading.Thread(target=_write_stderr, args=(message,), daemon=True, name="log-abandon-note").start()
+    except Exception:  # noqa: S110
+        pass
+
+
+def stop_logging(timeout: float | None = None) -> bool:
+    """
+    Stop queue listeners on the root logger, flushing queued records. Safe to call repeatedly.
+
+    Waits at most `timeout` seconds per listener (default: config log_stop_timeout). Returns True if everything
+    drained. Records still queued when the process dies (SIGKILL, OOM, crash) are lost, and so are records queued
+    behind a stalled sink when the timeout expires: that loss is reported once on stderr, never waited for.
+    """
+    if timeout is None:
+        timeout = _stop_timeout
+    drained = True
+    abandoned = 0
     for handler in _queue_handlers():
         listener = getattr(handler, "listener", None)
         if listener is None:
+            continue
+        if isinstance(listener, DroppingQueueListener):
+            if not listener.stop_bounded(timeout):
+                drained = False
+                abandoned += listener.abandoned
+                listener.abandoned = 0
             continue
         try:
             listener.stop()
         except queue.Full:
             # Sentinel could not be enqueued. The listener thread is a daemon thread, leave it.
-            pass
+            drained = False
+    if abandoned:
+        _warn_abandoned(abandoned)
+    return drained
 
 
 def merge_config(base_config: dict[str, Any], new_config: dict[str, Any]) -> dict[str, Any]:
@@ -203,8 +271,9 @@ def init_logging(config: AuthServerConfig) -> None:
 
     Merges optional dictConfig from settings before initializing (config key 'logging_config').
     """
-    global _atexit_registered
+    global _atexit_registered, _stop_timeout
     stop_logging()
+    _stop_timeout = config.log_stop_timeout.total_seconds()
     if not _atexit_registered:
         atexit.register(stop_logging)
         _atexit_registered = True
