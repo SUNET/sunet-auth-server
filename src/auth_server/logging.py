@@ -86,7 +86,11 @@ class DroppingQueueHandler(logging.handlers.QueueHandler):
         limit = self.max_message_length
         msg = record.msg
         if limit is not None and isinstance(msg, str) and len(msg) > limit:
-            record.msg = f"{msg[:limit]}... [truncated {len(msg) - limit} chars]"
+            # the stock prepare() also stored the full text in record.message, so both must be replaced or the
+            # queued record keeps the large string alive
+            truncated = f"{msg[:limit]}... [truncated {len(msg) - limit} chars]"
+            record.msg = truncated
+            record.message = truncated
         return record
 
     def enqueue(self: Self, record: logging.LogRecord) -> None:

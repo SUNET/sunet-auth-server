@@ -243,6 +243,18 @@ class TestLogging(LoggingTestBase):
         record = logging.LogRecord("n", logging.INFO, "p", 1, 12345678, None, None)
         self.assertEqual("12345... [truncated 3 chars]", handler.prepare(record).msg)
 
+    def test_prepare_truncates_message_attribute_too(self: Self) -> None:
+        """The queued record must not keep the full text in record.message either (memory behind a stalled sink)."""
+        handler = DroppingQueueHandler(queue.Queue(), max_message_length=100)
+        record = logging.LogRecord("n", logging.INFO, "p", 1, "x" * 1_000_000, None, None)
+        prepared = handler.prepare(record)
+        self.assertLess(len(prepared.msg), 200)
+        self.assertEqual(prepared.msg, prepared.message)
+        self.assertIsNone(prepared.exc_text)
+        self.assertIsNone(prepared.exc_info)
+        # the caller's own record is untouched (prepare works on a copy)
+        self.assertEqual(1_000_000, len(record.msg))
+
     def test_max_message_length_from_config(self: Self) -> None:
         init_logging(self._config(log_max_message_length=77, log_drop_report_interval=timedelta(seconds=5)))
         handler = _queue_handlers()[0]
