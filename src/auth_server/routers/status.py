@@ -6,6 +6,7 @@ from pymongo.errors import ConnectionFailure
 
 from auth_server.config import load_config
 from auth_server.db.client import get_motor_client
+from auth_server.logging import dropped_log_records
 from auth_server.models.status import Status, StatusResponse
 
 __author__ = "lundberg"
@@ -35,6 +36,6 @@ async def healthy() -> StatusResponse:
     checks = [_mongodb_health_check()]
     check_results = await asyncio.gather(*checks)
     if all(check_results):
-        return StatusResponse(status=Status.OK)
+        return StatusResponse(status=Status.OK, log_records_dropped=dropped_log_records())
     else:
-        return StatusResponse(status=Status.FAIL)
+        return StatusResponse(status=Status.FAIL, log_records_dropped=dropped_log_records())

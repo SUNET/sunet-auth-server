@@ -67,6 +67,8 @@ class AuthServerConfig(BaseSettings):
     log_level: str = "INFO"
     log_filters: list[LoggingFilters] = Field(default_factory=list)
     log_queue_size: int = Field(default=10000, gt=0)
+    log_max_message_length: int = Field(default=8192, gt=0)
+    log_drop_report_interval: timedelta = Field(default=timedelta(seconds=60), gt=timedelta(0))
     logging_config: dict = Field(default_factory=dict)
     host: str = Field(default="0.0.0.0")
     port: int = Field(default=8080)

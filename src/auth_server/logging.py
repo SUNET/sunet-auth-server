@@ -4,7 +4,7 @@ import logging.config
 import logging.handlers
 import queue
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field
 from pprint import pformat
 from typing import Any, Self
@@ -69,11 +69,23 @@ class DroppingQueueHandler(logging.handlers.QueueHandler):
     QueueHandler that never blocks the caller. If the queue is full the record is dropped and counted.
 
     handleError is deliberately not called: it writes to stderr synchronously, which is what the queue avoids.
+    The drop count is reported by DroppingQueueListener from the listener thread.
+
+    Messages longer than max_message_length are truncated, as the queue is bounded by record count, not bytes.
     """
 
-    def __init__(self: Self, queue: queue.Queue[Any]) -> None:
+    def __init__(self: Self, queue: queue.Queue[Any], max_message_length: int | None = None) -> None:
         super().__init__(queue)
         self.dropped: int = 0
+        self.max_message_length = max_message_length
+
+    def prepare(self: Self, record: logging.LogRecord) -> logging.LogRecord:
+        record = super().prepare(record)
+        limit = self.max_message_length
+        msg = record.msg
+        if limit is not None and isinstance(msg, str) and len(msg) > limit:
+            record.msg = f"{msg[:limit]}... [truncated {len(msg) - limit} chars]"
+        return record
 
     def enqueue(self: Self, record: logging.LogRecord) -> None:
         try:
@@ -82,11 +94,73 @@ class DroppingQueueHandler(logging.handlers.QueueHandler):
             self.dropped += 1
 
 
+class DroppingQueueListener(logging.handlers.QueueListener):
+    """
+    QueueListener that reports records dropped by its DroppingQueueHandler.
+
+    Reporting runs on the listener thread only, so a stalled sink never stalls producers. At most one synthetic
+    WARNING record is emitted per report interval, and a final one when the listener is stopped.
+    """
+
+    def __init__(
+        self: Self, queue: queue.Queue[Any], *handlers: logging.Handler, respect_handler_level: bool = False
+    ) -> None:
+        super().__init__(queue, *handlers, respect_handler_level=respect_handler_level)
+        self.drop_source: DroppingQueueHandler | None = None
+        self.report_interval: float = 60.0
+        self._clock: Callable[[], float] = time.monotonic
+        self._last_reported: int = 0
+        self._last_report_time: float | None = None
+
+    def attach(self: Self, drop_source: DroppingQueueHandler, report_interval: float) -> None:
+        self.drop_source = drop_source
+        self.report_interval = report_interval
+
+    def handle(self: Self, record: logging.LogRecord) -> None:
+        super().handle(record)
+        self._report_drops()
+
+    def stop(self: Self) -> None:
+        had_thread = self._thread is not None
+        super().stop()
+        if had_thread:
+            self._report_drops(force=True)
+
+    def _report_drops(self: Self, force: bool = False) -> None:
+        source = self.drop_source
+        if source is None:
+            return
+        total = source.dropped
+        new = total - self._last_reported
+        if new <= 0:
+            return
+        now = self._clock()
+        if not force and self._last_report_time is not None and now - self._last_report_time < self.report_interval:
+            return
+        self._last_reported = total
+        self._last_report_time = now
+        record = logging.LogRecord(
+            name=__name__,
+            level=logging.WARNING,
+            pathname=__file__,
+            lineno=0,
+            msg=f"dropped {new} log records since last report ({total} total) because the log queue was full",
+            args=None,
+            exc_info=None,
+        )
+        super().handle(record)
+
+
 _atexit_registered = False
 
 
 def _queue_handlers() -> list[DroppingQueueHandler]:
     return [h for h in logging.getLogger().handlers if isinstance(h, DroppingQueueHandler)]
+
+
+def dropped_log_records() -> int:
+    """Total number of log records dropped by the root queue handler(s) because the queue was full."""
+    return sum(h.dropped for h in _queue_handlers())
 
 
 def stop_logging() -> None:
@@ -144,6 +218,8 @@ def init_logging(config: AuthServerConfig) -> None:
     # dictConfig creates the listener (as handler.listener) but does not start it
     for handler in _queue_handlers():
         if handler.listener is not None:
+            if isinstance(handler.listener, DroppingQueueListener):
+                handler.listener.attach(handler, config.log_drop_report_interval.total_seconds())
             handler.listener.start()
     if config.debug:
         logging.debug(f"Logging config:\n{pformat(logging_config)}")
@@ -159,6 +235,7 @@ class LocalContext:
     filters: Sequence[LoggingFilters] = field(default_factory=list)  # filters to activate
     relative_time: bool = False  # use relative time as {asctime}
     queue_size: int = 10000  # max number of log records buffered for the listener thread
+    max_message_length: int = 8192  # longer formatted messages are truncated before being queued
 
     def to_dict(self: Self) -> dict[str, Any]:
         res = asdict(self)
@@ -191,6 +268,7 @@ def make_local_context(config: AuthServerConfig) -> LocalContext:
             filters=config.log_filters,
             relative_time=relative_time,
             queue_size=config.log_queue_size,
+            max_message_length=config.log_max_message_length,
         )
     except (KeyError, AttributeError) as e:
         raise ConfigurationError(f"Could not initialize logging local_context. {type(e).__name__}: {e}")
@@ -251,6 +329,8 @@ def make_dictConfig(local_context: LocalContext) -> dict[str, Any]:
             "queue": {
                 "class": "auth_server.logging.DroppingQueueHandler",
                 "handlers": ["console"],
+                "listener": "auth_server.logging.DroppingQueueListener",
+                "max_message_length": local_context.max_message_length,
                 "respect_handler_level": True,
                 # Literal int: dictConfig does not resolve cfg:// in the kwargs of the nested queue factory
                 "queue": {"()": "queue.Queue", "maxsize": local_context.queue_size},
