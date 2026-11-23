@@ -17,10 +17,13 @@ from auth_server.config import AuthServerConfig, LoggingFilters
 from auth_server.logging import (
     DroppingQueueHandler,
     DroppingQueueListener,
+    _reset_lifespan_state,
     _warn_abandoned,
+    acquire_logging,
     init_logging,
     make_dictConfig,
     make_local_context,
+    release_logging,
     stop_logging,
 )
 from auth_server.models.status import Status
@@ -38,9 +41,11 @@ class LoggingTestBase(TestCase):
         root = logging.getLogger()
         self._handlers = list(root.handlers)
         self._level = root.level
+        _reset_lifespan_state()
 
     def tearDown(self: Self) -> None:
         stop_logging()
+        _reset_lifespan_state()
         root = logging.getLogger()
         for handler in list(root.handlers):
             if handler not in self._handlers:
@@ -401,3 +406,104 @@ class TestStopBounded(LoggingTestBase):
         self.assertLess(time.monotonic() - start, 3)
         warn.assert_called_once()
         sink.gate.set()
+
+
+class _CollectHandler(logging.Handler):
+    def __init__(self: Self) -> None:
+        super().__init__()
+        self.messages: list[str] = []
+
+    def emit(self: Self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+
+class TestLoggingLifespans(LoggingTestBase):
+    def setUp(self: Self) -> None:
+        super().setUp()
+        patcher_a = patch("auth_server.api.acquire_motor_lifespan")
+        patcher_r = patch("auth_server.api.release_motor_lifespan")
+        patcher_a.start()
+        patcher_r.start()
+        self.addCleanup(patcher_a.stop)
+        self.addCleanup(patcher_r.stop)
+        self.app = FastAPI(lifespan=lifespan)
+
+    def _install_sink(self: Self) -> _CollectHandler:
+        init_logging(self._config(log_level="INFO"))
+        listener = _queue_handlers()[0].listener
+        assert listener is not None
+        sink = _CollectHandler()
+        listener.handlers = (sink,)
+        return sink
+
+    @staticmethod
+    def _wait_for(sink: _CollectHandler, message: str) -> bool:
+        for _ in range(200):
+            if message in sink.messages:
+                return True
+            time.sleep(0.01)
+        return False
+
+    @staticmethod
+    def _running() -> bool:
+        listener = _queue_handlers()[0].listener
+        assert listener is not None
+        return listener._thread is not None
+
+    def test_overlapping_lifespans(self: Self) -> None:
+        sink = self._install_sink()
+        with TestClient(self.app):
+            with TestClient(self.app):
+                pass
+            self.assertTrue(self._running())
+            logging.getLogger("test.overlap").warning("after inner")
+            self.assertTrue(self._wait_for(sink, "after inner"))
+        self.assertFalse(self._running())
+
+    def test_reenter_restarts_listener(self: Self) -> None:
+        sink = self._install_sink()
+        with TestClient(self.app):
+            pass
+        self.assertFalse(self._running())
+        with TestClient(self.app):
+            self.assertTrue(self._running())
+            logging.getLogger("test.reenter").warning("second time")
+            self.assertTrue(self._wait_for(sink, "second time"))
+
+    def test_acquire_after_abandoned_listener_reinitializes(self: Self) -> None:
+        gate = threading.Event()
+        self.addCleanup(gate.set)
+        init_logging(self._config(log_stop_timeout=timedelta(seconds=0.2), log_level="INFO"))
+        listener = _queue_handlers()[0].listener
+        assert listener is not None
+        listener.handlers = (_StallingHandler(gate),)
+        for i in range(4):
+            logging.getLogger("test.stall").warning(f"stalled {i}")
+        with patch("auth_server.logging._warn_abandoned"):
+            self.assertFalse(stop_logging(timeout=0.2))
+        self.assertEqual([], _queue_handlers())
+        gate.set()
+        stream = io.StringIO()
+        with patch("sys.stderr", stream), patch("sys.stdout", stream):
+            acquire_logging()
+            self.assertEqual(1, len(_queue_handlers()))
+            self.assertTrue(self._running())
+            logging.getLogger("test.after").warning("recovered")
+            self.assertTrue(release_logging())
+        self.assertIn("recovered", stream.getvalue())
+
+    def test_extra_release_is_harmless(self: Self) -> None:
+        init_logging(self._config())
+        self.assertTrue(release_logging())
+        self.assertTrue(release_logging())
+        acquire_logging()
+        self.assertTrue(self._running())
+        self.assertTrue(release_logging())
+        self.assertFalse(self._running())
+
+    def test_init_logging_during_lifespan_keeps_listener_running(self: Self) -> None:
+        self._install_sink()
+        with TestClient(self.app):
+            init_logging(self._config(log_level="INFO"))
+            self.assertTrue(self._running())
+        self.assertFalse(self._running())

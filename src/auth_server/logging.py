@@ -193,6 +193,9 @@ class DroppingQueueListener(logging.handlers.QueueListener):
 
 
 _atexit_registered = False
+_lifespan_lock = threading.Lock()
+_lifespan_users = 0  # number of active app lifespans, process-wide
+_last_config: AuthServerConfig | None = None  # config of the last init_logging, used to re-init after abandonment
 DEFAULT_STOP_TIMEOUT = 2.0
 _stop_timeout = DEFAULT_STOP_TIMEOUT  # set from config.log_stop_timeout by init_logging
 
@@ -277,6 +280,63 @@ def merge_config(base_config: dict[str, Any], new_config: dict[str, Any]) -> dic
     return base_config
 
 
+def _start_listeners(config: AuthServerConfig, only_stopped: bool = False) -> None:
+    """Attach the drop report source and start the listener of each root queue handler."""
+    for handler in _queue_handlers():
+        listener = handler.listener
+        if listener is None or (only_stopped and listener._thread is not None):
+            continue
+        if isinstance(listener, DroppingQueueListener):
+            listener.attach(handler, config.log_drop_report_interval.total_seconds())
+        listener.start()
+
+
+def acquire_logging() -> None:
+    """
+    Register a lifespan as a user of the process-wide logging and make sure logging is running.
+
+    Restarts stopped listeners, and re-runs init_logging when an abandoned listener was detached from root.
+    Idempotent for a running listener. Holds the lock while (re)starting, which is cheap (thread start), except
+    for the init_logging fallback which may stop a stale listener bounded by log_stop_timeout.
+    """
+    global _lifespan_users
+    with _lifespan_lock:
+        _lifespan_users += 1
+        if not _queue_handlers():
+            if _last_config is not None:
+                init_logging(_last_config)
+        elif _last_config is not None:
+            _start_listeners(_last_config, only_stopped=True)
+        else:
+            for handler in _queue_handlers():
+                if handler.listener is not None and handler.listener._thread is None:
+                    handler.listener.start()
+
+
+def release_logging() -> bool:
+    """
+    Unregister a lifespan. Only when the last user is gone, stop the process-wide listeners.
+
+    The lock is held across stop_logging (bounded by log_stop_timeout) so the "last user left" decision is atomic
+    with a concurrent acquire_logging, which waits and then restarts what was stopped. Returns True if nothing
+    was abandoned.
+    """
+    global _lifespan_users
+    with _lifespan_lock:
+        _lifespan_users = max(_lifespan_users - 1, 0)
+        if _lifespan_users > 0:
+            return True
+        return stop_logging()
+
+
+def _reset_lifespan_state() -> None:
+    """Test helper: forget lifespan users and the last config."""
+    global _lifespan_users, _last_config
+    with _lifespan_lock:
+        _lifespan_users = 0
+        _last_config = None
+
+
 def init_logging(config: AuthServerConfig) -> None:
     """
     Init logging in a Flask app using dictConfig.
@@ -285,8 +345,9 @@ def init_logging(config: AuthServerConfig) -> None:
 
     Merges optional dictConfig from settings before initializing (config key 'logging_config').
     """
-    global _atexit_registered, _stop_timeout
+    global _atexit_registered, _stop_timeout, _last_config
     stop_logging()
+    _last_config = config
     _stop_timeout = config.log_stop_timeout.total_seconds()
     if not _atexit_registered:
         atexit.register(stop_logging)
@@ -299,11 +360,7 @@ def init_logging(config: AuthServerConfig) -> None:
 
     logging.config.dictConfig(logging_config)
     # dictConfig creates the listener (as handler.listener) but does not start it
-    for handler in _queue_handlers():
-        if handler.listener is not None:
-            if isinstance(handler.listener, DroppingQueueListener):
-                handler.listener.attach(handler, config.log_drop_report_interval.total_seconds())
-            handler.listener.start()
+    _start_listeners(config)
     if config.debug:
         logging.debug(f"Logging config:\n{pformat(logging_config)}")
     logging.info("Logging configured")

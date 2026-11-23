@@ -16,7 +16,7 @@ from auth_server.context import ContextRequestRoute
 from auth_server.db.client import acquire_motor_lifespan, release_motor_lifespan
 from auth_server.errors import GNAPErrorException
 from auth_server.flows import BaseAuthFlow, CAFlow, ConfigFlow, InteractionFlow, MDQFlow, TestFlow, TLSFEDFlow
-from auth_server.logging import init_logging, stop_logging
+from auth_server.logging import acquire_logging, init_logging, release_logging
 from auth_server.middleware import JOSEMiddleware
 from auth_server.models.gnap import ErrorCode, GNAPErrorDetail, GrantResponse
 from auth_server.routers.interaction import interaction_router
@@ -33,12 +33,13 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     acquire_motor_lifespan()
+    acquire_logging()
     try:
         yield
     finally:
         release_motor_lifespan()
-        # Joins the log listener thread (bounded by log_stop_timeout), keep it off the event loop
-        await asyncio.to_thread(stop_logging)
+        # Last lifespan joins the log listener thread (bounded by log_stop_timeout), keep it off the event loop
+        await asyncio.to_thread(release_logging)
 
 
 class AuthServer(FastAPI):
