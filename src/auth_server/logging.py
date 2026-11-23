@@ -101,7 +101,7 @@ class DroppingQueueListener(logging.handlers.QueueListener):
     QueueListener that reports records dropped by its DroppingQueueHandler.
 
     Reporting runs on the listener thread only, so a stalled sink never stalls producers. At most one synthetic
-    WARNING record is emitted per report interval, and a final one when the listener is stopped.
+    WARNING record is emitted per report interval, and a final one by the listener thread just before it exits.
     """
 
     def __init__(
@@ -123,10 +123,12 @@ class DroppingQueueListener(logging.handlers.QueueListener):
         super().handle(record)
         self._report_drops()
 
-    def stop(self: Self) -> None:
-        had_thread = self._thread is not None
-        super().stop()
-        if had_thread:
+    def _monitor(self: Self) -> None:
+        # Runs on the listener thread. The final drop report is emitted here, after the sentinel was consumed and
+        # before the thread exits, so a stalled sink can only delay the join that the stop timeout already bounds.
+        try:
+            super()._monitor()  # type: ignore[misc]  # private stdlib method, not in typeshed
+        finally:
             self._report_drops(force=True)
 
     def stop_bounded(self: Self, timeout: float | None) -> bool:
@@ -160,7 +162,6 @@ class DroppingQueueListener(logging.handlers.QueueListener):
             thread.join(timeout)
         if sentinel_queued and not thread.is_alive():
             self._thread = None
-            self._report_drops(force=True)
             return True
         queued: int = self.queue.qsize()  # type: ignore[attr-defined]
         self.abandoned = max(queued - (1 if sentinel_queued else 0), 0) + drained

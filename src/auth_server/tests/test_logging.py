@@ -281,10 +281,12 @@ class _StallingHandler(logging.Handler):
         self.gate = gate
         self.entered = threading.Event()
         self.records: list[str] = []
+        self.only_prefix: str | None = None  # when set, only messages starting with this prefix stall
 
     def emit(self: Self, record: logging.LogRecord) -> None:
-        self.entered.set()
-        self.gate.wait(30)
+        if self.only_prefix is None or record.getMessage().startswith(self.only_prefix):
+            self.entered.set()
+            self.gate.wait(30)
         self.records.append(record.getMessage())
 
 
@@ -314,6 +316,26 @@ class TestStopBounded(LoggingTestBase):
         # abandoned listener: second stop is a no-op
         self.assertTrue(stop_logging())
         sink.gate.set()
+
+    def test_stall_on_final_drop_report_is_bounded(self: Self) -> None:
+        """The final drop report runs on the listener thread, so a sink that stalls on it cannot hang the stop."""
+        gate = threading.Event()
+        self.addCleanup(gate.set)
+        init_logging(self._config(log_stop_timeout=timedelta(seconds=0.3)))
+        handler = _queue_handlers()[0]
+        listener = handler.listener
+        assert isinstance(listener, DroppingQueueListener)
+        sink = _StallingHandler(gate)
+        sink.only_prefix = "dropped"  # records are delivered normally, only the drop report stalls
+        listener.handlers = (sink,)
+        listener._last_report_time = time.monotonic()  # no report before the final one
+        handler.dropped = 3
+        with patch("auth_server.logging._warn_abandoned"):
+            start = time.monotonic()
+            self.assertFalse(stop_logging(timeout=0.3))
+            self.assertLess(time.monotonic() - start, 2)
+        self.assertTrue(sink.entered.wait(5))
+        gate.set()
 
     def test_abandon_note_written_to_stderr(self: Self) -> None:
         stream = io.StringIO()
