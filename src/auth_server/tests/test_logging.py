@@ -355,8 +355,36 @@ class TestStopBounded(LoggingTestBase):
             logging.getLogger("test.full2").warning(f"fill {i}")
         with patch("auth_server.logging._warn_abandoned") as warn:
             self.assertFalse(stop_logging(timeout=0.2))
+        # two queued records were dropped to make room for the sentinel, counted as abandoned
         warn.assert_called_once_with(2)
+        # the abandoned listener's handler is detached so it can not receive new records
+        self.assertEqual(_queue_handlers(), [])
         gate.set()
+
+    def test_reinit_after_full_queue_abandonment(self: Self) -> None:
+        gate = threading.Event()
+        self.addCleanup(gate.set)
+        init_logging(self._config(log_queue_size=2))
+        old_handler = _queue_handlers()[0]
+        listener = old_handler.listener
+        assert isinstance(listener, DroppingQueueListener)
+        sink = _StallingHandler(gate)
+        listener.handlers = (sink,)
+        logging.getLogger("test.full3").warning("first")
+        self.assertTrue(sink.entered.wait(5))
+        for i in range(5):
+            logging.getLogger("test.full3").warning(f"fill {i}")
+        with patch("auth_server.logging._warn_abandoned"):
+            self.assertFalse(stop_logging(timeout=0.2))
+        # release the stalled sink before re-init: dictConfig takes every handler lock and would wait on it
+        gate.set()
+        stream = io.StringIO()
+        with patch("sys.stderr", stream), patch("sys.stdout", stream):
+            init_logging(self._config(testing=True))
+            self.assertNotIn(old_handler, logging.getLogger().handlers)
+            logging.getLogger("test.after").warning("fresh record")
+            self.assertTrue(stop_logging())
+        self.assertIn("fresh record", stream.getvalue())
 
     def test_lifespan_exit_bounded(self: Self) -> None:
         sink = self._stalled()

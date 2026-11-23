@@ -141,18 +141,29 @@ class DroppingQueueListener(logging.handlers.QueueListener):
         if thread is None:
             return True
         sentinel_queued = True
+        drained = 0
         try:
             self.enqueue_sentinel()
         except queue.Full:
-            sentinel_queued = False
-        else:
+            # make room for the sentinel by dropping a couple of queued records, counted as abandoned
+            for _ in range(2):
+                try:
+                    self.queue.get_nowait()  # type: ignore[attr-defined]
+                    drained += 1
+                except queue.Empty:
+                    break
+            try:
+                self.enqueue_sentinel()
+            except queue.Full:
+                sentinel_queued = False
+        if sentinel_queued:
             thread.join(timeout)
         if sentinel_queued and not thread.is_alive():
             self._thread = None
             self._report_drops(force=True)
             return True
         queued: int = self.queue.qsize()  # type: ignore[attr-defined]
-        self.abandoned = max(queued - (1 if sentinel_queued else 0), 0)
+        self.abandoned = max(queued - (1 if sentinel_queued else 0), 0) + drained
         self._thread = None
         return False
 
@@ -233,6 +244,9 @@ def stop_logging(timeout: float | None = None) -> bool:
                 drained = False
                 abandoned += listener.abandoned
                 listener.abandoned = 0
+                # detach the handler so nothing new is queued for the abandoned daemon thread. A re-init then
+                # builds a fresh handler, listener and queue.
+                logging.getLogger().removeHandler(handler)
             continue
         try:
             listener.stop()

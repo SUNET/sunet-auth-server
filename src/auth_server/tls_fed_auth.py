@@ -5,7 +5,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from uuid import uuid4
 
 import aiohttp
 import anyio
@@ -28,6 +27,8 @@ logger = logging.getLogger(__name__)
 # upper bound on refresh rounds a single call awaits, guards against zero length refresh delays
 MAX_REFRESH_ROUNDS = 3
 MIN_REFRESH_DELAY = timedelta(seconds=1)
+# a previously loaded source that is no longer usable ignores refresh_at, at most one fetch per interval and source
+ON_DEMAND_REFRESH_MIN_INTERVAL = timedelta(seconds=10)
 
 
 class MetadataSource(BaseModel):
@@ -219,17 +220,6 @@ def _build_issuer_metadata(metadata_source: MetadataSource, now: datetime, cache
     )
 
 
-async def load_metadata(metadata_sources: list[MetadataSource], cache_ttl: timedelta) -> Metadata:
-    now = utc_now()
-    loaded_metadata: dict[str, IssuerMetadata] = {}
-    for metadata_source in metadata_sources:
-        key = metadata_source.issuer
-        if key is None:
-            key = str(uuid4())
-        loaded_metadata[key] = _build_issuer_metadata(metadata_source, now=now, cache_ttl=cache_ttl)
-    return Metadata(issuer_metadata=loaded_metadata)
-
-
 async def _load_source(source: TLSFEDMetadata, cache_ttl: timedelta, timeout: timedelta) -> IssuerMetadata | None:  # noqa: ASYNC109
     raw_jws = None
     jwks = await load_jwks(source.jwks)
@@ -258,6 +248,7 @@ async def _load_source(source: TLSFEDMetadata, cache_ttl: timedelta, timeout: ti
 class _SourceState:
     issuer_metadata: IssuerMetadata | None = None  # last good data
     refresh_at: datetime = datetime.min.replace(tzinfo=UTC)  # due immediately
+    last_attempt_at: datetime | None = None  # start of the latest refresh attempt, success or not
     failures: int = 0
     stale_warned: bool = False  # stale-serving warning already logged this refresh cycle
     dropped_logged: bool = False  # grace-elapsed error already logged this refresh cycle
@@ -265,7 +256,15 @@ class _SourceState:
 
 @dataclass
 class _TLSFedMetadataCache:
-    states: dict[int, _SourceState] = field(default_factory=dict)
+    """
+    Per source refresh state, keyed by source identity (str(remote or local)) so reordering the configured sources
+    does not swap state between them. Sources with identical identity get the list index appended.
+
+    The cache is module-global and bound to a single event loop. A config change (sources added, removed or edited)
+    requires clear_tls_fed_metadata_cache(); states of sources missing from the config are also pruned on use.
+    """
+
+    states: dict[str, _SourceState] = field(default_factory=dict)
     _refresh_task: asyncio.Task[None] | None = None
 
     def reset(self) -> None:
@@ -279,15 +278,45 @@ class _TLSFedMetadataCache:
                 # task belongs to a closed event loop
                 pass
 
-    def _state(self, index: int) -> _SourceState:
-        return self.states.setdefault(index, _SourceState())
+    @staticmethod
+    def sources(config: AuthServerConfig) -> dict[str, TLSFEDMetadata]:
+        result: dict[str, TLSFEDMetadata] = {}
+        for i, source in enumerate(config.tls_fed_metadata):
+            key = str(source.remote or source.local)
+            if key in result:
+                key = f"{key}#{i}"
+                while key in result:
+                    key = f"{key}#{i}"
+            result[key] = source
+        return result
 
-    def due_sources(self, config: AuthServerConfig, now: datetime) -> list[int]:
-        return [i for i in range(len(config.tls_fed_metadata)) if now >= self._state(i).refresh_at]
+    def _state(self, key: str) -> _SourceState:
+        return self.states.setdefault(key, _SourceState())
 
-    def is_usable(self, index: int, now: datetime, config: AuthServerConfig) -> bool:
+    def prune(self, config: AuthServerConfig) -> None:
+        keys = self.sources(config).keys()
+        for key in [k for k in self.states if k not in keys]:
+            del self.states[key]
+
+    def due_sources(self, config: AuthServerConfig, now: datetime) -> list[str]:
+        self.prune(config)
+        due = []
+        for key in self.sources(config):
+            state = self._state(key)
+            if now >= state.refresh_at:
+                due.append(key)
+            elif (
+                state.issuer_metadata is not None
+                and not self.is_usable(key, now, config)
+                and (state.last_attempt_at is None or now - state.last_attempt_at >= ON_DEMAND_REFRESH_MIN_INTERVAL)
+            ):
+                # clients are rejected for lack of data, do not wait out the backoff of an earlier failure
+                due.append(key)
+        return due
+
+    def is_usable(self, key: str, now: datetime, config: AuthServerConfig) -> bool:
         """Data may be used for decisions until renew_at, then only for a short grace while refreshes fail."""
-        issuer_metadata = self._state(index).issuer_metadata
+        issuer_metadata = self._state(key).issuer_metadata
         if issuer_metadata is None or now > issuer_metadata.expires_at:
             return False
         if now <= issuer_metadata.renew_at:
@@ -295,47 +324,53 @@ class _TLSFedMetadataCache:
         return now <= issuer_metadata.renew_at + config.tls_fed_metadata_stale_grace
 
     def build_metadata(self, config: AuthServerConfig, now: datetime) -> Metadata:
-        """Only sources that are usable per is_usable are included, so stale data can not outlive the grace."""
+        """Only sources that are usable per is_usable and currently valid are included."""
         loaded: dict[str, IssuerMetadata] = {}
-        for i in range(len(config.tls_fed_metadata)):
-            state = self._state(i)
+        for key in self.sources(config):
+            state = self._state(key)
             issuer_metadata = state.issuer_metadata
             if issuer_metadata is None:
                 continue
-            if not self.is_usable(i, now, config):
+            if not self.is_usable(key, now, config):
                 if not state.dropped_logged:
                     state.dropped_logged = True
                     if now > issuer_metadata.expires_at:
                         logger.error(
-                            f"tls fed metadata source {i} ({issuer_metadata.issuer}) metadata expired at "
+                            f"tls fed metadata source {key} ({issuer_metadata.issuer}) metadata expired at "
                             f"{issuer_metadata.expires_at}, dropping it"
                         )
                     else:
                         logger.error(
-                            f"tls fed metadata source {i} ({issuer_metadata.issuer}) grace period elapsed without a "
+                            f"tls fed metadata source {key} ({issuer_metadata.issuer}) grace period elapsed without a "
                             f"successful refresh, dropping it (renew_at {issuer_metadata.renew_at}, "
                             f"grace ended {issuer_metadata.renew_at + config.tls_fed_metadata_stale_grace})"
                         )
                 continue
+            if not issuer_metadata.issued_at <= now <= issuer_metadata.expires_at:
+                logger.debug(f"tls fed metadata source {key} ({issuer_metadata.issuer}) is not valid at {now}")
+                continue
             if now > issuer_metadata.renew_at and not state.stale_warned:
                 state.stale_warned = True
                 logger.warning(
-                    f"serving stale tls fed metadata for source {i} ({issuer_metadata.issuer}), renew_at "
+                    f"serving stale tls fed metadata for source {key} ({issuer_metadata.issuer}), renew_at "
                     f"{issuer_metadata.renew_at} passed and refresh failing, "
                     f"grace ends {issuer_metadata.renew_at + config.tls_fed_metadata_stale_grace}"
                 )
             loaded[issuer_metadata.issuer] = issuer_metadata
         return Metadata(issuer_metadata=loaded)
 
-    async def _refresh_source(self, index: int, config: AuthServerConfig) -> None:
-        source = config.tls_fed_metadata[index]
-        state = self._state(index)
+    async def _refresh_source(self, key: str, config: AuthServerConfig) -> None:
+        source = self.sources(config).get(key)
+        if source is None:
+            return
+        state = self._state(key)
+        state.last_attempt_at = utc_now()
         try:
             result = await _load_source(
                 source, cache_ttl=config.tls_fed_metadata_cache_ttl, timeout=config.http_client_timeout
             )
         except Exception:
-            logger.exception(f"unexpected error loading tls fed metadata source {index}")
+            logger.exception(f"unexpected error loading tls fed metadata source {key}")
             result = None
         now = utc_now()
         if result is not None:
@@ -358,16 +393,16 @@ class _TLSFedMetadataCache:
         state.refresh_at = now + delay
         state.failures += 1
         logger.warning(
-            f"failed to refresh tls fed metadata source {index}, keeping last good data, retrying at {state.refresh_at}"
+            f"failed to refresh tls fed metadata source {key}, keeping last good data, retrying at {state.refresh_at}"
         )
 
-    async def _refresh(self, indices: list[int], config: AuthServerConfig) -> None:
+    async def _refresh(self, keys: list[str], config: AuthServerConfig) -> None:
         try:
-            await asyncio.gather(*[self._refresh_source(i, config) for i in indices])
+            await asyncio.gather(*[self._refresh_source(k, config) for k in keys])
         except Exception:
             logger.exception("tls fed metadata refresh failed")
 
-    def ensure_task(self, indices: list[int], config: AuthServerConfig) -> asyncio.Task[None]:
+    def ensure_task(self, keys: list[str], config: AuthServerConfig) -> asyncio.Task[None]:
         task = self._refresh_task
         if task is not None:
             try:
@@ -380,7 +415,7 @@ class _TLSFedMetadataCache:
                 usable = False
             if usable:
                 return task
-        task = asyncio.create_task(self._refresh(indices, config))
+        task = asyncio.create_task(self._refresh(keys, config))
         self._refresh_task = task
         return task
 
@@ -402,12 +437,20 @@ async def get_tls_fed_metadata() -> Metadata:
         task = _cache.ensure_task(due, config)
         # only block when a due source has never loaded (cold start), everything else refreshes in the background
         # and is served or dropped according to is_usable
-        if all(_cache.states[i].issuer_metadata is not None for i in due):
+        if all(_cache._state(k).issuer_metadata is not None for k in due):
             break
         try:
             await asyncio.wait_for(asyncio.shield(task), timeout=config.http_client_timeout.total_seconds())
         except TimeoutError:
             logger.warning("timed out waiting for initial tls fed metadata load")
+            break
+        except asyncio.CancelledError:
+            current = asyncio.current_task()
+            if current is not None and current.cancelling() > 0:
+                raise  # this request was cancelled
+            if not task.cancelled():
+                raise
+            # the refresh task was cancelled by clear_tls_fed_metadata_cache, serve what the cache holds now
             break
     return _cache.build_metadata(config, utc_now())
 
