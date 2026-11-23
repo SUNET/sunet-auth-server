@@ -218,7 +218,8 @@ class TestLogging(LoggingTestBase):
         self.assertIn("INFO|test.manual|short\n", lines)
         self.assertIn("INFO|test.manual|fmt arg\n", lines)
         self.assertIn("Traceback (most recent call last)", lines)
-        self.assertIn("[truncated 106 chars]", lines)
+        # the traceback length depends on the absolute path of the test file, so do not hard-code the char count
+        self.assertRegex(lines, r"(?s)Traceback \(most recent call last\).*\.\.\. \[truncated \d+ chars\]")
         self.assertIn("12345", lines)
 
     def test_truncation_keeps_traceback_below_limit(self: Self) -> None:
