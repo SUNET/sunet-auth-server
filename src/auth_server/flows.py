@@ -659,9 +659,7 @@ class MDQFlow(MetadataFlow):
 
         # Look for a key using mdq
         logger.info("Trying to load key from mdq")
-        self.state.mdq_data = await xml_mdq_get(
-            entity_id=key_id, mdq_url=self.config.mdq_server, timeout=self.config.http_client_timeout
-        )
+        self.state.mdq_data = await xml_mdq_get(entity_id=key_id, mdq_url=self.config.mdq_server)
         client_keys = await mdq_data_to_keys(self.state.mdq_data)
 
         if not client_keys:

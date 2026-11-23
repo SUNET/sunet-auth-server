@@ -69,7 +69,8 @@ async def load_jwks(path: Path) -> jwk.JWKSet | None:
     return None
 
 
-async def get_remote_metadata(url: str, timeout: timedelta) -> str | None:  # noqa: ASYNC109
+async def get_remote_metadata(url: str) -> str | None:
+    timeout = load_config().http_client_timeout
     # Get remote metadata jws
     logger.debug(f"Trying {url}")
     try:
@@ -220,7 +221,7 @@ def _build_issuer_metadata(metadata_source: MetadataSource, now: datetime, cache
     )
 
 
-async def _load_source(source: TLSFEDMetadata, cache_ttl: timedelta, timeout: timedelta) -> IssuerMetadata | None:  # noqa: ASYNC109
+async def _load_source(source: TLSFEDMetadata, cache_ttl: timedelta) -> IssuerMetadata | None:
     raw_jws = None
     jwks = await load_jwks(source.jwks)
     # Try local source if it exists
@@ -231,7 +232,7 @@ async def _load_source(source: TLSFEDMetadata, cache_ttl: timedelta, timeout: ti
     # if there is no local source try remote source if it exists
     elif source.remote is not None:
         logger.info(f"loading metadata from: {source.remote}")
-        raw_jws = await get_remote_metadata(str(source.remote), timeout=timeout)
+        raw_jws = await get_remote_metadata(str(source.remote))
         logger.debug(f"{source.remote} returned jws: {raw_jws}")
     metadata_source = await load_metadata_source(raw_jws=raw_jws, jwks=jwks, source=source)
     if metadata_source is None:
@@ -303,14 +304,14 @@ class _TLSFedMetadataCache:
         due = []
         for key in self.sources(config):
             state = self._state(key)
-            if now >= state.refresh_at:
-                due.append(key)
-            elif (
+            # a source is also due when clients are rejected for lack of data: do not wait out the backoff of an
+            # earlier failure
+            on_demand = (
                 state.issuer_metadata is not None
                 and not self.is_usable(key, now, config)
                 and (state.last_attempt_at is None or now - state.last_attempt_at >= ON_DEMAND_REFRESH_MIN_INTERVAL)
-            ):
-                # clients are rejected for lack of data, do not wait out the backoff of an earlier failure
+            )
+            if now >= state.refresh_at or on_demand:
                 due.append(key)
         return due
 
@@ -366,9 +367,7 @@ class _TLSFedMetadataCache:
         state = self._state(key)
         state.last_attempt_at = utc_now()
         try:
-            result = await _load_source(
-                source, cache_ttl=config.tls_fed_metadata_cache_ttl, timeout=config.http_client_timeout
-            )
+            result = await _load_source(source, cache_ttl=config.tls_fed_metadata_cache_ttl)
         except Exception:
             logger.exception(f"unexpected error loading tls fed metadata source {key}")
             result = None

@@ -3,7 +3,7 @@ import json
 import logging
 from base64 import urlsafe_b64encode
 from collections.abc import Callable, Generator, Mapping, Sequence
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Any
 from uuid import uuid4
@@ -158,8 +158,8 @@ async def push_interaction_finish(
     url: str,
     interaction_hash: str,
     interaction_reference: str,
-    timeout: timedelta,  # noqa: ASYNC109
 ) -> None:
+    timeout = load_config().http_client_timeout
     logger.debug(f"Trying interaction PUSH finish to {url}")
     body = {"hash": interaction_hash, "interact_ref": interaction_reference}
     try:
@@ -169,6 +169,6 @@ async def push_interaction_finish(
                 logger.error(f"PUSH finish to {url} returned {response.status}")
                 return None
     except (aiohttp.ClientError, TimeoutError) as e:
-        logger.error(f"PUSH finish to {url} failed: {e!r}")
+        logger.exception(f"PUSH finish to {url} failed: {e!r}")
         return None
     logger.info(f"Successfully delivered interaction PUSH finish to {url}")

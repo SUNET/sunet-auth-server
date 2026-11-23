@@ -48,6 +48,13 @@ FAILURES: list[tuple[str, dict[str, Any]]] = [
 
 
 class TestHttpClients(IsolatedAsyncioTestCase):
+    def setUp(self: Self) -> None:
+        config = AuthServerConfig(auth_token_issuer="https://auth.example.com", http_client_timeout=TIMEOUT)
+        for module in ("mdq", "tls_fed_auth", "utils"):
+            patcher = mock.patch(f"auth_server.{module}.load_config", return_value=config)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
     async def _check_failures(self: Self, method: str, call: Callable[[], Any], expected: object) -> None:
         for name, kwargs in FAILURES:
             with self.subTest(failure=name), patched_session(method, **kwargs) as (_, close_mock, init_kwargs):
@@ -65,31 +72,29 @@ class TestHttpClients(IsolatedAsyncioTestCase):
 
     async def test_xml_mdq_get_failures(self: Self) -> None:
         await self._check_failures(
-            "get", lambda: xml_mdq_get("https://rp.example.com", "http://mdq.example.com", TIMEOUT), MDQData()
+            "get", lambda: xml_mdq_get("https://rp.example.com", "http://mdq.example.com"), MDQData()
         )
 
     async def test_xml_mdq_get_success_closes_session(self: Self) -> None:
         # unparsable xml gives empty MDQData but the session must still be closed once
         result = await self._check_success(
-            "get", lambda: xml_mdq_get("https://rp.example.com", "http://mdq.example.com", TIMEOUT), b"<a"
+            "get", lambda: xml_mdq_get("https://rp.example.com", "http://mdq.example.com"), b"<a"
         )
         assert result == MDQData()
 
     async def test_get_remote_metadata_failures(self: Self) -> None:
-        await self._check_failures("get", lambda: get_remote_metadata("http://example.com/md", TIMEOUT), None)
+        await self._check_failures("get", lambda: get_remote_metadata("http://example.com/md"), None)
 
     async def test_get_remote_metadata_success(self: Self) -> None:
-        result = await self._check_success("get", lambda: get_remote_metadata("http://example.com/md", TIMEOUT), b"jws")
+        result = await self._check_success("get", lambda: get_remote_metadata("http://example.com/md"), b"jws")
         assert result == "jws"
 
     async def test_push_interaction_finish_failures(self: Self) -> None:
-        await self._check_failures(
-            "post", lambda: push_interaction_finish("http://example.com/p", "h", "r", TIMEOUT), None
-        )
+        await self._check_failures("post", lambda: push_interaction_finish("http://example.com/p", "h", "r"), None)
 
     async def test_push_interaction_finish_success(self: Self) -> None:
         result = await self._check_success(
-            "post", lambda: push_interaction_finish("http://example.com/p", "h", "r", TIMEOUT), b""
+            "post", lambda: push_interaction_finish("http://example.com/p", "h", "r"), b""
         )
         assert result is None
 

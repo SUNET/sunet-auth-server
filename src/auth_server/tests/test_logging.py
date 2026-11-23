@@ -398,7 +398,7 @@ class TestStopBounded(LoggingTestBase):
         # two queued records were dropped to make room for the sentinel, counted as abandoned
         warn.assert_called_once_with(2)
         # the abandoned listener's handler is detached so it can not receive new records
-        self.assertEqual(_queue_handlers(), [])
+        self.assertEqual([], _queue_handlers())
         gate.set()
 
     def test_reinit_after_full_queue_abandonment(self: Self) -> None:

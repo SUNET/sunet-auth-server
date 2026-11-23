@@ -1,7 +1,6 @@
 import logging
 from collections import OrderedDict
 from collections import OrderedDict as _OrderedDict
-from datetime import timedelta
 from enum import StrEnum
 from pyexpat import ExpatError
 from typing import Any, Self
@@ -13,6 +12,7 @@ from cryptography.x509 import Certificate
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 
 from auth_server.cert_utils import load_pem_from_str, rfc8705_fingerprint, serialize_certificate
+from auth_server.config import load_config
 from auth_server.models.gnap import Key, Proof, ProofMethod
 from auth_server.utils import get_values, hash_with
 
@@ -54,7 +54,8 @@ class MDQData(MDQBase):
     metadata: OrderedDict = Field(default_factory=_OrderedDict)
 
 
-async def xml_mdq_get(entity_id: str, mdq_url: str, timeout: timedelta) -> MDQData:  # noqa: ASYNC109
+async def xml_mdq_get(entity_id: str, mdq_url: str) -> MDQData:
+    timeout = load_config().http_client_timeout
     # SHA1 hash and create hex representation of entity id
     entity_id_hash = hash_with(SHA1(), entity_id.encode())
     identifier = f"{{sha1}}{entity_id_hash.hex()}"
@@ -72,7 +73,7 @@ async def xml_mdq_get(entity_id: str, mdq_url: str, timeout: timedelta) -> MDQDa
                 return MDQData()
             xml = await response.text()
     except (aiohttp.ClientError, TimeoutError) as e:
-        logger.error(f"{url} failed: {e!r}")
+        logger.exception(f"{url} failed: {e!r}")
         return MDQData()
 
     # Parse the xml to a OrderedDict and grab the certs and their use
