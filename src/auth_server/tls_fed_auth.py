@@ -450,19 +450,17 @@ def _schedule_refresh(config: AuthServerConfig, now: datetime) -> asyncio.Task[N
 
 async def _wait_for_refresh(task: asyncio.Task[None], config: AuthServerConfig) -> bool:
     """Wait for a cold start refresh, bounded by http_client_timeout. Returns False when waiting should stop."""
-    try:
-        await asyncio.wait_for(asyncio.shield(task), timeout=config.http_client_timeout.total_seconds())
-    except TimeoutError:
+    # asyncio.wait neither cancels the shared task on timeout or caller cancellation, nor raises when the task itself
+    # was cancelled (clear_tls_fed_metadata_cache): it just reports it as done. Cancelling this request still raises
+    # CancelledError here, which is deliberately not caught.
+    done, _ = await asyncio.wait({task}, timeout=config.http_client_timeout.total_seconds())
+    if not done:
         logger.warning("timed out waiting for initial tls fed metadata load")
         return False
-    except asyncio.CancelledError:
-        current = asyncio.current_task()
-        if current is not None and current.cancelling() > 0:
-            raise  # this request was cancelled
-        if not task.cancelled():
-            raise
+    if task.cancelled():
         # the refresh task was cancelled by clear_tls_fed_metadata_cache, serve what the cache holds now
         return False
+    task.exception()  # mark as retrieved, _refresh logs its own failures
     return True
 
 

@@ -111,13 +111,14 @@ def _unregister_handlers(handlers: Sequence[logging.Handler]) -> None:
     """
     try:
         with logging._lock:  # type: ignore[attr-defined]
+            drop = {id(handler) for handler in handlers}
+            # in place, other code holds a reference to the list itself; dead weakrefs (None) are kept
+            logging._handlerList[:] = [  # type: ignore[attr-defined]
+                ref
+                for ref in logging._handlerList  # type: ignore[attr-defined]
+                if id(ref()) not in drop
+            ]
             for handler in handlers:
-                for ref in list(logging._handlerList):  # type: ignore[attr-defined]
-                    if ref() is handler:
-                        try:
-                            logging._handlerList.remove(ref)  # type: ignore[attr-defined]
-                        except ValueError:
-                            pass
                 name = getattr(handler, "name", None)
                 if name is not None and logging._handlers.get(name) is handler:  # type: ignore[attr-defined]
                     del logging._handlers[name]  # type: ignore[attr-defined]
