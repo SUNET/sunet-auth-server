@@ -243,6 +243,56 @@ def dropped_log_records() -> int:
     return sum(h.dropped for h in _queue_handlers())
 
 
+class UnbufferedStreamHandler(logging.Handler):
+    """
+    Console handler that writes with os.write on the stream's file descriptor.
+
+    A stock StreamHandler holds the stream's BufferedWriter lock while it blocks on a full pipe. If the listener
+    thread is abandoned in that state, interpreter finalization can not flush sys.stderr and hangs or aborts.
+    os.write takes no Python level lock. Streams without a descriptor (StringIO, captured streams) use a normal
+    write and flush.
+    """
+
+    def __init__(self: Self, stream: Any = None) -> None:  # noqa: ANN401
+        super().__init__()
+        self.stream = stream if stream is not None else sys.stderr
+
+    def emit(self: Self, record: logging.LogRecord) -> None:
+        try:
+            msg = self.format(record) + "\n"
+            try:
+                fd = self.stream.fileno()
+            except (AttributeError, OSError, ValueError):  # io.UnsupportedOperation is an OSError
+                self.stream.write(msg)
+                self.stream.flush()
+                return
+            encoding = getattr(self.stream, "encoding", None) or "utf-8"
+            try:
+                data = msg.encode(encoding, errors="backslashreplace")
+            except LookupError:
+                data = msg.encode("utf-8", errors="backslashreplace")
+            view = memoryview(data)
+            while view:
+                try:
+                    written = os.write(fd, view)
+                except BlockingIOError:
+                    time.sleep(0.005)
+                    continue
+                except InterruptedError:
+                    continue
+                view = view[written:]
+        except Exception:  # noqa: BLE001
+            # handleError would print through sys.stderr and take the lock this handler avoids
+            return
+
+    def flush(self: Self) -> None:
+        return
+
+    def close(self: Self) -> None:
+        # the stream is not ours to close
+        super().close()
+
+
 def _write_stderr(message: str) -> None:
     """
     Write one line to the real stderr, bypassing its Python level buffer.
@@ -511,7 +561,7 @@ def make_dictConfig(local_context: LocalContext) -> dict[str, Any]:
         # Handlers
         "handlers": {
             "console": {
-                "class": "logging.StreamHandler",
+                "class": "auth_server.logging.UnbufferedStreamHandler",
                 "level": "cfg://local_context.level",
                 "formatter": "default",
                 "filters": local_context.filters,

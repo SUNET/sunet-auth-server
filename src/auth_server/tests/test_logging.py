@@ -22,6 +22,7 @@ from auth_server.config import AuthServerConfig, LoggingFilters
 from auth_server.logging import (
     DroppingQueueHandler,
     DroppingQueueListener,
+    UnbufferedStreamHandler,
     _reset_lifespan_state,
     _warn_abandoned,
     acquire_logging,
@@ -447,6 +448,49 @@ assert stop_logging(timeout=0.3) is False
         self.assertLess(time.monotonic() - start, 10, result.stderr)
         self.assertEqual(0, result.returncode, result.stderr)
 
+    def test_process_exit_with_full_stderr_pipe(self: Self) -> None:
+        script = """
+import logging
+import time
+from datetime import timedelta
+from auth_server.config import AuthServerConfig
+from auth_server.logging import init_logging, stop_logging
+init_logging(
+    AuthServerConfig(
+        auth_token_issuer="x",
+        log_stop_timeout=timedelta(seconds=0.3),
+        log_level="INFO",
+        log_max_message_length=20000,
+    )
+)
+for i in range(40):
+    logging.getLogger("child").warning("x" * 8000)
+time.sleep(0.5)
+assert stop_logging(timeout=0.3) is False
+"""
+        src = str(Path(auth_server.__file__).parent.parent)
+        env = {**os.environ, "PYTHONPATH": src}
+        # the pipe is deliberately not read until the child has exited
+        p = subprocess.Popen(  # noqa: S603
+            [sys.executable, "-c", script], stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, env=env
+        )
+        try:
+            try:
+                returncode = p.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                p.kill()
+                p.wait()
+                self.fail("child did not exit with a full stderr pipe")
+            assert p.stderr is not None
+            err = p.stderr.read(1 << 20)
+            self.assertEqual(0, returncode, err[-2000:])
+        finally:
+            if p.poll() is None:
+                p.kill()
+                p.wait()
+            if p.stderr is not None:
+                p.stderr.close()
+
     def test_normal_path_returns_true(self: Self) -> None:
         stream = io.StringIO()
         with patch("sys.stderr", stream), patch("sys.stdout", stream):
@@ -514,6 +558,108 @@ assert stop_logging(timeout=0.3) is False
         self.assertLess(time.monotonic() - start, 3)
         warn.assert_called_once()
         sink.gate.set()
+
+
+class _NoWriteStream:
+    """Stream whose buffered write path must never be used when it has a descriptor"""
+
+    def __init__(self: Self, fd: int, encoding: str = "utf-8") -> None:
+        self._fd = fd
+        self.encoding = encoding
+
+    def fileno(self: Self) -> int:
+        return self._fd
+
+    def write(self: Self, data: str) -> int:
+        raise AssertionError("buffered write used")
+
+    def flush(self: Self) -> None:
+        raise AssertionError("buffered flush used")
+
+
+class TestUnbufferedStreamHandler(TestCase):
+    def _record(self: Self, msg: str = "hello") -> logging.LogRecord:
+        return logging.LogRecord("t", logging.INFO, __file__, 1, msg, None, None)
+
+    def _handler(self: Self, stream: Any) -> UnbufferedStreamHandler:  # noqa: ANN401
+        handler = UnbufferedStreamHandler(stream)
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        return handler
+
+    def test_writes_to_fd_without_buffered_writer(self: Self) -> None:
+        r, w = os.pipe()
+        self.addCleanup(os.close, r)
+        self.addCleanup(os.close, w)
+        self._handler(_NoWriteStream(w)).emit(self._record("hello"))
+        self.assertEqual(b"hello\n", os.read(r, 100))
+
+    def test_partial_writes(self: Self) -> None:
+        real_write = os.write
+        calls: list[int] = []
+
+        def short_write(fd: int, data: Any) -> int:  # noqa: ANN401
+            n = real_write(fd, bytes(data)[:3])
+            calls.append(n)
+            return n
+
+        r, w = os.pipe()
+        self.addCleanup(os.close, r)
+        self.addCleanup(os.close, w)
+        with patch("auth_server.logging.os.write", short_write):
+            self._handler(_NoWriteStream(w)).emit(self._record("abcdefgh"))
+        self.assertEqual(b"abcdefgh\n", os.read(r, 100))
+        self.assertEqual(3, len(calls))
+
+    def test_blocking_io_error_is_retried(self: Self) -> None:
+        real_write = os.write
+        state = {"n": 0}
+
+        def flaky(fd: int, data: Any) -> int:  # noqa: ANN401
+            state["n"] += 1
+            if state["n"] == 1:
+                raise BlockingIOError
+            return real_write(fd, data)
+
+        r, w = os.pipe()
+        self.addCleanup(os.close, r)
+        self.addCleanup(os.close, w)
+        with patch("auth_server.logging.os.write", flaky):
+            self._handler(_NoWriteStream(w)).emit(self._record("retry"))
+        self.assertEqual(b"retry\n", os.read(r, 100))
+
+    def test_fallback_for_stringio(self: Self) -> None:
+        stream = io.StringIO()
+        self._handler(stream).emit(self._record("plain"))
+        self.assertEqual("plain\n", stream.getvalue())
+
+    def test_default_stream_captured_at_construction(self: Self) -> None:
+        stream = io.StringIO()
+        with patch("sys.stderr", stream):
+            handler = UnbufferedStreamHandler()
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        handler.emit(self._record("late"))
+        self.assertEqual("late\n", stream.getvalue())
+
+    def test_closed_fd_does_not_raise(self: Self) -> None:
+        r, w = os.pipe()
+        os.close(r)
+        os.close(w)
+        handler = self._handler(_NoWriteStream(w))
+        handler.emit(self._record("gone"))
+        handler.flush()
+        handler.close()
+
+    def test_backslashreplace_for_unencodable(self: Self) -> None:
+        r, w = os.pipe()
+        self.addCleanup(os.close, r)
+        self.addCleanup(os.close, w)
+        self._handler(_NoWriteStream(w, encoding="ascii")).emit(self._record("caf\u00e9"))
+        self.assertEqual(b"caf\\xe9\n", os.read(r, 100))
+
+    def test_console_handler_class(self: Self) -> None:
+        config = AuthServerConfig(auth_token_issuer="x")
+        handler_cfg = make_dictConfig(make_local_context(config))["handlers"]["console"]
+        self.assertEqual("auth_server.logging.UnbufferedStreamHandler", handler_cfg["class"])
 
 
 class _CollectHandler(logging.Handler):
