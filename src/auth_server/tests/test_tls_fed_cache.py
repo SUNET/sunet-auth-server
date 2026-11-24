@@ -112,6 +112,24 @@ class TestTLSFedMetadataCache(IsolatedAsyncioTestCase):
         self.now += GRACE - timedelta(seconds=10)
         assert await get_entity(self.entity_id) is not None
 
+    async def test_future_issued_refresh_keeps_last_good_copy(self: Self) -> None:
+        """A signed refresh that is not valid yet must count as a failed refresh, not replace the last good copy."""
+        future = self.t0 + timedelta(hours=2)
+        self.mock_remote.side_effect = [self.make_jws(cache_ttl=60), self.make_jws(cache_ttl=60, issue_time=future)]
+        assert await get_entity(self.entity_id) is not None
+        self.now += timedelta(seconds=61)
+        # served from the previous copy while the refresh runs in the background
+        assert await get_entity(self.entity_id) is not None
+        task = _cache._refresh_task
+        assert task is not None
+        await task
+        state = _cache.states[URL_A]
+        assert state.failures == 1
+        assert state.issuer_metadata is not None
+        assert state.issuer_metadata.issued_at <= self.now  # still the old, valid copy
+        self.now += timedelta(seconds=5)
+        assert await get_entity(self.entity_id) is not None
+
     async def test_stale_data_dropped_after_grace(self: Self) -> None:
         self.mock_remote.side_effect = [self.make_jws(cache_ttl=60), None, None, None]
         assert await get_entity(self.entity_id) is not None

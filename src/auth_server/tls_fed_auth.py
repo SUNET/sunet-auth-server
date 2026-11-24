@@ -239,8 +239,15 @@ async def _load_source(source: TLSFEDMetadata, cache_ttl: timedelta) -> IssuerMe
         return None
     logger.debug(f"loaded metadata source: {metadata_source}")
     issuer_metadata = _build_issuer_metadata(metadata_source, now=utc_now(), cache_ttl=cache_ttl)
-    if utc_now() > issuer_metadata.expires_at:
+    now = utc_now()
+    if now > issuer_metadata.expires_at:
         logger.warning(f"metadata from {issuer_metadata.issuer} is already expired {issuer_metadata.expires_at}")
+        return None
+    if now < issuer_metadata.issued_at:
+        # build_metadata would not serve it, so it must not replace the last good copy either
+        logger.warning(
+            f"metadata from {issuer_metadata.issuer} is not valid yet, issued at {issuer_metadata.issued_at}"
+        )
         return None
     return issuer_metadata
 
