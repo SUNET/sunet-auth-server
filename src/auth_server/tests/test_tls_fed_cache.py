@@ -301,6 +301,96 @@ class TestTLSFedMetadataCache(IsolatedAsyncioTestCase):
         await task
         assert await get_entity(self.entity_id) is not None
 
+    async def _a_loaded_b_cold(self: Self, hang_b: bool = True) -> tuple[asyncio.Event, str]:
+        """A loaded and usable, B never loaded. Returns B's release event and B's jws."""
+        self.set_config([URL_A, URL_B])
+        entity_b = "https://b-client.example.com"
+        jws_a = self.make_jws(cache_ttl=60)
+        jws_b = self.make_jws(entity_id=entity_b, issuer="b.example.com", cache_ttl=60)
+        event = asyncio.Event()
+        self.b_calls = 0
+
+        async def fetch(url: str, **kwargs: object) -> str | None:
+            if url == URL_A:
+                return jws_a
+            self.b_calls += 1
+            if hang_b and self.b_calls == 1:
+                return None  # first B fetch fails, B stays cold
+            await event.wait()
+            return jws_b
+
+        self.mock_remote.side_effect = fetch
+        assert await self.refresh_round() is not None
+        assert _cache.states[URL_B].issuer_metadata is None
+        # B backoff elapses, A stays usable and not due
+        self.now += RETRY + timedelta(seconds=1)
+        _cache.states[URL_A].refresh_at = self.now + timedelta(hours=1)
+        return event, entity_b
+
+    async def test_cold_source_does_not_delay_usable_source(self: Self) -> None:
+        event, entity_b = await self._a_loaded_b_cold()
+        result = await asyncio.wait_for(get_entity(self.entity_id), timeout=1)
+        assert result is not None
+        task = _cache._refresh_task
+        assert task is not None
+        assert not task.done()
+        event.set()
+        await task
+        assert await get_entity(entity_b) is not None
+
+    async def test_cold_source_miss_waits_bounded(self: Self) -> None:
+        event, entity_b = await self._a_loaded_b_cold()
+        config = tls_fed_auth.load_config().model_copy(update={"http_client_timeout": timedelta(milliseconds=100)})
+        patch("auth_server.tls_fed_auth.load_config", return_value=config).start()
+        assert await asyncio.wait_for(get_entity(entity_b), timeout=5) is None
+        task = _cache._refresh_task
+        assert task is not None
+        assert not task.done()
+        event.set()
+        await task
+        assert await get_entity(entity_b) is not None
+
+    async def test_cold_source_miss_returns_entity_when_loaded_in_time(self: Self) -> None:
+        event, entity_b = await self._a_loaded_b_cold()
+        request = asyncio.create_task(get_entity(entity_b))
+        for _ in range(5):
+            await asyncio.sleep(0)
+        assert not request.done()
+        event.set()
+        assert await asyncio.wait_for(request, timeout=5) is not None
+
+    async def test_both_sources_cold(self: Self) -> None:
+        self.set_config([URL_A, URL_B])
+        entity_b = "https://b-client.example.com"
+        jws_a = self.make_jws()
+        jws_b = self.make_jws(entity_id=entity_b, issuer="b.example.com")
+        event = asyncio.Event()
+
+        async def fetch(url: str, **kwargs: object) -> str:
+            await event.wait()
+            return jws_a if url == URL_A else jws_b
+
+        self.mock_remote.side_effect = fetch
+        requests = [asyncio.create_task(get_entity(e)) for e in (self.entity_id, entity_b)]
+        for _ in range(5):
+            await asyncio.sleep(0)
+        assert not any(r.done() for r in requests)
+        event.set()
+        assert all(r is not None for r in await asyncio.gather(*requests))
+        assert self.mock_remote.await_count == 2
+
+    async def test_cold_source_no_herd_for_usable_lookups(self: Self) -> None:
+        event, _ = await self._a_loaded_b_cold()
+        before = self.b_calls
+        for _ in range(10):
+            assert await asyncio.wait_for(get_entity(self.entity_id), timeout=1) is not None
+            await asyncio.sleep(0.01)
+        assert self.b_calls == before + 1
+        event.set()
+        task = _cache._refresh_task
+        assert task is not None
+        await task
+
     async def test_drop_log_messages_distinct(self: Self) -> None:
         self.mock_remote.side_effect = [self.make_jws(cache_ttl=60), None]
         assert await get_entity(self.entity_id) is not None

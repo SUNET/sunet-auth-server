@@ -426,38 +426,49 @@ def clear_tls_fed_metadata_cache() -> None:
     _cache.reset()
 
 
+def _schedule_refresh(config: AuthServerConfig, now: datetime) -> asyncio.Task[None] | None:
+    """
+    Start (or join) the shared refresh task for due sources without waiting for it. Returns the task only when a due
+    source has never loaded (cold start) and callers may want to wait for it, everything else refreshes in the
+    background and is served or dropped according to is_usable.
+    """
+    due = _cache.due_sources(config, now)
+    if not due:
+        return None
+    task = _cache.ensure_task(due, config)
+    if all(_cache._state(k).issuer_metadata is not None for k in due):
+        return None
+    return task
+
+
+async def _wait_for_refresh(task: asyncio.Task[None], config: AuthServerConfig) -> bool:
+    """Wait for a cold start refresh, bounded by http_client_timeout. Returns False when waiting should stop."""
+    try:
+        await asyncio.wait_for(asyncio.shield(task), timeout=config.http_client_timeout.total_seconds())
+    except TimeoutError:
+        logger.warning("timed out waiting for initial tls fed metadata load")
+        return False
+    except asyncio.CancelledError:
+        current = asyncio.current_task()
+        if current is not None and current.cancelling() > 0:
+            raise  # this request was cancelled
+        if not task.cancelled():
+            raise
+        # the refresh task was cancelled by clear_tls_fed_metadata_cache, serve what the cache holds now
+        return False
+    return True
+
+
 async def get_tls_fed_metadata() -> Metadata:
     config = load_config()
     for _ in range(MAX_REFRESH_ROUNDS):
-        now = utc_now()
-        due = _cache.due_sources(config, now)
-        if not due:
-            break
-        task = _cache.ensure_task(due, config)
-        # only block when a due source has never loaded (cold start), everything else refreshes in the background
-        # and is served or dropped according to is_usable
-        if all(_cache._state(k).issuer_metadata is not None for k in due):
-            break
-        try:
-            await asyncio.wait_for(asyncio.shield(task), timeout=config.http_client_timeout.total_seconds())
-        except TimeoutError:
-            logger.warning("timed out waiting for initial tls fed metadata load")
-            break
-        except asyncio.CancelledError:
-            current = asyncio.current_task()
-            if current is not None and current.cancelling() > 0:
-                raise  # this request was cancelled
-            if not task.cancelled():
-                raise
-            # the refresh task was cancelled by clear_tls_fed_metadata_cache, serve what the cache holds now
+        task = _schedule_refresh(config, utc_now())
+        if task is None or not await _wait_for_refresh(task, config):
             break
     return _cache.build_metadata(config, utc_now())
 
 
-async def get_entity(entity_id: str) -> MetadataEntity | None:
-    metadata = await get_tls_fed_metadata()
-    now = utc_now()
-
+def _find_entity(metadata: Metadata, entity_id: str, now: datetime) -> MetadataEntity | None:
     for issuer, issuer_metadata in metadata.issuer_metadata.items():
         # Check if metadata is valid
         # not before issued_at
@@ -478,6 +489,19 @@ async def get_entity(entity_id: str) -> MetadataEntity | None:
         return entity
 
     return None
+
+
+async def get_entity(entity_id: str) -> MetadataEntity | None:
+    config = load_config()
+    now = utc_now()
+    pending = _schedule_refresh(config, now)
+    # look in what is servable right now first, a cold source must not delay clients found in a usable one
+    entity = _find_entity(_cache.build_metadata(config, now), entity_id, now)
+    if entity is not None or pending is None:
+        return entity
+    # cache miss with a cold source loading, wait for it (bounded) and look again
+    metadata = await get_tls_fed_metadata()
+    return _find_entity(metadata, entity_id, utc_now())
 
 
 async def entity_to_keys(entity: MetadataEntity | None) -> list[Key]:
