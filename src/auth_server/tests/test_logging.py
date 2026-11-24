@@ -1,9 +1,13 @@
 import io
 import logging
+import os
 import queue
+import subprocess
+import sys
 import threading
 import time
 from datetime import timedelta
+from pathlib import Path
 from typing import Any, Self
 from unittest import TestCase
 from unittest.mock import AsyncMock, patch
@@ -12,6 +16,7 @@ from fastapi import FastAPI
 from pydantic import ValidationError
 from starlette.testclient import TestClient
 
+import auth_server
 from auth_server.api import lifespan
 from auth_server.config import AuthServerConfig, LoggingFilters
 from auth_server.logging import (
@@ -34,6 +39,19 @@ __author__ = "lundberg"
 
 def _queue_handlers() -> list[DroppingQueueHandler]:
     return [h for h in logging.getLogger().handlers if isinstance(h, DroppingQueueHandler)]
+
+
+def _lock_free(handler: logging.Handler) -> bool:
+    """True if the handler lock could be taken (and releases it again)."""
+    assert handler.lock is not None
+    if handler.lock.acquire(False):
+        handler.lock.release()
+        return True
+    return False
+
+
+def _registered_handlers() -> list[logging.Handler | None]:
+    return [ref() for ref in getattr(logging, "_handlerList")]
 
 
 class LoggingTestBase(TestCase):
@@ -288,9 +306,10 @@ class TestLogging(LoggingTestBase):
 
 
 class _StallingHandler(logging.Handler):
-    def __init__(self: Self, gate: threading.Event) -> None:
+    def __init__(self: Self, gate: threading.Event, wait: float = 30) -> None:
         super().__init__()
         self.gate = gate
+        self.wait = wait
         self.entered = threading.Event()
         self.records: list[str] = []
         self.only_prefix: str | None = None  # when set, only messages starting with this prefix stall
@@ -298,7 +317,7 @@ class _StallingHandler(logging.Handler):
     def emit(self: Self, record: logging.LogRecord) -> None:
         if self.only_prefix is None or record.getMessage().startswith(self.only_prefix):
             self.entered.set()
-            self.gate.wait(30)
+            self.gate.wait(self.wait)
         self.records.append(record.getMessage())
 
 
@@ -372,6 +391,61 @@ class TestStopBounded(LoggingTestBase):
             self.assertTrue(stop_logging())
         self.assertIn("fresh record", stream.getvalue())
         self.assertNotIn("fresh record", " ".join(sink.records))
+
+    def test_reinit_while_still_stalled(self: Self) -> None:
+        sink = self._stalled()
+        old_handler = _queue_handlers()
+        with patch("auth_server.logging._warn_abandoned"):
+            self.assertFalse(stop_logging(timeout=0.2))
+        self.assertFalse(_lock_free(sink))  # stalled sink still holds its lock
+        stream = io.StringIO()
+        with patch("sys.stderr", stream), patch("sys.stdout", stream):
+            start = time.monotonic()
+            init_logging(self._config(testing=True))
+            self.assertLess(time.monotonic() - start, 2)
+            logging.getLogger("test.after").warning("fresh record")
+            self.assertTrue(stop_logging())
+        self.assertIn("fresh record", stream.getvalue())
+        self.assertFalse(_lock_free(sink))
+        self.assertEqual([], [h for h in old_handler if h in logging.getLogger().handlers])
+
+    def test_abandoned_sink_unregistered_from_logging_registry(self: Self) -> None:
+        sink = self._stalled()
+        self.assertIn(sink, _registered_handlers())
+        with patch("auth_server.logging._warn_abandoned"):
+            self.assertFalse(stop_logging(timeout=0.2))
+        self.assertNotIn(sink, _registered_handlers())
+        self.assertNotIn(sink, list(getattr(logging, "_handlers").values()))
+        sink.gate.set()  # the abandoned daemon thread finishes without harm
+        time.sleep(0.1)
+
+    def test_process_exit_does_not_block_on_abandoned_sink(self: Self) -> None:
+        script = """
+import threading
+from datetime import timedelta
+import logging
+from auth_server.config import AuthServerConfig
+from auth_server.logging import init_logging, stop_logging, _queue_handlers
+init_logging(AuthServerConfig(auth_token_issuer="x", log_stop_timeout=timedelta(seconds=0.3)))
+listener = [h for h in logging.getLogger().handlers if hasattr(h, "listener")][0].listener
+entered = threading.Event()
+class Stall(logging.Handler):
+    def emit(self, record):
+        entered.set()
+        threading.Event().wait(600)
+listener.handlers = (Stall(),)
+logging.getLogger("child").warning("stall")
+assert entered.wait(5)
+assert stop_logging(timeout=0.3) is False
+"""
+        src = str(Path(auth_server.__file__).parent.parent)
+        env = {**os.environ, "PYTHONPATH": src}
+        start = time.monotonic()
+        result = subprocess.run(
+            [sys.executable, "-c", script], timeout=20, env=env, capture_output=True, text=True, check=False
+        )
+        self.assertLess(time.monotonic() - start, 10, result.stderr)
+        self.assertEqual(0, result.returncode, result.stderr)
 
     def test_normal_path_returns_true(self: Self) -> None:
         stream = io.StringIO()

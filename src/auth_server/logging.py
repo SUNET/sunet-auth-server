@@ -2,6 +2,7 @@ import atexit
 import logging
 import logging.config
 import logging.handlers
+import os
 import queue
 import sys
 import threading
@@ -100,6 +101,31 @@ class DroppingQueueHandler(logging.handlers.QueueHandler):
             self.dropped += 1
 
 
+def _unregister_handlers(handlers: Sequence[logging.Handler]) -> None:
+    """
+    Remove handlers from the stdlib logging registries without touching the handlers' own locks.
+
+    logging.shutdown() (atexit) and logging.config.dictConfig() acquire, flush and close every handler found in
+    logging._handlerList, which blocks forever on a stalled sink. This uses private stdlib attributes
+    (logging._lock, logging._handlerList, logging._handlers), so any layout change degrades to a no-op.
+    """
+    try:
+        with logging._lock:  # type: ignore[attr-defined]
+            for handler in handlers:
+                for ref in list(logging._handlerList):  # type: ignore[attr-defined]
+                    if ref() is handler:
+                        try:
+                            logging._handlerList.remove(ref)  # type: ignore[attr-defined]
+                        except ValueError:
+                            pass
+                name = getattr(handler, "name", None)
+                if name is not None and logging._handlers.get(name) is handler:  # type: ignore[attr-defined]
+                    del logging._handlers[name]  # type: ignore[attr-defined]
+    except Exception:  # noqa: BLE001
+        # private API changed, nothing sensible left to do
+        pass
+
+
 class DroppingQueueListener(logging.handlers.QueueListener):
     """
     QueueListener that reports records dropped by its DroppingQueueHandler.
@@ -170,6 +196,9 @@ class DroppingQueueListener(logging.handlers.QueueListener):
         queued: int = self.queue.qsize()  # type: ignore[attr-defined]
         self.abandoned = max(queued - (1 if sentinel_queued else 0), 0) + drained
         self._thread = None
+        # The stalled sink may hold its handler lock forever. Make sure logging.shutdown() (atexit) and
+        # dictConfig() (re-init) never try to acquire, flush or close it.
+        _unregister_handlers(self.handlers)
         return False
 
     def _report_drops(self: Self, force: bool = False) -> None:
@@ -215,9 +244,26 @@ def dropped_log_records() -> int:
 
 
 def _write_stderr(message: str) -> None:
+    """
+    Write one line to the real stderr, bypassing its Python level buffer.
+
+    This runs in a daemon thread that may still be running when the interpreter finalizes. Writing through
+    sys.__stderr__ would hold the BufferedWriter lock, and finalization then aborts the whole process with
+    "could not acquire lock for <_io.BufferedWriter name='<stderr>'> at interpreter shutdown". os.write on the file
+    descriptor takes no Python lock. Streams without a descriptor (tests) fall back to a normal write.
+    """
     try:
-        sys.__stderr__.write(message + "\n")  # type: ignore[union-attr]
-        sys.__stderr__.flush()  # type: ignore[union-attr]
+        stream = sys.__stderr__
+        if stream is None:
+            return
+        data = f"{message}\n"
+        try:
+            fd = stream.fileno()
+        except (AttributeError, OSError, ValueError):  # io.UnsupportedOperation is an OSError
+            stream.write(data)
+            stream.flush()
+            return
+        os.write(fd, data.encode(errors="replace"))
     except Exception:  # noqa: S110
         pass
 
