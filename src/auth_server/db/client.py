@@ -146,7 +146,7 @@ class BaseDB:
         logger.warning(f"{self!s} Dropping collection {self._coll_name!r}")
         return await self._coll.drop()
 
-    async def _get_all_docs(self: Self) -> AsyncGenerator[Mapping, None]:
+    async def _get_all_docs(self: Self) -> AsyncGenerator[Mapping]:
         """
         Return all the documents in the database.
         """
@@ -172,7 +172,7 @@ class BaseDB:
             raise MultipleDocumentsReturned(f"Multiple matching documents for {attr}={repr(value)}")
         return docs[0]
 
-    async def _get_documents_by_attr(self: Self, attr: str, value: str) -> AsyncGenerator[Mapping, None]:
+    async def _get_documents_by_attr(self: Self, attr: str, value: str) -> AsyncGenerator[Mapping]:
         """
         Return the document in the MongoDB matching field=value
 
@@ -190,7 +190,7 @@ class BaseDB:
         fields: dict[str, bool] | list[str] | None = None,
         skip: int | None = None,
         limit: int | None = None,
-    ) -> AsyncGenerator[Mapping, None]:
+    ) -> AsyncGenerator[Mapping]:
         """
         Locate documents in the db using a custom search filter.
 

@@ -12,6 +12,7 @@ from cryptography.x509 import Certificate
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 
 from auth_server.cert_utils import load_pem_from_str, rfc8705_fingerprint, serialize_certificate
+from auth_server.config import load_config
 from auth_server.models.gnap import Key, Proof, ProofMethod
 from auth_server.utils import get_values, hash_with
 
@@ -54,6 +55,7 @@ class MDQData(MDQBase):
 
 
 async def xml_mdq_get(entity_id: str, mdq_url: str) -> MDQData:
+    timeout = load_config().http_client_timeout
     # SHA1 hash and create hex representation of entity id
     entity_id_hash = hash_with(SHA1(), entity_id.encode())
     identifier = f"{{sha1}}{entity_id_hash.hex()}"
@@ -61,21 +63,19 @@ async def xml_mdq_get(entity_id: str, mdq_url: str) -> MDQData:
 
     # Get xml from the MDQ service
     headers = {"Accept": "application/samlmetadata+xml"}
-    session = aiohttp.ClientSession()
     url = f"{mdq_url}/{identifier}"
     logger.debug(f"Trying {url}")
     try:
-        response = await session.get(url=url, headers=headers)
-    except aiohttp.ClientError as e:
-        logger.error(f"{url} failed: {e}")
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout.total_seconds())) as session:
+            response = await session.get(url=url, headers=headers)
+            if response.status != 200:
+                logger.error(f"{url} returned {response.status}")
+                return MDQData()
+            xml = await response.text()
+    except (aiohttp.ClientError, TimeoutError) as e:
+        logger.exception(f"{url} failed: {e!r}")
         return MDQData()
 
-    if response.status != 200:
-        logger.error(f"{mdq_url}/{identifier} returned {response.status}")
-        return MDQData()
-
-    xml = await response.text()
-    await session.close()
     # Parse the xml to a OrderedDict and grab the certs and their use
     try:
         # TODO: Should we use defusedxml.expatbuilder?

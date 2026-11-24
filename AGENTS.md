@@ -6,7 +6,7 @@ This document provides instructions for AI coding agents working in this reposit
 
 **SUNET Auth Server** - A production-ready GNAP (Grant Negotiation and Authorization Protocol, RFC 9635) authentication server implementation for the eduID IAM suite.
 
-- **Language:** Python 3.11+
+- **Language:** Python 3.13+
 - **Framework:** FastAPI (ASGI)
 - **Database:** MongoDB (async via motor)
 - **Key Libraries:** pydantic, jwcrypto, pysaml2, aiohttp
@@ -116,7 +116,7 @@ from auth_server.models.gnap import GrantRequest, GrantResponse
 ### Formatting
 
 - **Line length:** 120 characters
-- **Target Python:** 3.11+
+- **Target Python:** 3.13+
 - **Formatter:** ruff format
 
 ### Ruff Lint Rules

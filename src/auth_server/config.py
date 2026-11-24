@@ -6,10 +6,10 @@ from functools import lru_cache
 from os import environ
 from pathlib import Path
 from sys import stderr
-from typing import Any
+from typing import Any, Self
 
 import yaml
-from pydantic import AnyUrl, BaseModel, Field, ValidationError, field_validator
+from pydantic import AnyUrl, BaseModel, Field, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from auth_server.models.gnap import Proof
@@ -66,6 +66,10 @@ class AuthServerConfig(BaseSettings):
     log_format: str | None = None
     log_level: str = "INFO"
     log_filters: list[LoggingFilters] = Field(default_factory=list)
+    log_queue_size: int = Field(default=10000, gt=0)
+    log_max_message_length: int = Field(default=8192, gt=0)
+    log_drop_report_interval: timedelta = Field(default=timedelta(seconds=60), gt=timedelta(0))
+    log_stop_timeout: timedelta = Field(default=timedelta(seconds=2), gt=timedelta(0))
     logging_config: dict = Field(default_factory=dict)
     host: str = Field(default="0.0.0.0")
     port: int = Field(default=8080)
@@ -73,12 +77,16 @@ class AuthServerConfig(BaseSettings):
     auth_flows: list[str] = Field(default_factory=list)
     mdq_server: str | None = Field(default=None)
     tls_fed_metadata: list[TLSFEDMetadata] = Field(default_factory=list)
-    tls_fed_metadata_cache_ttl: timedelta = Field(default=timedelta(hours=1))
+    tls_fed_metadata_cache_ttl: timedelta = Field(default=timedelta(hours=1), gt=timedelta(0))
+    tls_fed_metadata_retry_interval: timedelta = Field(default=timedelta(minutes=1), gt=timedelta(0))
+    # how long metadata may be served after renew_at while refreshes are failing
+    tls_fed_metadata_stale_grace: timedelta = Field(default=timedelta(minutes=5), gt=timedelta(0))
     keystore_path: Path = Field(default=Path("keystore.jwks"))
     signing_key_id: str = Field(default="default")
     auth_token_issuer: str
     auth_token_audience: str | None = Field(default=None)
     auth_token_expires_in: timedelta = Field(default=timedelta(hours=10))
+    http_client_timeout: timedelta = Field(default=timedelta(seconds=10), gt=timedelta(0))
     proof_jws_max_age: timedelta = Field(default=timedelta(minutes=5))
     proof_httpsig_max_age: timedelta = Field(default=timedelta(minutes=5))
     proof_httpsig_clock_skew: timedelta = Field(default=timedelta(seconds=30))
@@ -115,6 +123,14 @@ class AuthServerConfig(BaseSettings):
         if v.username or v.password or v.query or v.fragment or v.path not in (None, "", "/"):
             raise ValueError("proof_external_base_url must only contain scheme, host and port")
         return v
+
+    @model_validator(mode="after")
+    def stale_grace_must_cover_retry_interval(self: Self) -> Self:
+        if self.tls_fed_metadata_stale_grace < self.tls_fed_metadata_retry_interval:
+            raise ValueError(
+                "tls_fed_metadata_stale_grace must be greater than or equal to tls_fed_metadata_retry_interval"
+            )
+        return self
 
     model_config = SettingsConfigDict(frozen=True)
 

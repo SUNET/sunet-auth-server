@@ -15,3 +15,4 @@ class Status(StrEnum):
 class StatusResponse(BaseModel):
     status: Status
     version: int = 1
+    log_records_dropped: int | None = None

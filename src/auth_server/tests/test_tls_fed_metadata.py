@@ -16,7 +16,12 @@ from auth_server.models.tls_fed_metadata import Model as TLSFEDMetadataModel
 from auth_server.models.tls_fed_metadata import RegisteredExtensions
 from auth_server.tests.utils import create_tls_fed_metadata, tls_fed_metadata_to_jws
 from auth_server.time_utils import utc_now
-from auth_server.tls_fed_auth import Metadata, MetadataEntity, load_metadata, load_metadata_source
+from auth_server.tls_fed_auth import (
+    IssuerMetadata,
+    MetadataEntity,
+    _build_issuer_metadata,
+    load_metadata_source,
+)
 
 __author__ = "lundberg"
 
@@ -42,7 +47,7 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
 
     async def _load_metadata(
         self: Self, metadata: TLSFEDMetadataModel | str | None = None, strict: bool = True, rfc9932: bool = False
-    ) -> Metadata | None:
+    ) -> IssuerMetadata | None:
         if metadata is None:
             metadata = create_tls_fed_metadata(
                 issuer=self.issuer,
@@ -70,13 +75,12 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
         )
         if metadata_source is None:
             return None
-        return await load_metadata(metadata_sources=[metadata_source], cache_ttl=self.cache_ttl)
+        return _build_issuer_metadata(metadata_source, now=utc_now(), cache_ttl=self.cache_ttl)
 
     async def test_parse_metadata(self: Self) -> None:
         metadata = await self._load_metadata()
         assert metadata is not None  # please mypy
-        issuer_metadata = list(metadata.issuer_metadata.values())[0]
-        assert issuer_metadata is not None
+        issuer_metadata = metadata
         assert issuer_metadata.renew_at.replace(microsecond=0) == (self.about_now + self.cache_ttl).replace(
             microsecond=0
         )
@@ -93,8 +97,7 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
     async def test_parse_metadata_RFC9932(self: Self) -> None:
         metadata = await self._load_metadata(rfc9932=True)
         assert metadata is not None  # please mypy
-        issuer_metadata = list(metadata.issuer_metadata.values())[0]
-        assert issuer_metadata is not None
+        issuer_metadata = metadata
         assert issuer_metadata.renew_at.replace(microsecond=0) == (self.about_now + self.cache_ttl).replace(
             microsecond=0
         )
@@ -139,9 +142,7 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
         # valid entities should be returned when using non-strict mode
         metadata = await self._load_metadata(metadata=modified_metadata, strict=False)
         assert metadata is not None  # please mypy
-        for issuer_metadata in metadata.issuer_metadata.values():
-            assert issuer_metadata is not None
-            assert len(issuer_metadata.entities) == 1
+        assert len(metadata.entities) == 1
 
     async def test_parse_unregistered_extension_in_metadata(self: Self) -> None:
         serialized_metadata = create_tls_fed_metadata(
@@ -164,8 +165,7 @@ class TestTLSMetadata(IsolatedAsyncioTestCase):
         metadata = await self._load_metadata(metadata=modified_metadata, strict=True)
         assert metadata is not None  # please mypy
 
-        issuer_metadata = list(metadata.issuer_metadata.values())[0]
-        assert issuer_metadata is not None
+        issuer_metadata = metadata
         assert len(issuer_metadata.entities) == 2
         # but the unregistered extension should be removed
         entity = issuer_metadata.entities["https://unknown_extension_entity"]

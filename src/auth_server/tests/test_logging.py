@@ -1,0 +1,763 @@
+import io
+import logging
+import os
+import queue
+import subprocess
+import sys
+import threading
+import time
+from datetime import timedelta
+from pathlib import Path
+from typing import Any, Self
+from unittest import TestCase
+from unittest.mock import AsyncMock, patch
+
+from fastapi import FastAPI
+from pydantic import ValidationError
+from starlette.testclient import TestClient
+
+import auth_server
+from auth_server.api import lifespan
+from auth_server.config import AuthServerConfig, LoggingFilters
+from auth_server.logging import (
+    DroppingQueueHandler,
+    DroppingQueueListener,
+    UnbufferedStreamHandler,
+    _reset_lifespan_state,
+    _warn_abandoned,
+    acquire_logging,
+    init_logging,
+    make_dictConfig,
+    make_local_context,
+    release_logging,
+    stop_logging,
+)
+from auth_server.models.status import Status
+from auth_server.routers.status import status_router
+
+__author__ = "lundberg"
+
+
+def _queue_handlers() -> list[DroppingQueueHandler]:
+    return [h for h in logging.getLogger().handlers if isinstance(h, DroppingQueueHandler)]
+
+
+def _lock_free(handler: logging.Handler) -> bool:
+    """True if the handler lock could be taken (and releases it again)."""
+    assert handler.lock is not None
+    if handler.lock.acquire(False):
+        handler.lock.release()
+        return True
+    return False
+
+
+def _registered_handlers() -> list[logging.Handler | None]:
+    return [ref() for ref in getattr(logging, "_handlerList")]
+
+
+class LoggingTestBase(TestCase):
+    def setUp(self: Self) -> None:
+        root = logging.getLogger()
+        self._handlers = list(root.handlers)
+        self._level = root.level
+        _reset_lifespan_state()
+
+    def tearDown(self: Self) -> None:
+        stop_logging()
+        _reset_lifespan_state()
+        root = logging.getLogger()
+        for handler in list(root.handlers):
+            if handler not in self._handlers:
+                root.removeHandler(handler)
+        for handler in self._handlers:
+            if handler not in root.handlers:
+                root.addHandler(handler)
+        root.setLevel(self._level)
+
+    @staticmethod
+    def _config(**kwargs: object) -> AuthServerConfig:
+        return AuthServerConfig(auth_token_issuer="x", **kwargs)  # type: ignore[arg-type]
+
+
+class TestLogging(LoggingTestBase):
+    def test_queue_handler_with_running_listener(self: Self) -> None:
+        init_logging(self._config())
+        handlers = _queue_handlers()
+        self.assertEqual(1, len(handlers))
+        self.assertEqual(1, len(logging.getLogger().handlers))
+        listener = handlers[0].listener
+        assert listener is not None
+        self.assertIsNotNone(listener._thread)
+
+    def test_records_reach_console(self: Self) -> None:
+        stream = io.StringIO()
+        with patch("sys.stderr", stream), patch("sys.stdout", stream):
+            init_logging(self._config(testing=True, log_level="INFO"))
+            logging.getLogger("test.queue").warning("hello from queue")
+            stop_logging()
+        out = stream.getvalue()
+        self.assertIn("hello from queue", out)
+        self.assertRegex(out, r"\d+\.\d{3}s")
+
+    def test_queue_full_drops_silently(self: Self) -> None:
+        handler = DroppingQueueHandler(queue.Queue(maxsize=1))
+        logger = logging.getLogger("test.full")
+        logger.propagate = False
+        logger.addHandler(handler)
+        try:
+            with patch.object(logging.Handler, "handleError") as handle_error:
+                for i in range(5):
+                    logger.warning(f"msg {i}")
+            handle_error.assert_not_called()
+        finally:
+            logger.removeHandler(handler)
+            logger.propagate = True
+        self.assertEqual(4, handler.dropped)
+
+    def test_reinit_does_not_leak_threads(self: Self) -> None:
+        before = threading.active_count()
+        for _ in range(3):
+            init_logging(self._config())
+        self.assertLessEqual(threading.active_count(), before + 1)
+
+    def test_stop_logging_twice(self: Self) -> None:
+        init_logging(self._config())
+        stop_logging()
+        stop_logging()
+
+    def test_filters_enabled(self: Self) -> None:
+        for flt, debug, expect in [
+            (LoggingFilters.DEBUG_FALSE, False, True),
+            (LoggingFilters.DEBUG_FALSE, True, False),
+            (LoggingFilters.DEBUG_TRUE, True, True),
+            (LoggingFilters.DEBUG_TRUE, False, False),
+        ]:
+            with self.subTest(flt=flt, debug=debug):
+                stream = io.StringIO()
+                with patch("sys.stderr", stream), patch("sys.stdout", stream):
+                    init_logging(self._config(log_filters=[flt], debug=debug))
+                    logging.getLogger("test.filter").error("filter probe")
+                    stop_logging()
+                self.assertEqual(expect, "filter probe" in stream.getvalue())
+
+    def test_queue_size_from_config(self: Self) -> None:
+        local_context = make_local_context(self._config(log_queue_size=1234))
+        self.assertEqual(1234, local_context.queue_size)
+        self.assertEqual(1234, make_dictConfig(local_context)["local_context"]["queue_size"])
+        init_logging(self._config(log_queue_size=1234))
+        q = _queue_handlers()[0].queue
+        assert isinstance(q, queue.Queue)
+        self.assertEqual(1234, q.maxsize)
+
+    def _manual_pipeline(
+        self: Self, maxsize: int, interval: float = 60.0, limit: int | None = None
+    ) -> tuple[DroppingQueueHandler, DroppingQueueListener, io.StringIO, logging.Logger]:
+        stream = io.StringIO()
+        console = logging.StreamHandler(stream)
+        console.setFormatter(logging.Formatter("{levelname}|{name}|{message}", style="{"))
+        q: queue.Queue[Any] = queue.Queue(maxsize=maxsize)
+        handler = DroppingQueueHandler(q, max_message_length=limit)
+        listener = DroppingQueueListener(q, console, respect_handler_level=True)
+        listener.attach(handler, interval)
+        logger = logging.getLogger("test.manual")
+        logger.propagate = False
+        logger.setLevel(logging.DEBUG)
+        logger.addHandler(handler)
+        self.addCleanup(logger.removeHandler, handler)
+        self.addCleanup(setattr, logger, "propagate", True)
+        return handler, listener, stream, logger
+
+    def test_drop_report_emitted(self: Self) -> None:
+        handler, listener, stream, logger = self._manual_pipeline(maxsize=2)
+        for i in range(5):
+            logger.info(f"msg {i}")
+        self.assertEqual(3, handler.dropped)
+        listener.start()
+        listener.stop()
+        out = stream.getvalue()
+        self.assertIn("WARNING|auth_server.logging|dropped 3 log records since last report (3 total)", out)
+        self.assertEqual(1, out.count("dropped "))
+
+    def test_drop_report_rate_limited(self: Self) -> None:
+        handler, listener, stream, logger = self._manual_pipeline(maxsize=1, interval=60.0)
+        now = [100.0]
+        listener._clock = lambda: now[0]
+        logger.info("a")
+        logger.info("b")  # dropped
+        listener.start()
+        for _ in range(100):
+            if "dropped 1 " in stream.getvalue():
+                break
+            threading.Event().wait(0.01)
+        self.assertEqual(1, stream.getvalue().count("dropped "))
+        # second burst within the interval: no new report
+        now[0] = 130.0
+        handler.dropped += 4
+        logger.info("c")
+        for _ in range(100):
+            if "|c" in stream.getvalue():
+                break
+            threading.Event().wait(0.01)
+        self.assertEqual(1, stream.getvalue().count("dropped "))
+        # after the interval a second report follows the next record
+        now[0] = 200.0
+        logger.info("d")
+        for _ in range(100):
+            if "dropped 4 " in stream.getvalue():
+                break
+            threading.Event().wait(0.01)
+        listener.stop()
+        out = stream.getvalue()
+        self.assertIn("dropped 4 log records since last report (5 total)", out)
+        self.assertEqual(2, out.count("dropped "))
+
+    def test_final_report_on_stop(self: Self) -> None:
+        stream = io.StringIO()
+        with patch("sys.stderr", stream), patch("sys.stdout", stream):
+            init_logging(self._config(testing=True, log_level="INFO", log_queue_size=10))
+            handler = _queue_handlers()[0]
+            listener = handler.listener
+            assert isinstance(listener, DroppingQueueListener)
+            # pretend a report was just sent, so only the final flush can report
+            listener._last_report_time = time.monotonic()
+            handler.dropped = 7
+            stop_logging()
+        self.assertIn("dropped 7 log records since last report (7 total)", stream.getvalue())
+
+    def test_truncation(self: Self) -> None:
+        handler, listener, stream, logger = self._manual_pipeline(maxsize=100, limit=100)
+        logger.info("x" * 1_000_000)
+        logger.info("short")
+        logger.info("fmt %s", "arg")
+        try:
+            raise ValueError("boom")
+        except ValueError:
+            logger.exception("failed")
+        logger.info(12345)
+        listener.start()
+        listener.stop()
+        lines = stream.getvalue()
+        self.assertIn("x" * 100 + "... [truncated 999900 chars]", lines)
+        self.assertNotIn("x" * 101, lines)
+        self.assertIn("INFO|test.manual|short\n", lines)
+        self.assertIn("INFO|test.manual|fmt arg\n", lines)
+        self.assertIn("Traceback (most recent call last)", lines)
+        # the traceback length depends on the absolute path of the test file, so do not hard-code the char count
+        self.assertRegex(lines, r"(?s)Traceback \(most recent call last\).*\.\.\. \[truncated \d+ chars\]")
+        self.assertIn("12345", lines)
+
+    def test_truncation_keeps_traceback_below_limit(self: Self) -> None:
+        handler, listener, stream, logger = self._manual_pipeline(maxsize=10, limit=100000)
+        try:
+            raise ValueError("boom")
+        except ValueError:
+            logger.exception("failed")
+        listener.start()
+        listener.stop()
+        self.assertNotIn("truncated", stream.getvalue())
+        self.assertIn("Traceback", stream.getvalue())
+
+    def test_prepare_non_str_msg(self: Self) -> None:
+        handler = DroppingQueueHandler(queue.Queue(), max_message_length=5)
+        record = logging.LogRecord("n", logging.INFO, "p", 1, 12345678, None, None)
+        self.assertEqual("12345... [truncated 3 chars]", handler.prepare(record).msg)
+
+    def test_prepare_truncates_message_attribute_too(self: Self) -> None:
+        """The queued record must not keep the full text in record.message either (memory behind a stalled sink)."""
+        handler = DroppingQueueHandler(queue.Queue(), max_message_length=100)
+        record = logging.LogRecord("n", logging.INFO, "p", 1, "x" * 1_000_000, None, None)
+        prepared = handler.prepare(record)
+        self.assertLess(len(prepared.msg), 200)
+        self.assertEqual(prepared.msg, prepared.message)
+        self.assertIsNone(prepared.exc_text)
+        self.assertIsNone(prepared.exc_info)
+        # the caller's own record is untouched (prepare works on a copy)
+        self.assertEqual(1_000_000, len(record.msg))
+
+    def test_max_message_length_from_config(self: Self) -> None:
+        init_logging(self._config(log_max_message_length=77, log_drop_report_interval=timedelta(seconds=5)))
+        handler = _queue_handlers()[0]
+        self.assertEqual(77, handler.max_message_length)
+        listener = handler.listener
+        assert isinstance(listener, DroppingQueueListener)
+        self.assertEqual(5.0, listener.report_interval)
+        self.assertIs(handler, listener.drop_source)
+
+    def test_status_exposes_dropped(self: Self) -> None:
+        app = FastAPI()
+        app.include_router(status_router)
+        init_logging(self._config())
+        _queue_handlers()[0].dropped = 42
+        with (
+            patch("auth_server.routers.status._mongodb_health_check", AsyncMock(return_value=True)),
+            TestClient(app) as client,
+        ):
+            body = client.get("/status/healthy").json()
+        self.assertEqual(42, body["log_records_dropped"])
+        self.assertEqual(Status.OK.value, body["status"])
+
+    def test_config_validation(self: Self) -> None:
+        for kwargs in (
+            {"log_max_message_length": 0},
+            {"log_drop_report_interval": timedelta(0)},
+            {"log_stop_timeout": timedelta(0)},
+        ):
+            with self.subTest(**kwargs), self.assertRaises(ValidationError):
+                self._config(**kwargs)
+
+
+class _StallingHandler(logging.Handler):
+    def __init__(self: Self, gate: threading.Event, wait: float = 30) -> None:
+        super().__init__()
+        self.gate = gate
+        self.wait = wait
+        self.entered = threading.Event()
+        self.records: list[str] = []
+        self.only_prefix: str | None = None  # when set, only messages starting with this prefix stall
+
+    def emit(self: Self, record: logging.LogRecord) -> None:
+        if self.only_prefix is None or record.getMessage().startswith(self.only_prefix):
+            self.entered.set()
+            self.gate.wait(self.wait)
+        self.records.append(record.getMessage())
+
+
+class TestStopBounded(LoggingTestBase):
+    def _stalled(self: Self, **kwargs: object) -> _StallingHandler:
+        gate = threading.Event()
+        self.addCleanup(gate.set)
+        init_logging(self._config(log_stop_timeout=timedelta(seconds=0.3), **kwargs))
+        listener = _queue_handlers()[0].listener
+        assert listener is not None
+        sink = _StallingHandler(gate)
+        listener.handlers = (sink,)
+        for i in range(4):
+            logging.getLogger("test.stall").warning(f"stalled {i}")
+        self.assertTrue(sink.entered.wait(5))
+        return sink
+
+    def test_stalled_sink_bounded(self: Self) -> None:
+        sink = self._stalled()
+        with patch("auth_server.logging._warn_abandoned") as warn:
+            start = time.monotonic()
+            self.assertFalse(stop_logging(timeout=0.3))
+            self.assertLess(time.monotonic() - start, 2)
+        warn.assert_called_once()
+        # 4 emitted, one held by the stalled handler (plus possibly the init record)
+        self.assertGreaterEqual(warn.call_args.args[0], 3)
+        # abandoned listener: second stop is a no-op
+        self.assertTrue(stop_logging())
+        sink.gate.set()
+
+    def test_stall_on_final_drop_report_is_bounded(self: Self) -> None:
+        """The final drop report runs on the listener thread, so a sink that stalls on it cannot hang the stop."""
+        gate = threading.Event()
+        self.addCleanup(gate.set)
+        init_logging(self._config(log_stop_timeout=timedelta(seconds=0.3)))
+        handler = _queue_handlers()[0]
+        listener = handler.listener
+        assert isinstance(listener, DroppingQueueListener)
+        sink = _StallingHandler(gate)
+        sink.only_prefix = "dropped"  # records are delivered normally, only the drop report stalls
+        listener.handlers = (sink,)
+        listener._last_report_time = time.monotonic()  # no report before the final one
+        handler.dropped = 3
+        with patch("auth_server.logging._warn_abandoned"):
+            start = time.monotonic()
+            self.assertFalse(stop_logging(timeout=0.3))
+            self.assertLess(time.monotonic() - start, 2)
+        self.assertTrue(sink.entered.wait(5))
+        gate.set()
+
+    def test_abandon_note_written_to_stderr(self: Self) -> None:
+        stream = io.StringIO()
+        with patch("auth_server.logging.sys") as fake_sys:
+            fake_sys.__stderr__ = stream
+            _warn_abandoned(5)
+            for _ in range(100):
+                if stream.getvalue():
+                    break
+                time.sleep(0.01)
+        self.assertIn("abandoned 5 queued log records", stream.getvalue())
+
+    def test_reinit_after_stall(self: Self) -> None:
+        sink = self._stalled()
+        with patch("auth_server.logging._warn_abandoned"):
+            self.assertFalse(stop_logging(timeout=0.2))
+        sink.gate.set()
+        stream = io.StringIO()
+        with patch("sys.stderr", stream), patch("sys.stdout", stream):
+            init_logging(self._config(testing=True))
+            logging.getLogger("test.after").warning("fresh record")
+            self.assertTrue(stop_logging())
+        self.assertIn("fresh record", stream.getvalue())
+        self.assertNotIn("fresh record", " ".join(sink.records))
+
+    def test_reinit_while_still_stalled(self: Self) -> None:
+        sink = self._stalled()
+        old_handler = _queue_handlers()
+        with patch("auth_server.logging._warn_abandoned"):
+            self.assertFalse(stop_logging(timeout=0.2))
+        self.assertFalse(_lock_free(sink))  # stalled sink still holds its lock
+        stream = io.StringIO()
+        with patch("sys.stderr", stream), patch("sys.stdout", stream):
+            start = time.monotonic()
+            init_logging(self._config(testing=True))
+            self.assertLess(time.monotonic() - start, 2)
+            logging.getLogger("test.after").warning("fresh record")
+            self.assertTrue(stop_logging())
+        self.assertIn("fresh record", stream.getvalue())
+        self.assertFalse(_lock_free(sink))
+        self.assertEqual([], [h for h in old_handler if h in logging.getLogger().handlers])
+
+    def test_abandoned_sink_unregistered_from_logging_registry(self: Self) -> None:
+        sink = self._stalled()
+        self.assertIn(sink, _registered_handlers())
+        with patch("auth_server.logging._warn_abandoned"):
+            self.assertFalse(stop_logging(timeout=0.2))
+        self.assertNotIn(sink, _registered_handlers())
+        self.assertNotIn(sink, list(getattr(logging, "_handlers").values()))
+        sink.gate.set()  # the abandoned daemon thread finishes without harm
+        time.sleep(0.1)
+
+    def test_process_exit_does_not_block_on_abandoned_sink(self: Self) -> None:
+        script = """
+import threading
+from datetime import timedelta
+import logging
+from auth_server.config import AuthServerConfig
+from auth_server.logging import init_logging, stop_logging, _queue_handlers
+init_logging(AuthServerConfig(auth_token_issuer="x", log_stop_timeout=timedelta(seconds=0.3)))
+listener = [h for h in logging.getLogger().handlers if hasattr(h, "listener")][0].listener
+entered = threading.Event()
+class Stall(logging.Handler):
+    def emit(self, record):
+        entered.set()
+        threading.Event().wait(600)
+listener.handlers = (Stall(),)
+logging.getLogger("child").warning("stall")
+assert entered.wait(5)
+assert stop_logging(timeout=0.3) is False
+"""
+        src = str(Path(auth_server.__file__).parent.parent)
+        env = {**os.environ, "PYTHONPATH": src}
+        start = time.monotonic()
+        result = subprocess.run(
+            [sys.executable, "-c", script], timeout=20, env=env, capture_output=True, text=True, check=False
+        )
+        self.assertLess(time.monotonic() - start, 10, result.stderr)
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_process_exit_with_full_stderr_pipe(self: Self) -> None:
+        script = """
+import logging
+import time
+from datetime import timedelta
+from auth_server.config import AuthServerConfig
+from auth_server.logging import init_logging, stop_logging
+init_logging(
+    AuthServerConfig(
+        auth_token_issuer="x",
+        log_stop_timeout=timedelta(seconds=0.3),
+        log_level="INFO",
+        log_max_message_length=20000,
+    )
+)
+for i in range(40):
+    logging.getLogger("child").warning("x" * 8000)
+time.sleep(0.5)
+assert stop_logging(timeout=0.3) is False
+"""
+        src = str(Path(auth_server.__file__).parent.parent)
+        env = {**os.environ, "PYTHONPATH": src}
+        # the pipe is deliberately not read until the child has exited
+        p = subprocess.Popen(  # noqa: S603
+            [sys.executable, "-c", script], stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, env=env
+        )
+        try:
+            try:
+                returncode = p.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                p.kill()
+                p.wait()
+                self.fail("child did not exit with a full stderr pipe")
+            assert p.stderr is not None
+            err = p.stderr.read(1 << 20)
+            self.assertEqual(0, returncode, err[-2000:])
+        finally:
+            if p.poll() is None:
+                p.kill()
+                p.wait()
+            if p.stderr is not None:
+                p.stderr.close()
+
+    def test_normal_path_returns_true(self: Self) -> None:
+        stream = io.StringIO()
+        with patch("sys.stderr", stream), patch("sys.stdout", stream):
+            init_logging(self._config(testing=True))
+            logging.getLogger("test.normal").warning("flushed")
+            self.assertTrue(stop_logging(timeout=5))
+        self.assertIn("flushed", stream.getvalue())
+
+    def test_full_queue_sentinel(self: Self) -> None:
+        gate = threading.Event()
+        self.addCleanup(gate.set)
+        init_logging(self._config(log_queue_size=2))
+        listener = _queue_handlers()[0].listener
+        assert isinstance(listener, DroppingQueueListener)
+        sink = _StallingHandler(gate)
+        listener.handlers = (sink,)
+        logging.getLogger("test.full2").warning("first")
+        self.assertTrue(sink.entered.wait(5))
+        for i in range(5):
+            logging.getLogger("test.full2").warning(f"fill {i}")
+        with patch("auth_server.logging._warn_abandoned") as warn:
+            self.assertFalse(stop_logging(timeout=0.2))
+        # two queued records were dropped to make room for the sentinel, counted as abandoned
+        warn.assert_called_once_with(2)
+        # the abandoned listener's handler is detached so it can not receive new records
+        self.assertEqual([], _queue_handlers())
+        gate.set()
+
+    def test_reinit_after_full_queue_abandonment(self: Self) -> None:
+        gate = threading.Event()
+        self.addCleanup(gate.set)
+        init_logging(self._config(log_queue_size=2))
+        old_handler = _queue_handlers()[0]
+        listener = old_handler.listener
+        assert isinstance(listener, DroppingQueueListener)
+        sink = _StallingHandler(gate)
+        listener.handlers = (sink,)
+        logging.getLogger("test.full3").warning("first")
+        self.assertTrue(sink.entered.wait(5))
+        for i in range(5):
+            logging.getLogger("test.full3").warning(f"fill {i}")
+        with patch("auth_server.logging._warn_abandoned"):
+            self.assertFalse(stop_logging(timeout=0.2))
+        # release the stalled sink before re-init: dictConfig takes every handler lock and would wait on it
+        gate.set()
+        stream = io.StringIO()
+        with patch("sys.stderr", stream), patch("sys.stdout", stream):
+            init_logging(self._config(testing=True))
+            self.assertNotIn(old_handler, logging.getLogger().handlers)
+            logging.getLogger("test.after").warning("fresh record")
+            self.assertTrue(stop_logging())
+        self.assertIn("fresh record", stream.getvalue())
+
+    def test_lifespan_exit_bounded(self: Self) -> None:
+        sink = self._stalled()
+        app = FastAPI(lifespan=lifespan)
+        start = time.monotonic()
+        with (
+            patch("auth_server.api.acquire_motor_lifespan"),
+            patch("auth_server.api.release_motor_lifespan"),
+            patch("auth_server.logging._warn_abandoned") as warn,
+        ):
+            with TestClient(app):
+                pass
+        self.assertLess(time.monotonic() - start, 3)
+        warn.assert_called_once()
+        sink.gate.set()
+
+
+class _NoWriteStream:
+    """Stream whose buffered write path must never be used when it has a descriptor"""
+
+    def __init__(self: Self, fd: int, encoding: str = "utf-8") -> None:
+        self._fd = fd
+        self.encoding = encoding
+
+    def fileno(self: Self) -> int:
+        return self._fd
+
+    def write(self: Self, data: str) -> int:
+        raise AssertionError("buffered write used")
+
+    def flush(self: Self) -> None:
+        raise AssertionError("buffered flush used")
+
+
+class TestUnbufferedStreamHandler(TestCase):
+    def _record(self: Self, msg: str = "hello") -> logging.LogRecord:
+        return logging.LogRecord("t", logging.INFO, __file__, 1, msg, None, None)
+
+    def _handler(self: Self, stream: Any) -> UnbufferedStreamHandler:  # noqa: ANN401
+        handler = UnbufferedStreamHandler(stream)
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        return handler
+
+    def test_writes_to_fd_without_buffered_writer(self: Self) -> None:
+        r, w = os.pipe()
+        self.addCleanup(os.close, r)
+        self.addCleanup(os.close, w)
+        self._handler(_NoWriteStream(w)).emit(self._record("hello"))
+        self.assertEqual(b"hello\n", os.read(r, 100))
+
+    def test_partial_writes(self: Self) -> None:
+        real_write = os.write
+        calls: list[int] = []
+
+        def short_write(fd: int, data: Any) -> int:  # noqa: ANN401
+            n = real_write(fd, bytes(data)[:3])
+            calls.append(n)
+            return n
+
+        r, w = os.pipe()
+        self.addCleanup(os.close, r)
+        self.addCleanup(os.close, w)
+        with patch("auth_server.logging.os.write", short_write):
+            self._handler(_NoWriteStream(w)).emit(self._record("abcdefgh"))
+        self.assertEqual(b"abcdefgh\n", os.read(r, 100))
+        self.assertEqual(3, len(calls))
+
+    def test_blocking_io_error_is_retried(self: Self) -> None:
+        real_write = os.write
+        state = {"n": 0}
+
+        def flaky(fd: int, data: Any) -> int:  # noqa: ANN401
+            state["n"] += 1
+            if state["n"] == 1:
+                raise BlockingIOError
+            return real_write(fd, data)
+
+        r, w = os.pipe()
+        self.addCleanup(os.close, r)
+        self.addCleanup(os.close, w)
+        with patch("auth_server.logging.os.write", flaky):
+            self._handler(_NoWriteStream(w)).emit(self._record("retry"))
+        self.assertEqual(b"retry\n", os.read(r, 100))
+
+    def test_fallback_for_stringio(self: Self) -> None:
+        stream = io.StringIO()
+        self._handler(stream).emit(self._record("plain"))
+        self.assertEqual("plain\n", stream.getvalue())
+
+    def test_default_stream_captured_at_construction(self: Self) -> None:
+        stream = io.StringIO()
+        with patch("sys.stderr", stream):
+            handler = UnbufferedStreamHandler()
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        handler.emit(self._record("late"))
+        self.assertEqual("late\n", stream.getvalue())
+
+    def test_closed_fd_does_not_raise(self: Self) -> None:
+        r, w = os.pipe()
+        os.close(r)
+        os.close(w)
+        handler = self._handler(_NoWriteStream(w))
+        handler.emit(self._record("gone"))
+        handler.flush()
+        handler.close()
+
+    def test_backslashreplace_for_unencodable(self: Self) -> None:
+        r, w = os.pipe()
+        self.addCleanup(os.close, r)
+        self.addCleanup(os.close, w)
+        self._handler(_NoWriteStream(w, encoding="ascii")).emit(self._record("caf\u00e9"))
+        self.assertEqual(b"caf\\xe9\n", os.read(r, 100))
+
+    def test_console_handler_class(self: Self) -> None:
+        config = AuthServerConfig(auth_token_issuer="x")
+        handler_cfg = make_dictConfig(make_local_context(config))["handlers"]["console"]
+        self.assertEqual("auth_server.logging.UnbufferedStreamHandler", handler_cfg["class"])
+
+
+class _CollectHandler(logging.Handler):
+    def __init__(self: Self) -> None:
+        super().__init__()
+        self.messages: list[str] = []
+
+    def emit(self: Self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+
+class TestLoggingLifespans(LoggingTestBase):
+    def setUp(self: Self) -> None:
+        super().setUp()
+        patcher_a = patch("auth_server.api.acquire_motor_lifespan")
+        patcher_r = patch("auth_server.api.release_motor_lifespan")
+        patcher_a.start()
+        patcher_r.start()
+        self.addCleanup(patcher_a.stop)
+        self.addCleanup(patcher_r.stop)
+        self.app = FastAPI(lifespan=lifespan)
+
+    def _install_sink(self: Self) -> _CollectHandler:
+        init_logging(self._config(log_level="INFO"))
+        listener = _queue_handlers()[0].listener
+        assert listener is not None
+        sink = _CollectHandler()
+        listener.handlers = (sink,)
+        return sink
+
+    @staticmethod
+    def _wait_for(sink: _CollectHandler, message: str) -> bool:
+        for _ in range(200):
+            if message in sink.messages:
+                return True
+            time.sleep(0.01)
+        return False
+
+    @staticmethod
+    def _running() -> bool:
+        listener = _queue_handlers()[0].listener
+        assert listener is not None
+        return listener._thread is not None
+
+    def test_overlapping_lifespans(self: Self) -> None:
+        sink = self._install_sink()
+        with TestClient(self.app):
+            with TestClient(self.app):
+                pass
+            self.assertTrue(self._running())
+            logging.getLogger("test.overlap").warning("after inner")
+            self.assertTrue(self._wait_for(sink, "after inner"))
+        self.assertFalse(self._running())
+
+    def test_reenter_restarts_listener(self: Self) -> None:
+        sink = self._install_sink()
+        with TestClient(self.app):
+            pass
+        self.assertFalse(self._running())
+        with TestClient(self.app):
+            self.assertTrue(self._running())
+            logging.getLogger("test.reenter").warning("second time")
+            self.assertTrue(self._wait_for(sink, "second time"))
+
+    def test_acquire_after_abandoned_listener_reinitializes(self: Self) -> None:
+        gate = threading.Event()
+        self.addCleanup(gate.set)
+        init_logging(self._config(log_stop_timeout=timedelta(seconds=0.2), log_level="INFO"))
+        listener = _queue_handlers()[0].listener
+        assert listener is not None
+        listener.handlers = (_StallingHandler(gate),)
+        for i in range(4):
+            logging.getLogger("test.stall").warning(f"stalled {i}")
+        with patch("auth_server.logging._warn_abandoned"):
+            self.assertFalse(stop_logging(timeout=0.2))
+        self.assertEqual([], _queue_handlers())
+        gate.set()
+        stream = io.StringIO()
+        with patch("sys.stderr", stream), patch("sys.stdout", stream):
+            acquire_logging()
+            self.assertEqual(1, len(_queue_handlers()))
+            self.assertTrue(self._running())
+            logging.getLogger("test.after").warning("recovered")
+            self.assertTrue(release_logging())
+        self.assertIn("recovered", stream.getvalue())
+
+    def test_extra_release_is_harmless(self: Self) -> None:
+        init_logging(self._config())
+        self.assertTrue(release_logging())
+        self.assertTrue(release_logging())
+        acquire_logging()
+        self.assertTrue(self._running())
+        self.assertTrue(release_logging())
+        self.assertFalse(self._running())
+
+    def test_init_logging_during_lifespan_keeps_listener_running(self: Self) -> None:
+        self._install_sink()
+        with TestClient(self.app):
+            init_logging(self._config(log_level="INFO"))
+            self.assertTrue(self._running())
+        self.assertFalse(self._running())
