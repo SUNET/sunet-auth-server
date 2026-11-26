@@ -161,7 +161,9 @@ class MDQMetadataSource(MetaDataMDX):
 
     def _cached(self: Self, entity_id: str) -> tuple[bool, pg_metadata.EntityDescriptor | None]:
         hit = self._cache.get(entity_id)
-        if hit is not None and hit.refresh_at > time.monotonic():
+        now = time.monotonic()
+        # never serve an entry past drop_at (validUntil or the stale grace), whatever its retry deadline says
+        if hit is not None and hit.refresh_at > now and hit.drop_at > now:
             return True, hit.entity
         return False, None
 
@@ -194,17 +196,22 @@ class MDQMetadataSource(MetaDataMDX):
 
     async def _fetch(self: Self, entity_id: str) -> pg_metadata.EntityDescriptor | None:
         try:
-            now = time.monotonic()
+            started = time.monotonic()
             previous = self._cache.get(entity_id)
             xml = await fetch_mdq_xml(entity_id=entity_id, mdq_url=self.mdq_url, ssl=self.ssl)
             parsed = self._parse(entity_id, xml) if xml is not None else None
             if parsed is not None:
                 entity, ttl, max_age = parsed
-                self._store(entity_id, _CacheEntry(entity, now + ttl, now + max_age))
+                # relative to the start of the fetch: a slow fetch must not extend the validity
+                self._store(entity_id, _CacheEntry(entity, started + ttl, started + max_age))
                 return entity
+            # the fetch can take seconds, read the clock again before falling back to the old copy
+            now = time.monotonic()
             if previous is not None and previous.entity is not None and previous.drop_at > now:
                 logger.warning(f"MDQ refresh of {entity_id} failed, keeping the last good metadata")
-                self._store(entity_id, _CacheEntry(previous.entity, now + self.negative_ttl, previous.drop_at))
+                # the retry must not outlive the copy
+                retry_at = min(now + self.negative_ttl, previous.drop_at)
+                self._store(entity_id, _CacheEntry(previous.entity, retry_at, previous.drop_at))
                 return previous.entity
             self._store(entity_id, _CacheEntry(None, now + self.negative_ttl, now + self.negative_ttl))
             return None

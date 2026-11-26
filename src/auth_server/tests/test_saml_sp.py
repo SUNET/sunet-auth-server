@@ -988,6 +988,42 @@ class TestSAMLSP(TestCase):
         assert "https://idp9.example.com" in source._cache
         assert "https://idp0.example.com" not in source._cache
 
+    def test_mdq_retry_deadline_capped_at_drop_at(self: Self) -> None:
+        # a long negative ttl must not make a stale copy usable past its drop time
+        source = MDQMetadataSource(url="http://mdq.example.com", ttl=0.0, negative_ttl=1000.0, max_stale=10.0)
+        with open(f"{self.datadir}/remote_metadata.xml", "rb") as f:
+            mdq_response = f.read()
+        with mock.patch("aiohttp.ClientSession.get", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = MockResponse(content=mdq_response)
+            assert run_coroutine_sync(source.prefetch(self.test_idp)) is not None
+            mock_get.return_value = MockResponse(status_code=500)
+            assert run_coroutine_sync(source.prefetch(self.test_idp)) is not None
+        entry = source._cache[self.test_idp]
+        assert entry.refresh_at <= entry.drop_at
+        # served from the cache before drop_at, refused after it
+        with mock.patch("auth_server.saml2_mdq.time.monotonic", return_value=entry.drop_at - 1):
+            assert source._cached(self.test_idp) == (True, entry.entity)
+        with mock.patch("auth_server.saml2_mdq.time.monotonic", return_value=entry.drop_at + 1):
+            assert source._cached(self.test_idp) == (False, None)
+
+    def test_mdq_slow_failed_fetch_does_not_serve_expired_copy(self: Self) -> None:
+        # the clock moves past drop_at while the (failing) fetch is in flight
+        source = MDQMetadataSource(url="http://mdq.example.com", ttl=0.0, negative_ttl=0.0, max_stale=10.0)
+        with open(f"{self.datadir}/remote_metadata.xml", "rb") as f:
+            mdq_response = f.read()
+        with mock.patch("aiohttp.ClientSession.get", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = MockResponse(content=mdq_response)
+            assert run_coroutine_sync(source.prefetch(self.test_idp)) is not None
+            drop_at = source._cache[self.test_idp].drop_at
+
+            async def slow_failure(*args: Any, **kwargs: Any) -> MockResponse:
+                clock.return_value = drop_at + 5  # the request took long enough to outlive the old copy
+                return MockResponse(status_code=500)
+
+            mock_get.side_effect = slow_failure
+            with mock.patch("auth_server.saml2_mdq.time.monotonic", return_value=drop_at - 5) as clock:
+                assert run_coroutine_sync(source.prefetch(self.test_idp)) is None
+
     def test_mdq_failed_refresh_keeps_last_good(self: Self) -> None:
         source = MDQMetadataSource(url="http://mdq.example.com", ttl=0.0, negative_ttl=0.0)
         with open(f"{self.datadir}/remote_metadata.xml", "rb") as f:
