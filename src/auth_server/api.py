@@ -7,7 +7,7 @@ from typing import Self, cast
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from pymongo.errors import PyMongoError
+from pymongo.errors import AutoReconnect
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.staticfiles import StaticFiles
@@ -37,17 +37,19 @@ async def validate_saml2_config() -> None:
     Load and build the SAML2 SP at startup so a broken settings file fails the deploy and not the first login.
 
     Does nothing when SAML is not configured. A Mongo that is unreachable is not a configuration error, it is
-    logged and the SP is built on first use instead.
+    logged and the SP is built on first use instead. Any other error, Mongo errors included, fails the startup.
     """
     config = load_config()
     if not config.pysaml2_config_path or not config.mongo_uri:
         return
     try:
         await get_saml2_sp()
-    except PyMongoError as e:
+    except AutoReconnect as e:
+        # connectivity only (covers ServerSelectionTimeoutError and NetworkTimeout, as the router maps to 503), other
+        # Mongo errors (bad client options, auth failure, index conflicts) are persistent and must fail the startup
         logger.warning(f"SAML2 settings loaded but the SAML2 SP could not be built, Mongo is not available: {e!r}")
     except Exception as e:
-        logger.error(f"SAML2 configuration {config.pysaml2_config_path} is invalid: {e!r}")
+        logger.error(f"SAML2 startup validation of {config.pysaml2_config_path} failed: {e!r}")
         raise
     else:
         logger.info(f"SAML2 configuration {config.pysaml2_config_path} loaded")

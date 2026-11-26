@@ -20,7 +20,7 @@ from httpx import Response
 from pygamlastan.compat.saml2.mdstore import SourceNotFound
 from pygamlastan.crypto import SamlSigner
 from pymongo import MongoClient
-from pymongo.errors import AutoReconnect, ServerSelectionTimeoutError
+from pymongo.errors import AutoReconnect, OperationFailure, ServerSelectionTimeoutError
 from starlette.testclient import TestClient
 
 from auth_server.api import init_auth_server_api
@@ -1288,6 +1288,19 @@ class TestSAMLSP(TestCase):
     def test_startup_validates_saml_config(self: Self) -> None:
         with TestClient(self.app):
             assert asyncio.run(get_saml2_sp()) is not None
+
+    def test_startup_tolerates_mongo_unavailable(self: Self) -> None:
+        # connectivity problems only log a warning, the SP is built on first use
+        with mock.patch("auth_server.api.get_saml2_sp", side_effect=ServerSelectionTimeoutError("no mongo")):
+            with TestClient(self.app):
+                pass
+
+    def test_startup_fails_on_persistent_mongo_error(self: Self) -> None:
+        # not an outage: auth failure, index conflict, bad options. Must fail the startup.
+        with mock.patch("auth_server.api.get_saml2_sp", side_effect=OperationFailure("index conflict")):
+            with self.assertRaises(OperationFailure):
+                with TestClient(self.app):
+                    pass
 
     def test_startup_fails_on_bad_saml_config(self: Self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
