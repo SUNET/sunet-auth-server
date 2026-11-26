@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from collections import OrderedDict
-from collections.abc import Coroutine
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from collections.abc import Callable, Coroutine, Iterator
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from logging import getLogger
 from typing import Any, Self
 
@@ -16,6 +18,7 @@ from pygamlastan.compat.saml2.s_utils import UnknownSystemEntity
 from pygamlastan.crypto import SamlVerifier
 
 from auth_server.mdq import fetch_mdq_xml
+from auth_server.time_utils import utc_now
 
 __author__ = "lundberg"
 
@@ -30,6 +33,8 @@ MDQ_CACHE_MAX_ENTRIES = 1024
 # How long past its refresh time a good copy may still be used when refreshing it fails (about one extra refresh
 # ttl). The copy is never used past its validUntil either, which every MDQ document must carry.
 MDQ_MAX_STALE_SECONDS = 3600.0
+# Earliest retry of a local/remote metadata source refresh that failed (or found nothing newer)
+METADATA_REFRESH_RETRY_SECONDS = 60.0
 
 
 @dataclass
@@ -228,6 +233,85 @@ class MDQMetadataSource(MetaDataMDX):
         return entity
 
 
+# (entities, effective validUntil per entity id, None for no deadline) of a freshly loaded local/remote source
+LoadedSource = tuple[list[pg_metadata.EntityDescriptor], dict[str, datetime | None]]
+
+_refresh_executor: ThreadPoolExecutor | None = None
+_refresh_executor_lock = threading.Lock()
+
+
+def _get_refresh_executor() -> ThreadPoolExecutor:
+    """
+    Dedicated single thread for the (blocking, urllib based) reload of local/remote metadata sources.
+
+    The compat loader is sync only. It is not run on the default executor, which also serves getaddrinfo for aiohttp
+    (a slow metadata server must not stall the MDQ and TLS federation lookups). One thread is enough, a refresh is
+    rare and one source is reloaded at a time.
+    """
+    global _refresh_executor  # noqa: PLW0603
+    with _refresh_executor_lock:
+        if _refresh_executor is None:
+            _refresh_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="saml-metadata-refresh")
+        return _refresh_executor
+
+
+@dataclass
+class _Source:
+    key: str  # file path or url
+    entity_ids: set[str]
+    loader: Callable[[], LoadedSource] | None  # sync, blocking, run in the refresh executor
+    refresh_at: datetime | None  # reload after this, None when the source has no deadline (nothing to refresh before)
+    task: asyncio.Future[bool] | None = field(default=None, repr=False)
+
+
+class LazySPConfig(SPConfig):
+    """
+    SPConfig that does not guess the only IdP from metadata when entities can also come from an MDQ server.
+
+    It also records the effective validUntil (inherited from enclosing EntitiesDescriptors) of every entity of a
+    local/remote source, which the compat loader checks at load time but then throws away.
+    """
+
+    def __init__(self: Self) -> None:
+        super().__init__()
+        self.source_deadlines: dict[str, dict[str, datetime | None]] = {}
+        self._document_deadlines: dict[str, datetime | None] = {}
+
+    def _validate_metadata_document(self: Self, document: pg_metadata.MetadataDocument, **kwargs: Any) -> None:
+        super()._validate_metadata_document(document, **kwargs)
+        self._document_deadlines = {item.entity.entity_id: item.effective_valid_until for item in document.entities}
+
+    def _load_metadata_file(self: Self, path: str) -> None:
+        self._document_deadlines = {}
+        super()._load_metadata_file(path)
+        self.source_deadlines[path] = self._document_deadlines
+
+    def _load_remote_metadata(self: Self, source: Any) -> None:  # noqa: ANN401
+        self._document_deadlines = {}
+        super()._load_remote_metadata(source)
+        self.source_deadlines[str(source["url"])] = self._document_deadlines
+
+    def only_idp(self: Self) -> str | None:
+        if not self.idp and isinstance(self.metadata, LazyMetadataStore) and self.metadata.mdq_sources:
+            # the MDQ entities can not be enumerated, so "the only IdP in the metadata" is not knowable
+            return None
+        return super().only_idp()
+
+
+def reload_metadata_source(kind: str, key: str, settings: Any) -> LoadedSource:  # noqa: ANN401
+    """
+    Load a local file or remote source again with the compat loader (same https, size, signature and expiry checks as
+    at configuration load) into a throwaway config. Blocking, never call it on the event loop.
+    """
+    conf = LazySPConfig()
+    conf.metadata = MetadataStore()
+    if kind == "local":
+        conf._load_metadata_file(key)
+    else:
+        conf._load_remote_metadata(settings)
+    return list(conf.metadata.values()), conf.source_deadlines[key]
+
+
 class LazyMetadataStore(MetadataStore):
     """
     MetadataStore that resolves entities it does not know from its on-demand (MDQ) sources.
@@ -235,7 +319,157 @@ class LazyMetadataStore(MetadataStore):
     The compat MetadataStore only knows entities from local and remote documents. All lookups (`[]`, `get()` and `in`)
     that miss are retried against the MDQMetadataSource sources. MDQ entities are not stored in the store itself, the
     source owns their lifetime (ttl, validUntil).
+
+    Expiry: the compat store checks validUntil only when the config is loaded, but this store lives as long as the
+    process. Every local/remote entity keeps its effective deadline and is dropped, fail closed (KeyError, error
+    log naming the entity), as soon as a lookup finds it past that deadline. Lookups never do I/O. Sources are
+    reloaded from async code (refresh_sources) once half way to their earliest deadline, a failed reload keeps the
+    last good copy only until its own deadline.
     """
+
+    def __init__(self: Self) -> None:
+        self._lock = threading.RLock()
+        self._data: dict[str, pg_metadata.EntityDescriptor] = {}
+        self._deadlines: dict[str, datetime | None] = {}
+        self._expired: set[str] = set()
+        self._earliest: datetime | None = None  # earliest deadline of a live entity
+        self._sources: dict[str, _Source] = {}
+        super().__init__()
+
+    @property
+    def _entities(self: Self) -> dict[str, pg_metadata.EntityDescriptor]:
+        """The live entities, every access of the compat base class drops the expired ones first"""
+        self._purge()
+        return self._data
+
+    @_entities.setter
+    def _entities(self: Self, value: dict[str, pg_metadata.EntityDescriptor]) -> None:
+        self._data = value
+
+    def _purge(self: Self) -> None:
+        earliest = self._earliest
+        if earliest is None or utc_now() < earliest:
+            return
+        with self._lock:
+            now = utc_now()
+            for entity_id, deadline in self._deadlines.items():
+                if deadline is not None and deadline <= now and entity_id in self._data:
+                    del self._data[entity_id]
+                    self._expired.add(entity_id)
+                    logger.error(f"SAML metadata for {entity_id} expired at {deadline.isoformat()}, refusing it")
+            self._update_earliest()
+
+    def _update_earliest(self: Self) -> None:
+        deadlines = [d for e, d in self._deadlines.items() if d is not None and e in self._data]
+        self._earliest = min(deadlines, default=None)
+
+    @staticmethod
+    def _refresh_point(deadlines: dict[str, datetime | None], now: datetime) -> datetime | None:
+        known = [d for d in deadlines.values() if d is not None]
+        if not known:
+            return None
+        remaining = max(min(known) - now, timedelta(0))
+        return now + max(timedelta(seconds=METADATA_REFRESH_RETRY_SECONDS), remaining / 2)
+
+    def add_source(
+        self: Self,
+        source: str,
+        entities: list[pg_metadata.EntityDescriptor],
+        deadlines: dict[str, datetime | None] | None = None,
+        loader: Callable[[], LoadedSource] | None = None,
+    ) -> None:
+        """
+        Register a local/remote source, with the effective validUntil per entity id and (optionally) the sync
+        callable that reloads the source, see refresh_sources().
+        """
+        with self._lock:
+            super().add_source(source, entities)
+            deadlines = deadlines or {}
+            ids = {e.entity_id for e in entities}
+            for entity_id in ids:
+                self._deadlines[entity_id] = deadlines.get(entity_id)
+            self._update_earliest()
+            self._sources[source] = _Source(
+                key=source,
+                entity_ids=ids,
+                loader=loader,
+                refresh_at=self._refresh_point({i: self._deadlines[i] for i in ids}, utc_now()) if loader else None,
+            )
+        self._purge()  # an entity that is already expired is not served
+
+    def _swap_source(
+        self: Self, key: str, entities: list[pg_metadata.EntityDescriptor], deadlines: dict[str, datetime | None]
+    ) -> None:
+        """Replace everything a source served with a fresh load, in one step"""
+        fresh = MetadataStore()
+        fresh.add_source(key, entities)  # checks for duplicate ids inside the source
+        ids = set(fresh)
+        with self._lock:
+            source = self._sources[key]
+            others = set(self._deadlines) - source.entity_ids
+            if ids & others:
+                raise ValueError(f"reloaded source {key} has entity ids that another source serves")
+            for entity_id in source.entity_ids:
+                self._data.pop(entity_id, None)
+                self._deadlines.pop(entity_id, None)
+                self._expired.discard(entity_id)
+            self.metadata[key] = fresh.metadata[key]
+            self._data.update({entity_id: fresh[entity_id] for entity_id in ids})
+            for entity_id in ids:
+                self._deadlines[entity_id] = deadlines.get(entity_id)
+            source.entity_ids = ids
+            source.refresh_at = self._refresh_point({i: self._deadlines[i] for i in ids}, utc_now())
+            self._update_earliest()
+        self._purge()
+
+    async def _refresh_source(self: Self, key: str) -> bool:
+        source = self._sources[key]
+        assert source.loader is not None  # please mypy
+        try:
+            entities, deadlines = await asyncio.get_running_loop().run_in_executor(
+                _get_refresh_executor(), source.loader
+            )
+            self._swap_source(key, entities, deadlines)
+        except Exception as e:
+            with self._lock:
+                source.refresh_at = utc_now() + timedelta(seconds=METADATA_REFRESH_RETRY_SECONDS)
+            logger.error(f"SAML metadata refresh of {key} failed, keeping the last good copy until it expires: {e!r}")
+            return False
+        logger.info(f"SAML metadata source {key} refreshed")
+        return True
+
+    async def refresh_sources(self: Self) -> None:
+        """
+        Reload every local/remote source that is past its refresh point (half way to its earliest validUntil).
+
+        Never blocks the event loop, the (sync) load runs in a dedicated one thread executor. Concurrent calls share
+        one reload per source. A source with entities that are already expired is awaited, so that the request that
+        found it can be served from the new copy. Otherwise the reload runs in the background and the last good copy
+        keeps being served until its own deadline. Lookups never refresh, call this before them.
+        """
+        self._purge()
+        now = utc_now()
+        loop = asyncio.get_running_loop()
+        waiting: list[asyncio.Future[bool]] = []
+        for key, source in list(self._sources.items()):
+            if source.loader is None or source.refresh_at is None or now < source.refresh_at:
+                continue
+            task = source.task
+            if task is None or task.done() or task.get_loop() is not loop:
+                task = source.task = asyncio.ensure_future(self._refresh_source(key))
+            if source.entity_ids & self._expired:
+                waiting.append(task)
+        for task in waiting:
+            await asyncio.shield(task)
+
+    def _refuse_if_expired(self: Self, entity_id: str) -> None:
+        self._purge()
+        if entity_id in self._expired:
+            logger.error(f"SAML metadata for {entity_id} is expired, refusing the lookup")
+            raise KeyError(entity_id)
+
+    def __iter__(self: Self) -> Iterator[str]:
+        return iter(list(self._entities))
 
     def add_mdq_source(self: Self, source: MDQMetadataSource) -> None:
         self.metadata[source.mdq_url] = source
@@ -248,12 +482,19 @@ class LazyMetadataStore(MetadataStore):
         try:
             return super().__getitem__(entity_id)
         except KeyError:
+            self._refuse_if_expired(entity_id)  # never fall back to MDQ for an entity that expired here
             for source in self.mdq_sources:
                 try:
                     return source[entity_id]
                 except KeyError:
                     continue
             raise
+
+    def _refuse_if_expired_unknown(self: Self, entity_id: str) -> None:
+        try:
+            self._refuse_if_expired(entity_id)
+        except KeyError:
+            raise UnknownSystemEntity(entity_id)
 
     def _mdq_store(self: Self, entity_id: str) -> MetadataStore:
         """A throwaway store holding only the MDQ entity, so the base class query methods can answer for it"""
@@ -266,6 +507,7 @@ class LazyMetadataStore(MetadataStore):
         return store
 
     def name(self: Self, entity_id: str, langpref: str = "en") -> str:
+        self._refuse_if_expired_unknown(entity_id)
         if entity_id in self._entities or not self.mdq_sources:
             return super().name(entity_id, langpref)
         return self._mdq_store(entity_id).name(entity_id, langpref)
@@ -273,6 +515,7 @@ class LazyMetadataStore(MetadataStore):
     def service(
         self: Self, entity_id: str, descriptor: str, service: str, binding: str | None = None
     ) -> dict[str, list[dict[str, Any]]] | list[dict[str, Any]]:
+        self._refuse_if_expired_unknown(entity_id)
         if entity_id in self._entities or not self.mdq_sources:
             return super().service(entity_id, descriptor, service, binding)
         return self._mdq_store(entity_id).service(entity_id, descriptor, service, binding)
@@ -291,13 +534,3 @@ class LazyMetadataStore(MetadataStore):
         for source in self.mdq_sources:
             if await source.prefetch(entity_id) is not None:
                 return
-
-
-class LazySPConfig(SPConfig):
-    """SPConfig that does not guess the only IdP from metadata when entities can also come from an MDQ server"""
-
-    def only_idp(self: Self) -> str | None:
-        if not self.idp and isinstance(self.metadata, LazyMetadataStore) and self.metadata.mdq_sources:
-            # the MDQ entities can not be enumerated, so "the only IdP in the metadata" is not knowable
-            return None
-        return super().only_idp()

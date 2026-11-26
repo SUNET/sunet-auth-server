@@ -154,6 +154,19 @@ Things to be aware of when upgrading from pysaml2:
   fails the last good copy is kept for at most one more hour (`MDQ_MAX_STALE_SECONDS`), never past its `validUntil`.
   The request handlers prefetch the IdP metadata, a lookup inside the event loop that was not
   prefetched is refused (fail closed) and never blocks the loop. Concurrent lookups of one entity share one fetch.
+- Metadata expiry (`local` and `remote` sources): the SAML SP is a process-lifetime singleton, so every entity keeps
+  its effective `validUntil` (also one inherited from an enclosing `EntitiesDescriptor`). A lookup (`[]`, `get`, `in`,
+  `name`, `service`, `single_sign_on_service`, iteration, `only_idp`) past it fails closed like a missing entity
+  (KeyError / unknown entity) and logs an error naming the entity. No I/O happens in lookups. Sources are reloaded from
+  async code (request handlers via `prefetch_idp_metadata`, and at startup) once they are half way (at least 60 s) to
+  their earliest `validUntil`, with the same loader and checks as at config load (https only, size limit, `cert`
+  signature over the root, expiry). A local file is re-read the same way, so replacing the file is enough. The reload
+  runs on a dedicated single thread (the compat loader is sync urllib), one reload per source at a time. While the
+  copy is still valid the reload runs in the background and the old copy is served. A failed reload (retried every 60 s)
+  keeps the last good copy only until its own `validUntil`, never longer. A source that is already expired is awaited by
+  the request that finds it. A local file past its `validUntil` that is not replaced makes lookups fail (the IdP
+  gets refused) until it is replaced, no restart is needed. Refresh is request driven, an idle worker reloads on the next
+  login.
 - Trust model: the IdP allow-list check in `/saml2/sp/discovery-response` applies only when the settings enumerate
   `idp`. With metadata/MDQ-only settings any IdP in that metadata is trusted, so the metadata source (the
   federation) decides which IdPs are accepted. Entities without an IDPSSODescriptor are always refused.

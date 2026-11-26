@@ -11,7 +11,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from functools import lru_cache
+from functools import lru_cache, partial
 from importlib.abc import Loader, MetaPathFinder
 from importlib.machinery import ModuleSpec
 from logging import getLogger
@@ -35,7 +35,7 @@ from pymongo.errors import DuplicateKeyError
 from auth_server.config import AuthServerConfig, load_config
 from auth_server.db.client import create_sync_mongo_client
 from auth_server.db.mongo_cache import MongoCache
-from auth_server.saml2_mdq import LazyMetadataStore, LazySPConfig, MDQMetadataSource
+from auth_server.saml2_mdq import LazyMetadataStore, LazySPConfig, MDQMetadataSource, reload_metadata_source
 from auth_server.time_utils import utc_now
 
 __author__ = "lundberg"
@@ -445,8 +445,17 @@ def load_sp_config(settings: dict[str, Any]) -> SPConfig:
     conf.load(settings)
 
     store = LazyMetadataStore()
+    remote_settings = {str(r["url"]): r for r in metadata_settings.get("remote", [])}
     for source, local in conf.metadata.metadata.items():
-        store.add_source(source, list(local.entities.values()))  # type: ignore[union-attr]
+        is_remote = source in remote_settings
+        store.add_source(
+            source,
+            list(local.entities.values()),  # type: ignore[union-attr]
+            deadlines=conf.source_deadlines.get(source),
+            loader=partial(
+                reload_metadata_source, "remote" if is_remote else "local", source, remote_settings.get(source)
+            ),
+        )
     if isinstance(mdq_settings, str):
         mdq_settings = [mdq_settings]
     for mdq in mdq_settings:
@@ -497,10 +506,15 @@ def get_pysaml2_sp_config(name: str) -> SPConfig:
 
 
 async def prefetch_idp_metadata(saml2_sp: SAML2SP, idp_entity_id: str | None) -> None:
-    """Warm the on-demand (MDQ) metadata for an IdP so the synchronous SAML client does not block on the fetch"""
+    """
+    Warm the on-demand (MDQ) metadata for an IdP so the synchronous SAML client does not block on the fetch, and
+    reload the local/remote metadata sources that are due (lookups never do I/O, see LazyMetadataStore).
+    """
     store = saml2_sp.client.config.metadata
-    if idp_entity_id is not None and isinstance(store, LazyMetadataStore):
-        await store.prefetch(idp_entity_id)
+    if isinstance(store, LazyMetadataStore):
+        await store.refresh_sources()
+        if idp_entity_id is not None:
+            await store.prefetch(idp_entity_id)
 
 
 async def get_redirect_url(http_info: SAMLHttpArgs) -> str:
@@ -657,11 +671,13 @@ async def get_authn_response(raw_response: str) -> tuple[AuthnResponse, AuthnReq
     expected_idp = saml2_sp.outstanding_queries_cache.get_idp(request_id) if request_id is not None else None
     if expected_idp is None:
         # outstanding query without a stored IdP (legacy) or a single IdP setup, the client will find the IdP from the
-        # settings or the response. Warm the Issuer of the response, but only an IdP the settings allow, so that an
-        # attacker can not make us query the MDQ server for arbitrary entities. This only fills the cache, the
+        # settings or the response. Warm the Issuer of the response, but only when the response answers a request
+        # we really sent and only for an IdP the settings allow. An unsolicited response or a made up Issuer must not
+        # cause outbound MDQ requests (the client rejects those without network I/O). This only fills the cache, the
         # signature and expected_idps checks in the client decide what is accepted.
         allowed_idps = saml2_sp.client.config.idp
-        if unverified_issuer is not None and (not allowed_idps or unverified_issuer in allowed_idps):
+        known_request = request_id is not None and saml2_sp.outstanding_queries_cache.get(request_id) is not None
+        if known_request and unverified_issuer is not None and (not allowed_idps or unverified_issuer in allowed_idps):
             expected_idp = unverified_issuer
         else:
             expected_idp = saml2_sp.client.config.only_idp()

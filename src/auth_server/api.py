@@ -24,7 +24,7 @@ from auth_server.routers.interaction import interaction_router
 from auth_server.routers.root import root_router
 from auth_server.routers.saml2_sp import saml2_router
 from auth_server.routers.status import status_router
-from auth_server.saml2 import clear_saml2_sp, get_saml2_sp
+from auth_server.saml2 import clear_saml2_sp, get_saml2_sp, prefetch_idp_metadata
 from auth_server.utils import import_class
 
 __author__ = "lundberg"
@@ -43,7 +43,10 @@ async def validate_saml2_config() -> None:
     if not config.pysaml2_config_path or not config.mongo_uri:
         return
     try:
-        await get_saml2_sp()
+        saml2_sp = await get_saml2_sp()
+        if saml2_sp is not None:
+            # reload local/remote metadata that is already (nearly) expired, so the first login does not wait for it
+            await prefetch_idp_metadata(saml2_sp, None)
     except AutoReconnect as e:
         # connectivity only (covers ServerSelectionTimeoutError and NetworkTimeout, as the router maps to 503), other
         # Mongo errors (bad client options, auth failure, index conflicts) are persistent and must fail the startup

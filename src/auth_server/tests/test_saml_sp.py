@@ -18,6 +18,7 @@ from uuid import uuid4
 
 from httpx import Response
 from pygamlastan.compat.saml2.mdstore import SourceNotFound
+from pygamlastan.compat.saml2.s_utils import UnknownSystemEntity
 from pygamlastan.crypto import SamlSigner
 from pymongo import MongoClient
 from pymongo.errors import AutoReconnect, OperationFailure, ServerSelectionTimeoutError
@@ -808,6 +809,18 @@ class TestSAMLSP(TestCase):
         # response is still refused: the prefetch widens no trust
         assert response.status_code == 400
 
+    def test_mdq_acs_unsolicited_response_does_not_fetch_metadata(self: Self) -> None:
+        # unknown InResponseTo and an Issuer of the attacker's choosing: rejected with no outbound MDQ request
+        self.config["pysaml2_config_path"] = f"{self.datadir}/saml2_settings_mdq.py"
+        self._update_app_config(config=self.config)
+        generated = self._generate_auth_response(
+            request_id="id-never-sent", saml_response_tpl=self.saml_response_tpl_success
+        )
+        with mock.patch("aiohttp.ClientSession.get", new_callable=AsyncMock) as mock_get:
+            response = self._post_saml_response(generated)
+            assert mock_get.await_count == 0
+        assert response.status_code == 400
+
     def test_mdq_cache_is_bounded(self: Self) -> None:
         source = MDQMetadataSource(url="http://mdq.example.com", max_entries=3)
         with mock.patch("aiohttp.ClientSession.get", new_callable=AsyncMock) as mock_get:
@@ -879,6 +892,206 @@ class TestSAMLSP(TestCase):
             assert conf.metadata.single_sign_on_service(
                 self.test_idp, "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
             )
+
+    # --- local/remote metadata expiry and refresh ---
+
+    def _expiring_metadata_file(
+        self: Self, tmp: str, valid_until: datetime, entities_descriptor: bool = False, name: str = "md.xml"
+    ) -> str:
+        """
+        Write remote_metadata.xml with the given validUntil, on the EntityDescriptor or (entities_descriptor) on an
+        enclosing EntitiesDescriptor that the entity inherits it from.
+        """
+        stamp = valid_until.strftime("%Y-%m-%dT%H:%M:%SZ")
+        xml = (self.datadir / "remote_metadata.xml").read_text()
+        xml = xml.replace(' validUntil="2099-01-01T00:00:00Z"', "", 1).split("?>", 1)[1]
+        if entities_descriptor:
+            ns = "urn:oasis:names:tc:SAML:2.0:metadata"
+            xml = f'<md:EntitiesDescriptor xmlns:md="{ns}" validUntil="{stamp}">{xml}</md:EntitiesDescriptor>'
+        else:
+            xml = xml.replace("<md:EntityDescriptor ", f'<md:EntityDescriptor validUntil="{stamp}" ', 1)
+        path = Path(tmp) / name
+        path.write_text(xml)
+        return str(path)
+
+    def _local_store(self: Self, path: str) -> LazyMetadataStore:
+        conf = load_sp_config({"metadata": {"local": [path]}, "entityid": "https://sp.example.com/md"})
+        assert isinstance(conf.metadata, LazyMetadataStore)
+        return conf.metadata
+
+    def test_metadata_expired_at_lookup_is_refused(self: Self) -> None:
+        now = utc_now()
+        for inherited in (False, True):
+            with self.subTest(inherited=inherited), tempfile.TemporaryDirectory() as tmp:
+                path = self._expiring_metadata_file(tmp, now + timedelta(hours=1), entities_descriptor=inherited)
+                store = self._local_store(path)
+                assert self.test_idp in store
+                assert len(store) == 1
+                with mock.patch("auth_server.saml2_mdq.utc_now", return_value=now + timedelta(hours=2)):
+                    with self.assertLogs("auth_server.saml2_mdq", level="ERROR") as logs:
+                        with self.assertRaises(KeyError):
+                            store[self.test_idp]
+                        assert store.get(self.test_idp) is None
+                        assert self.test_idp not in store
+                        assert len(store) == 0
+                        assert list(store) == []
+                        assert store.with_descriptor("idpsso") == {}
+                    assert any(self.test_idp in line and "expired" in line for line in logs.output)
+                    with self.assertRaises(UnknownSystemEntity):
+                        store.name(self.test_idp)
+                    with self.assertRaises(UnknownSystemEntity):
+                        store.single_sign_on_service(self.test_idp)
+
+    def test_metadata_expired_when_added_is_refused(self: Self) -> None:
+        store = LazyMetadataStore()
+        entity = self._local_store(str(self.datadir / "remote_metadata.xml"))[self.test_idp]
+        with self.assertLogs("auth_server.saml2_mdq", level="ERROR"):
+            store.add_source("src", [entity], deadlines={self.test_idp: utc_now() - timedelta(seconds=1)})
+            assert self.test_idp not in store
+
+    def test_metadata_expired_not_found_via_only_idp(self: Self) -> None:
+        now = utc_now()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._expiring_metadata_file(tmp, now + timedelta(hours=1))
+            conf = load_sp_config({"metadata": {"local": [path]}, "entityid": "https://sp.example.com/md"})
+            assert conf.only_idp() == self.test_idp
+            with mock.patch("auth_server.saml2_mdq.utc_now", return_value=now + timedelta(hours=2)):
+                assert conf.only_idp() is None
+
+    def test_metadata_without_valid_until_never_expires(self: Self) -> None:
+        store = self._local_store(str(self.datadir / "remote_metadata.xml"))  # validUntil 2099
+        with mock.patch("auth_server.saml2_mdq.utc_now", return_value=utc_now() + timedelta(days=3650)):
+            assert self.test_idp in store
+
+    def test_remote_source_refreshed_before_expiry(self: Self) -> None:
+        now = utc_now()
+        old = self._local_store(str(self.datadir / "remote_metadata.xml"))[self.test_idp]
+        new = self._local_store(str(self.datadir / "remote_metadata_idp2.xml"))
+        new_id = next(iter(new))
+        store = LazyMetadataStore()
+        loader = mock.Mock(return_value=([new[new_id]], {new_id: now + timedelta(hours=10)}))
+        store.add_source("https://md.example.com/md.xml", [old], {self.test_idp: now + timedelta(hours=2)}, loader)
+
+        async def run(at: datetime) -> None:
+            with mock.patch("auth_server.saml2_mdq.utc_now", return_value=at):
+                await store.refresh_sources()
+                task = store._sources["https://md.example.com/md.xml"].task
+                if task is not None:
+                    await task
+
+        # before the half way point nothing happens
+        asyncio.run(run(now + timedelta(minutes=30)))
+        loader.assert_not_called()
+        # past it the source is reloaded in the background and the new entities are served, the old ones are gone
+        asyncio.run(run(now + timedelta(hours=1, minutes=1)))
+        loader.assert_called_once()
+        with mock.patch("auth_server.saml2_mdq.utc_now", return_value=now + timedelta(hours=1, minutes=2)):
+            assert new_id in store
+            assert self.test_idp not in store
+        # the next refresh point follows the new deadline, so a lookup past the old deadline still works
+        with mock.patch("auth_server.saml2_mdq.utc_now", return_value=now + timedelta(hours=3)):
+            assert new_id in store
+
+    def test_failed_refresh_keeps_last_good_until_deadline(self: Self) -> None:
+        now = utc_now()
+        old = self._local_store(str(self.datadir / "remote_metadata.xml"))[self.test_idp]
+        store = LazyMetadataStore()
+        loader = mock.Mock(side_effect=SourceNotFound("down"))
+        store.add_source("src", [old], {self.test_idp: now + timedelta(hours=2)}, loader)
+
+        async def run(at: datetime) -> None:
+            with mock.patch("auth_server.saml2_mdq.utc_now", return_value=at):
+                await store.refresh_sources()
+                task = store._sources["src"].task
+                if task is not None:
+                    await task
+
+        with self.assertLogs("auth_server.saml2_mdq", level="ERROR") as logs:
+            asyncio.run(run(now + timedelta(hours=1, minutes=1)))
+        assert any("refresh of src failed" in line for line in logs.output)
+        assert loader.call_count == 1
+        # still served before its own deadline
+        with mock.patch("auth_server.saml2_mdq.utc_now", return_value=now + timedelta(hours=1, minutes=30)):
+            assert self.test_idp in store
+        # a retry is not made before the retry delay
+        asyncio.run(run(now + timedelta(hours=1, minutes=1, seconds=10)))
+        assert loader.call_count == 1
+        # past the deadline the lookups fail closed, also while the (awaited) refresh keeps failing
+        with self.assertLogs("auth_server.saml2_mdq", level="ERROR"):
+            asyncio.run(run(now + timedelta(hours=2, minutes=1)))
+        assert loader.call_count == 2
+        with mock.patch("auth_server.saml2_mdq.utc_now", return_value=now + timedelta(hours=2, minutes=1)):
+            with self.assertLogs("auth_server.saml2_mdq", level="ERROR"):
+                assert self.test_idp not in store
+
+    def test_expired_source_refresh_is_awaited(self: Self) -> None:
+        now = utc_now()
+        old = self._local_store(str(self.datadir / "remote_metadata.xml"))[self.test_idp]
+        store = LazyMetadataStore()
+        loader = mock.Mock(return_value=([old], {self.test_idp: now + timedelta(hours=10)}))
+        store.add_source("src", [old], {self.test_idp: now + timedelta(hours=1)}, loader)
+
+        async def run() -> bool:
+            with mock.patch("auth_server.saml2_mdq.utc_now", return_value=now + timedelta(hours=2)):
+                with self.assertLogs("auth_server.saml2_mdq", level="ERROR"):
+                    assert self.test_idp not in store
+                await store.refresh_sources()  # no extra await of the task, it was awaited because it was expired
+                return self.test_idp in store
+
+        assert asyncio.run(run())
+
+    def test_local_source_reread_on_refresh(self: Self) -> None:
+        now = utc_now()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._expiring_metadata_file(tmp, now + timedelta(hours=2))
+            store = self._local_store(path)
+            source = store._sources[path]
+            assert source.refresh_at is not None
+            assert now + timedelta(minutes=59) < source.refresh_at < now + timedelta(hours=1, minutes=1)
+            # the file is replaced with a later validUntil
+            self._expiring_metadata_file(tmp, now + timedelta(hours=10))
+
+            async def run() -> None:
+                with mock.patch("auth_server.saml2_mdq.utc_now", return_value=now + timedelta(hours=1, minutes=5)):
+                    await store.refresh_sources()
+                    assert source.task is not None
+                    await source.task
+
+            asyncio.run(run())
+            with mock.patch("auth_server.saml2_mdq.utc_now", return_value=now + timedelta(hours=3)):
+                assert self.test_idp in store
+
+    def test_local_source_not_replaced_stays_expired(self: Self) -> None:
+        now = utc_now()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._expiring_metadata_file(tmp, now + timedelta(hours=1))
+            store = self._local_store(path)
+            at = now + timedelta(hours=2)
+            with mock.patch("auth_server.saml2_mdq.utc_now", return_value=at):
+                with self.assertLogs("auth_server.saml2_mdq", level="ERROR"):
+                    assert self.test_idp not in store
+                    # the reload reads the same expired file: the compat loader refuses it, nothing is served
+                    # (the shim validates against the real clock, so make the file really expired)
+                    self._expiring_metadata_file(tmp, now - timedelta(hours=1))
+                    asyncio.run(store.refresh_sources())
+                assert self.test_idp not in store
+
+    def test_refresh_sources_single_flight(self: Self) -> None:
+        now = utc_now()
+        old = self._local_store(str(self.datadir / "remote_metadata.xml"))[self.test_idp]
+        store = LazyMetadataStore()
+        loader = mock.Mock(return_value=([old], {self.test_idp: now + timedelta(hours=10)}))
+        store.add_source("src", [old], {self.test_idp: now + timedelta(hours=2)}, loader)
+
+        async def run() -> None:
+            with mock.patch("auth_server.saml2_mdq.utc_now", return_value=now + timedelta(hours=1, minutes=5)):
+                await asyncio.gather(*(store.refresh_sources() for _ in range(5)))
+                task = store._sources["src"].task
+                assert task is not None
+                await task
+
+        asyncio.run(run())
+        assert loader.call_count == 1
 
     def _signed_metadata(
         self: Self,
