@@ -89,7 +89,7 @@ async def fetch_mdq_xml(entity_id: str, mdq_url: str, ssl: ssl_module.SSLContext
                 logger.error(f"{url} returned {response.status}")
                 return None
             return await response.text()
-    except (aiohttp.ClientError, TimeoutError) as e:
+    except (aiohttp.ClientError, TimeoutError, UnicodeDecodeError) as e:
         logger.exception(f"{url} failed: {e!r}")
         return None
 
