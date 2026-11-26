@@ -2,6 +2,7 @@ import asyncio
 import base64
 import importlib
 import re
+import ssl
 import sys
 import tempfile
 import time
@@ -672,6 +673,145 @@ class TestSAMLSP(TestCase):
     def test_mdq_with_cert_does_not_warn(self: Self) -> None:
         with self.assertNoLogs("auth_server.saml2_mdq", level="WARNING"):
             self._signed_mdq_source()
+
+    def _set_testing(self: Self, testing: bool) -> None:
+        self.config["testing"] = "true" if testing else "false"
+        self._update_app_config(config=self.config)
+
+    def test_mdq_http_without_cert_refused_outside_testing(self: Self) -> None:
+        self._set_testing(False)
+        with self.assertRaises(RuntimeError) as cm:
+            MDQMetadataSource(url="http://mdq.example.com")
+        assert "http://mdq.example.com" in str(cm.exception)
+
+    def test_mdq_http_without_cert_allowed_in_testing(self: Self) -> None:
+        self._set_testing(True)
+        MDQMetadataSource(url="http://mdq.example.com")
+
+    def test_mdq_http_with_cert_allowed_outside_testing(self: Self) -> None:
+        self._set_testing(False)
+        self._signed_mdq_source()
+
+    def test_mdq_https_without_cert_warns_outside_testing(self: Self) -> None:
+        self._set_testing(False)
+        with self.assertLogs("auth_server.saml2_mdq", level="WARNING") as logs:
+            MDQMetadataSource(url="https://mdq.example.com")
+        assert any("has no cert" in line for line in logs.output)
+
+    def test_mdq_https_to_http_redirect_refused(self: Self) -> None:
+        source = MDQMetadataSource(url="https://mdq.example.com")
+        with mock.patch("aiohttp.ClientSession.get", new_callable=AsyncMock) as mock_get:
+            with open(self.datadir / "remote_metadata.xml", "rb") as f:
+                mdq_response = f.read()
+            mock_get.return_value = MockResponse(content=mdq_response, url="http://evil.example.com/x")
+            with self.assertLogs("auth_server.mdq", level="ERROR") as logs:
+                assert run_coroutine_sync(source.prefetch(self.test_idp)) is None
+        assert any("downgrade" in line for line in logs.output)
+
+    def test_mdq_redirect_chain_through_http_refused(self: Self) -> None:
+        # https -> http -> https: the final URL is https but the request over http was already exposed
+        source = MDQMetadataSource(url="https://mdq.example.com")
+        with mock.patch("aiohttp.ClientSession.get", new_callable=AsyncMock) as mock_get:
+            with open(self.datadir / "remote_metadata.xml", "rb") as f:
+                mdq_response = f.read()
+            hop = MockResponse(url="http://hop.example.com/x", status_code=302)
+            mock_get.return_value = MockResponse(
+                content=mdq_response, url="https://mdq.example.com/final", history=(hop,)
+            )
+            with self.assertLogs("auth_server.mdq", level="ERROR") as logs:
+                assert run_coroutine_sync(source.prefetch(self.test_idp)) is None
+        assert any("downgrade" in line for line in logs.output)
+
+    def test_mdq_https_redirect_to_https_allowed(self: Self) -> None:
+        source = MDQMetadataSource(url="https://mdq.example.com")
+        with mock.patch("aiohttp.ClientSession.get", new_callable=AsyncMock) as mock_get:
+            with open(self.datadir / "remote_metadata.xml", "rb") as f:
+                mdq_response = f.read()
+            mock_get.return_value = MockResponse(content=mdq_response, url="https://other.example.com/x")
+            assert run_coroutine_sync(source.prefetch(self.test_idp)) is not None
+
+    def _mdq_get_kwargs(self: Self, source: MDQMetadataSource) -> dict[str, Any]:
+        with mock.patch("aiohttp.ClientSession.get", new_callable=AsyncMock) as mock_get:
+            with open(self.datadir / "remote_metadata.xml", "rb") as f:
+                mock_get.return_value = MockResponse(content=f.read())
+            run_coroutine_sync(source.prefetch(self.test_idp))
+            assert mock_get.await_args is not None
+            return dict(mock_get.await_args.kwargs)
+
+    def _mdq_sp_config(self: Self, *entries: Any) -> Any:  # noqa: ANN401
+        path = str(self.datadir / "remote_metadata.xml")
+        return load_sp_config(
+            {"metadata": {"local": [path], "mdq": list(entries)}, "entityid": "https://sp.example.com/md"}
+        )
+
+    def test_mdq_allow_http_without_cert_outside_testing(self: Self) -> None:
+        self._set_testing(False)
+        with self.assertLogs("auth_server.saml2_mdq", level="WARNING") as logs:
+            MDQMetadataSource(url="http://mdq.example.com", allow_http=True)
+        assert any("allow_http" in line and "unauthenticated" in line for line in logs.output)
+
+    def test_mdq_http_without_allow_http_still_refused_via_config(self: Self) -> None:
+        self._set_testing(False)
+        with self.assertRaises(RuntimeError):
+            self._mdq_sp_config({"url": "http://mdq.example.com"})
+        conf = self._mdq_sp_config({"url": "http://mdq.example.com", "allow_http": True})
+        assert len(conf.metadata.mdq_sources) == 1
+
+    def test_mdq_default_does_not_pass_ssl(self: Self) -> None:
+        assert "ssl" not in self._mdq_get_kwargs(MDQMetadataSource(url="https://mdq.example.com"))
+
+    def test_mdq_tls_ca_valid(self: Self) -> None:
+        ca = str(self.datadir / "certs" / "test_idp_signing.crt")
+        source = MDQMetadataSource(url="https://mdq.example.com", tls_ca=ca)
+        kwargs = self._mdq_get_kwargs(source)
+        assert isinstance(kwargs["ssl"], ssl.SSLContext)
+        assert kwargs["ssl"].verify_mode == ssl.CERT_REQUIRED
+
+    def test_mdq_tls_ca_missing(self: Self) -> None:
+        with self.assertRaises(RuntimeError) as cm:
+            MDQMetadataSource(url="https://mdq.example.com", tls_ca="/does/not/exist.pem")
+        assert "tls_ca" in str(cm.exception)
+
+    def test_mdq_tls_ca_not_pem(self: Self) -> None:
+        with self.assertRaises(RuntimeError) as cm:
+            MDQMetadataSource(url="https://mdq.example.com", tls_ca=str(self.datadir / "remote_metadata.xml"))
+        assert "tls_ca" in str(cm.exception)
+
+    def test_mdq_tls_verify_false(self: Self) -> None:
+        with self.assertLogs("auth_server.saml2_mdq", level="WARNING") as logs:
+            source = MDQMetadataSource(url="https://mdq.example.com", tls_verify=False)
+        assert any("tls_verify=false" in line and "trust-on-nothing" in line for line in logs.output)
+        assert self._mdq_get_kwargs(source)["ssl"] is False
+
+    def test_mdq_tls_ca_and_tls_verify_false_refused(self: Self) -> None:
+        ca = str(self.datadir / "certs" / "test_idp_signing.crt")
+        with self.assertRaises(RuntimeError):
+            MDQMetadataSource(url="https://mdq.example.com", tls_ca=ca, tls_verify=False)
+
+    def test_mdq_unknown_and_non_bool_settings_refused(self: Self) -> None:
+        with self.assertRaises(SourceNotFound) as cm:
+            self._mdq_sp_config({"url": "https://mdq.example.com", "tls_verfy": False})
+        assert "tls_verfy" in str(cm.exception)
+        for key in ("allow_http", "tls_verify"):
+            with self.assertRaises(SourceNotFound):
+                self._mdq_sp_config({"url": "https://mdq.example.com", key: "false"})
+
+    def test_mdq_ssl_setting_is_per_source(self: Self) -> None:
+        conf = self._mdq_sp_config(
+            {"url": "https://insecure.example.com", "tls_verify": False}, {"url": "https://normal.example.com"}
+        )
+        insecure, normal = conf.metadata.mdq_sources
+        assert insecure.ssl is False
+        assert normal.ssl is None
+        assert "ssl" not in self._mdq_get_kwargs(normal)
+
+    def test_mdq_https_downgrade_refused_with_allow_http_and_tls_verify_false(self: Self) -> None:
+        source = MDQMetadataSource(url="https://mdq.example.com", allow_http=True, tls_verify=False)
+        with mock.patch("aiohttp.ClientSession.get", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = MockResponse(content=b"x", url="http://evil.example.com/x")
+            with self.assertLogs("auth_server.mdq", level="ERROR") as logs:
+                assert run_coroutine_sync(source.prefetch(self.test_idp)) is None
+        assert any("downgrade" in line for line in logs.output)
 
     def test_discovery_response_sp_only_entity(self: Self) -> None:
         self.config["pysaml2_config_path"] = f"{self.datadir}/saml2_settings_mdq.py"

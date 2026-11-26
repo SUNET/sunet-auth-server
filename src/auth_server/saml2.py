@@ -443,6 +443,9 @@ def saml2_module_alias() -> Iterator[set[str]]:
         sys.modules.update(previous)
 
 
+MDQ_SETTING_KEYS = frozenset({"url", "cert", "allow_http", "tls_ca", "tls_verify"})
+
+
 def load_sp_config(settings: dict[str, Any]) -> SPConfig:
     """
     Create an SPConfig from a pysaml2 style settings dict.
@@ -479,8 +482,24 @@ def load_sp_config(settings: dict[str, Any]) -> SPConfig:
             mdq = {"url": mdq}
         if not isinstance(mdq, dict) or not mdq.get("url"):
             raise SourceNotFound("mdq metadata entries require a url")
+        unknown = set(mdq) - MDQ_SETTING_KEYS
+        if unknown:
+            raise SourceNotFound(
+                f"unknown mdq metadata setting(s) {sorted(unknown)} for {mdq['url']}, valid: {sorted(MDQ_SETTING_KEYS)}"
+            )
+        for key in ("allow_http", "tls_verify"):
+            if key in mdq and not isinstance(mdq[key], bool):
+                raise SourceNotFound(f"mdq setting {key} for {mdq['url']} must be a boolean, got {mdq[key]!r}")
         logger.info(f"Using MDQ server {mdq['url']} for SAML2 metadata")
-        store.add_mdq_source(MDQMetadataSource(url=str(mdq["url"]), cert=mdq.get("cert")))
+        store.add_mdq_source(
+            MDQMetadataSource(
+                url=str(mdq["url"]),
+                cert=mdq.get("cert"),
+                allow_http=mdq.get("allow_http", False),
+                tls_ca=mdq.get("tls_ca"),
+                tls_verify=mdq.get("tls_verify", True),
+            )
+        )
     conf.metadata = store
     return conf
 

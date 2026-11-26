@@ -149,6 +149,21 @@ Things to be aware of when upgrading from pysaml2:
   A bare url string (`"mdq": ["https://mdq.example.com/"]`, the pysaml2 form) is accepted as `{"url": ...}`.
   A `cert` pinning the federation signing key is strongly recommended for `mdq`: it makes a signed document
   mandatory. Without it the metadata is trusted on the HTTPS connection only (a warning is logged at config load).
+  An `http://` MDQ url without a `cert` is refused at config load (RuntimeError) unless `testing` is set, use https or
+  pin a `cert` (the signature then authenticates the metadata, so http is allowed). An MDQ fetch (also in MDQFlow)
+  that started as https and ended on an http url after redirects is refused (error logged, fail closed).
+  Per `mdq` entry (dict form) there are two knobs for internal/test servers, unknown keys and non-boolean values are
+  rejected at config load:
+  - `allow_http: true` (default `false`) permits an `http://` url without a `cert` outside `testing`. The metadata is
+    then trusted on an unauthenticated channel and a network attacker can replace the IdP signing keys, a WARNING is
+    logged at config load. Not needed with a pinned `cert`. It only applies to a url that starts as http: an https
+    source is never downgraded, such a redirect is still refused.
+  - `tls_ca: /path/ca.pem` uses that PEM CA (or the self-signed server cert) as the trust anchor for this source
+    only (validated at config load). The safer option for a self-signed server. `tls_verify: false` (default `true`)
+    turns TLS verification off for this source only, logs a WARNING, and is trust-on-nothing unless a `cert` is
+    pinned. `tls_ca` together with `tls_verify: false` is a config error.
+  Example: `"mdq": [{"url": "https://mdq.internal:8443/", "tls_ca": "/etc/ssl/internal-ca.pem"}, `
+  `{"url": "http://mdq.test:8080/", "allow_http": True}]`.
   MDQ entities are fetched from `<url>/entities/{sha1}<hash>` on demand and cached for at most one hour (or until
   `validUntil`). A document without `validUntil` is refused (as the library does for `remote` sources). If a refresh
   fails the last good copy is kept for at most one more hour (`MDQ_MAX_STALE_SECONDS`), never past its `validUntil`.

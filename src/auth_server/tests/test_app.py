@@ -64,8 +64,12 @@ __author__ = "lundberg"
 
 
 class MockResponse:
-    def __init__(self: Self, content: bytes = b"", status_code: int = 200) -> None:
+    def __init__(
+        self: Self, content: bytes = b"", status_code: int = 200, url: str = "", history: tuple[Any, ...] = ()
+    ) -> None:
         self._content = content
+        self.url = url
+        self.history = history
         self._status_code = status_code
         self.accessed_status = 0
 

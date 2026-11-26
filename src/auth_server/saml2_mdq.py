@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ssl
 import threading
 import time
 from collections import OrderedDict
@@ -17,6 +18,7 @@ from pygamlastan.compat.saml2.mdstore import MetaDataMDX, MetadataStore
 from pygamlastan.compat.saml2.s_utils import UnknownSystemEntity
 from pygamlastan.crypto import SamlVerifier
 
+from auth_server.config import load_config
 from auth_server.mdq import fetch_mdq_xml
 from auth_server.time_utils import utc_now
 
@@ -85,13 +87,43 @@ class MDQMetadataSource(MetaDataMDX):
         negative_ttl: float = MDQ_NEGATIVE_CACHE_TTL_SECONDS,
         max_entries: int = MDQ_CACHE_MAX_ENTRIES,
         max_stale: float = MDQ_MAX_STALE_SECONDS,
+        allow_http: bool = False,
+        tls_ca: str | None = None,
+        tls_verify: bool = True,
     ) -> None:
         self.url = url.rstrip("/")
         self.cert = cert
-        if cert is None:
+        if tls_ca is not None and not tls_verify:
+            raise RuntimeError(f"MDQ source {self.url}: tls_ca and tls_verify=false can not be combined")
+        is_https = self.url.lower().startswith("https://")
+        if cert is None and not is_https and not allow_http and not load_config().testing:
+            raise RuntimeError(
+                f"MDQ source {self.url} has no cert and does not use https: its metadata would be unauthenticated. "
+                "Use an https url, pin the federation signing key with a cert or, for an internal/test server, "
+                "set allow_http."
+            )
+        if cert is None and not is_https and allow_http:
+            logger.warning(
+                f"MDQ source {self.url} uses plain http without a cert (allow_http): its metadata is trusted on an "
+                "unauthenticated channel and a network attacker can replace the IdP signing keys. "
+                "Only use this for internal or test servers."
+            )
+        elif cert is None:
             logger.warning(
                 f"MDQ source {self.url} has no cert: its metadata is trusted on the HTTPS connection only, "
                 "not on a federation signature. Configure a cert pinning the federation signing key."
+            )
+        # aiohttp ssl argument for this source only, None is the aiohttp default
+        self.ssl: ssl.SSLContext | bool | None = None
+        if tls_ca is not None:
+            self.ssl = self._load_tls_ca(tls_ca)
+        elif not tls_verify:
+            self.ssl = False
+            pinned = "the metadata signature is the only protection" if cert else "no cert is pinned either"
+            logger.warning(
+                f"MDQ source {self.url} has tls_verify=false: the TLS server certificate is NOT verified, "
+                f"so the connection is trust-on-nothing unless a cert is pinned ({pinned}). "
+                "Only use this for internal or test servers."
             )
         # Read and parse the cert once, a broken cert must stop the config load and not fail every lookup
         self._verifier = self._load_verifier(cert) if cert is not None else None
@@ -103,6 +135,17 @@ class MDQMetadataSource(MetaDataMDX):
         self._cache: OrderedDict[str, _CacheEntry] = OrderedDict()
         # entity id -> the fetch in flight, so concurrent prefetches of one entity share a single request
         self._inflight: dict[str, asyncio.Task[pg_metadata.EntityDescriptor | None]] = {}
+
+    @staticmethod
+    def _load_tls_ca(tls_ca: str) -> ssl.SSLContext:
+        try:
+            with open(tls_ca, "rb") as f:
+                data = f.read()
+            if b"-----BEGIN CERTIFICATE-----" not in data:
+                raise ValueError("not a PEM certificate")
+            return ssl.create_default_context(cafile=tls_ca)
+        except (OSError, ValueError, ssl.SSLError) as e:
+            raise RuntimeError(f"MDQ tls_ca {tls_ca} could not be loaded: {e}") from e
 
     @staticmethod
     def _load_verifier(cert: str) -> SamlVerifier:
@@ -153,7 +196,7 @@ class MDQMetadataSource(MetaDataMDX):
         try:
             now = time.monotonic()
             previous = self._cache.get(entity_id)
-            xml = await fetch_mdq_xml(entity_id=entity_id, mdq_url=self.mdq_url)
+            xml = await fetch_mdq_xml(entity_id=entity_id, mdq_url=self.mdq_url, ssl=self.ssl)
             parsed = self._parse(entity_id, xml) if xml is not None else None
             if parsed is not None:
                 entity, ttl, max_age = parsed
