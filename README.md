@@ -87,9 +87,9 @@ The server is configured using environment variables or a YAML configuration fil
 | `AUTH_TOKEN_AUDIENCE` | JWT token audience | None |
 | `AUTH_TOKEN_EXPIRES_IN` | Token expiration time | 10 hours |
 | `MONGO_URI` | MongoDB connection string | None |
-| `MONGO_SERVER_SELECTION_TIMEOUT` | Server selection timeout of the SAML Mongo client | 5 seconds |
-| `MONGO_CONNECT_TIMEOUT` | Connect timeout of the SAML Mongo client | 5 seconds |
-| `MONGO_SOCKET_TIMEOUT` | Socket timeout of the SAML Mongo client | 10 seconds |
+| `MONGO_SERVER_SELECTION_TIMEOUT` | Server selection timeout of the SAML Mongo client | 2 seconds |
+| `MONGO_CONNECT_TIMEOUT` | Connect timeout of the SAML Mongo client | 2 seconds |
+| `MONGO_SOCKET_TIMEOUT` | Socket timeout of the SAML Mongo client | 3 seconds |
 | `KEYSTORE_PATH` | Path to JWKS keystore file | `keystore.jwks` |
 | `SIGNING_KEY_ID` | Key ID for signing tokens | `default` |
 

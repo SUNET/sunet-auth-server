@@ -99,9 +99,9 @@ class AuthServerConfig(BaseSettings):
     client_keys: dict[str, ClientKey] = Field(default_factory=dict)
     mongo_uri: str | None = None
     # timeouts for the sync pymongo client used by the SAML caches (it blocks the event loop while waiting)
-    mongo_server_selection_timeout: timedelta = Field(default=timedelta(seconds=5), gt=timedelta(0))
-    mongo_connect_timeout: timedelta = Field(default=timedelta(seconds=5), gt=timedelta(0))
-    mongo_socket_timeout: timedelta = Field(default=timedelta(seconds=10), gt=timedelta(0))
+    mongo_server_selection_timeout: timedelta = Field(default=timedelta(seconds=2), gt=timedelta(0))
+    mongo_connect_timeout: timedelta = Field(default=timedelta(seconds=2), gt=timedelta(0))
+    mongo_socket_timeout: timedelta = Field(default=timedelta(seconds=3), gt=timedelta(0))
     transaction_state_expires_in: timedelta = Field(default=timedelta(minutes=10))
     pysaml2_config_path: Path | None = Field(default=None)
     pysaml2_config_name: str = "SAML_CONFIG"

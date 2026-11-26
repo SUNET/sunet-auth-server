@@ -1246,9 +1246,9 @@ class TestSAMLSP(TestCase):
         sp = asyncio.run(get_saml2_sp())
         assert sp is not None
         client = sp.outstanding_queries_cache._db._conn
-        assert client.options.server_selection_timeout == 5
-        assert client.options.pool_options.connect_timeout == 5
-        assert client.options.pool_options.socket_timeout == 10
+        assert client.options.server_selection_timeout == 2
+        assert client.options.pool_options.connect_timeout == 2
+        assert client.options.pool_options.socket_timeout == 3
 
     def test_mongo_unavailable_gives_503(self: Self) -> None:
         authn_url = saml2_router.url_path_for("authenticate", transaction_id=self.test_transaction_state.transaction_id)
