@@ -902,6 +902,17 @@ class TestSAMLSP(TestCase):
             get_pysaml2_sp_config("SAML_CONFIG")
         assert any("saml2_settings.py" in line and "disabled" in line for line in logs.output)
 
+    def test_both_signature_requirements_off_as_strings_logs_critical(self: Self) -> None:
+        # "false" and "0" are accepted by pygamlastan as False, the check must use the normalized flags
+        self.config["testing"] = "false"
+        self.config["pysaml2_config_path"] = f"{self.datadir}/saml2_settings_string_flags.py"
+        self._update_app_config(config=self.config)
+        with self.assertLogs("auth_server.saml2", level="CRITICAL") as logs:
+            sp_config = get_pysaml2_sp_config("SAML_CONFIG")
+        assert sp_config.want_response_signed is False
+        assert sp_config.want_assertions_signed is False
+        assert any("disabled" in line for line in logs.output)
+
     def test_both_signature_requirements_off_no_critical_when_testing(self: Self) -> None:
         self._update_app_config(config=self.config)  # testing is true
         with self.assertNoLogs("auth_server.saml2", level="CRITICAL"):

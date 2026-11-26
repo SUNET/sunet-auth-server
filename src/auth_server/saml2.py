@@ -546,13 +546,16 @@ def get_pysaml2_sp_config(name: str) -> SPConfig:
     sp_settings = settings.setdefault("service", {}).setdefault("sp", {})
     sp_settings.setdefault("want_response_signed", True)
     sp_settings.setdefault("want_assertions_signed", True)
-    if not sp_settings["want_response_signed"] and not sp_settings["want_assertions_signed"] and not config.testing:
+    sp_config = load_sp_config(settings)
+    # check the normalized flags, the settings can hold strings like "false" or "0" that pygamlastan converts to False
+    # but that are truthy here
+    if not sp_config.want_response_signed and not sp_config.want_assertions_signed and not config.testing:
         logger.critical(
             f"{config.pysaml2_config_path}: want_response_signed and want_assertions_signed are both False, SAML "
             "signature verification is disabled and unsigned responses are accepted. Never run like this in "
             "production."
         )
-    return load_sp_config(settings)
+    return sp_config
 
 
 async def prefetch_idp_metadata(saml2_sp: SAML2SP, idp_entity_id: str | None) -> None:
