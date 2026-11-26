@@ -34,7 +34,6 @@ RUN apt-get update && \
       netcat-openbsd \
       procps \
       python3-minimal \
-      xmlsec1 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --system sunet && useradd --system --shell /bin/false --gid sunet sunet

@@ -54,7 +54,8 @@ class MDQData(MDQBase):
     metadata: OrderedDict = Field(default_factory=_OrderedDict)
 
 
-async def xml_mdq_get(entity_id: str, mdq_url: str) -> MDQData:
+async def fetch_mdq_xml(entity_id: str, mdq_url: str) -> str | None:
+    """Fetch the raw metadata xml for entity_id from an MDQ server, None if it could not be fetched."""
     timeout = load_config().http_client_timeout
     # SHA1 hash and create hex representation of entity id
     entity_id_hash = hash_with(SHA1(), entity_id.encode())
@@ -70,10 +71,16 @@ async def xml_mdq_get(entity_id: str, mdq_url: str) -> MDQData:
             response = await session.get(url=url, headers=headers)
             if response.status != 200:
                 logger.error(f"{url} returned {response.status}")
-                return MDQData()
-            xml = await response.text()
+                return None
+            return await response.text()
     except (aiohttp.ClientError, TimeoutError) as e:
         logger.exception(f"{url} failed: {e!r}")
+        return None
+
+
+async def xml_mdq_get(entity_id: str, mdq_url: str) -> MDQData:
+    xml = await fetch_mdq_xml(entity_id=entity_id, mdq_url=mdq_url)
+    if xml is None:
         return MDQData()
 
     # Parse the xml to a OrderedDict and grab the certs and their use

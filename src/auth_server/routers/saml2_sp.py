@@ -2,11 +2,15 @@ __author__ = "lundberg"
 
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
+from functools import wraps
 from pathlib import Path
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Form, HTTPException, Query, Response
-from saml2.metadata import entity_descriptor
-from saml2.response import StatusError
+from pygamlastan.compat.saml2.metadata import entity_descriptor
+from pygamlastan.compat.saml2.response import StatusError
+from pymongo.errors import AutoReconnect
 from starlette.responses import RedirectResponse
 from starlette.templating import Jinja2Templates
 
@@ -17,26 +21,54 @@ from auth_server.saml2 import (
     SAML2SP,
     AuthnRequestRef,
     BadSAMLResponse,
+    SAMLServerError,
     get_authn_request,
     get_redirect_url,
     get_saml2_sp,
+    prefetch_idp_metadata,
     process_assertion,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def build_discovery_service_url(url: str, sp_entity_id: str, return_url: str) -> str:
+    """Build the discovery service request url, with the same query as pysaml2 create_discovery_service_request"""
+    query = urlencode({"entityID": sp_entity_id, "return": return_url})
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}{query}"
+
+
+SAML_BACKEND_UNAVAILABLE = "SAML backend temporarily unavailable"
+
+
+def map_mongo_unavailable[**P, R](func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
+    """Answer 503 when Mongo can not be reached (server selection timeout, connection lost) in a SAML handler"""
+
+    @wraps(func)
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        try:
+            return await func(*args, **kwargs)
+        except AutoReconnect as e:  # also ServerSelectionTimeoutError and NetworkTimeout
+            logger.error(f"mongo unavailable in {func.__name__}: {e!r}")
+            raise HTTPException(status_code=503, detail=SAML_BACKEND_UNAVAILABLE)
+
+    return wrapper
+
 
 saml2_router = APIRouter(route_class=ContextRequestRoute, prefix="/saml2")
 templates = Jinja2Templates(directory=str(Path(__file__).with_name("templates")))
 
 
 @saml2_router.get("/sp/authn/{transaction_id}")
+@map_mongo_unavailable
 async def authenticate(
     request: ContextRequest,
     transaction_id: str,
 ) -> RedirectResponse:
     saml2_sp = await get_saml2_sp()
     if saml2_sp is None:
-        # there is no pysaml2 config or any database available
+        # there is no SAML2 config or any database available
         raise HTTPException(status_code=400, detail="SAML authentication not configured")
 
     # use single IdP config option if set
@@ -54,8 +86,10 @@ async def authenticate(
             raise HTTPException(status_code=400, detail="no IdP requested")
         return_url = f"{request.url_for('discovery_service_response')}/?target={authn_id}"
         logger.debug(f"discovery service return_url: {return_url}")
-        discovery_service_redirect_url = saml2_sp.client.create_discovery_service_request(
-            url=str(saml2_sp.discovery_service_url), entity_id=saml2_sp.client.config.entityid, return_url=return_url
+        discovery_service_redirect_url = build_discovery_service_url(
+            url=str(saml2_sp.discovery_service_url),
+            sp_entity_id=saml2_sp.client.config.entityid,
+            return_url=return_url,
         )
         logger.debug(f"discovery service redirect url: {discovery_service_redirect_url}")
         return RedirectResponse(discovery_service_redirect_url, status_code=303)
@@ -64,12 +98,13 @@ async def authenticate(
 
 
 @saml2_router.get("/sp/discovery-response")
+@map_mongo_unavailable
 async def discovery_service_response(
     target: str | None = None, entity_id: str | None = Query(default=None, alias="entityID")
 ) -> Response:
     saml2_sp = await get_saml2_sp()
     if saml2_sp is None:
-        # there is no pysaml2 config or any database available
+        # there is no SAML2 config or any database available
         raise HTTPException(status_code=400, detail="SAML authentication not configured")
 
     if target is None or entity_id is None:
@@ -84,16 +119,27 @@ async def discovery_service_response(
         logger.error(f"Could not find target: {target}")
         raise HTTPException(status_code=400, detail="authentication request target not found")
 
+    # the IdP comes from the user's browser, only accept the IdPs this SP is configured for (if any are) before any
+    # metadata is looked up for it
+    allowed_idps = saml2_sp.client.config.idp
+    if allowed_idps and entity_id not in allowed_idps:
+        logger.error(f"Discovery service response with an IdP that is not allowed: {entity_id}")
+        raise HTTPException(status_code=400, detail="requested IdP not allowed")
+
     # discovery response seems to check out, send user to the IdP
     return await redirect_to_idp(saml2_sp=saml2_sp, authn_id=authn_id, idp_entity_id=entity_id)
 
 
 async def redirect_to_idp(saml2_sp: SAML2SP, authn_id: AuthnRequestRef, idp_entity_id: str) -> RedirectResponse:
+    await prefetch_idp_metadata(saml2_sp, idp_entity_id)
     try:
-        _found_idp = saml2_sp.client.metadata[idp_entity_id]
+        _found_idp = saml2_sp.client.config.metadata[idp_entity_id]
     except KeyError:
         logger.error(f"Unknown SAML2 idp: {idp_entity_id} not in metadata")
         raise HTTPException(status_code=400, detail="requested IdP not found in metadata")
+    if not _found_idp.is_idp():
+        logger.error(f"Requested entity {idp_entity_id} has no IDPSSODescriptor")
+        raise HTTPException(status_code=400, detail="requested entity is not an IdP")
 
     transaction_db = await get_transaction_state_db()
     if transaction_db is None:
@@ -129,6 +175,7 @@ async def redirect_to_idp(saml2_sp: SAML2SP, authn_id: AuthnRequestRef, idp_enti
 
 
 @saml2_router.post("/sp/saml2-acs")
+@map_mongo_unavailable
 async def assertion_consumer_service(
     request: ContextRequest, saml_response: str = Form(alias="SAMLResponse")
 ) -> RedirectResponse:
@@ -138,11 +185,16 @@ async def assertion_consumer_service(
     try:
         assertion_data = await process_assertion(saml_response=saml_response)
     except BadSAMLResponse as e:
-        logger.exception(f"{e}")
+        # the message of BadSAMLResponse is one of a few constants, one per failure class. The raw exception text
+        # of the library is logged by the caller and never sent to the client.
+        logger.error(f"bad SAML response: {e}")
         raise HTTPException(status_code=400, detail=f"Bad SAML response: {e}")
     except StatusError as e:
-        logger.error(f"{e}")
-        raise HTTPException(status_code=401, detail=f"SAML Status Error: {e}")
+        logger.error(f"SAML status error: {e}")
+        raise HTTPException(status_code=401, detail="SAML Status Error")
+    except SAMLServerError:
+        # already logged with a traceback
+        raise HTTPException(status_code=500, detail="SAML response processing failed")
 
     config = load_config()
     saml2_sp = await get_saml2_sp()
@@ -186,6 +238,7 @@ async def assertion_consumer_service(
 
 
 @saml2_router.get("/sp/metadata", responses={200: {"content": {"text/xml": {}}}})
+@map_mongo_unavailable
 async def metadata() -> Response:
     saml2_sp = await get_saml2_sp()
     if not saml2_sp:

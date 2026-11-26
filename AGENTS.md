@@ -9,7 +9,7 @@ This document provides instructions for AI coding agents working in this reposit
 - **Language:** Python 3.13+
 - **Framework:** FastAPI (ASGI)
 - **Database:** MongoDB (async via motor)
-- **Key Libraries:** pydantic, jwcrypto, pysaml2, aiohttp
+- **Key Libraries:** pydantic, jwcrypto, pygamlastan (pysaml2 compatible `saml2` shim), aiohttp
 
 ## Build/Test/Lint Commands
 

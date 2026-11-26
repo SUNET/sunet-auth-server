@@ -551,6 +551,7 @@ assert stop_logging(timeout=0.3) is False
         with (
             patch("auth_server.api.acquire_motor_lifespan"),
             patch("auth_server.api.release_motor_lifespan"),
+            patch("auth_server.api.validate_saml2_config"),
             patch("auth_server.logging._warn_abandoned") as warn,
         ):
             with TestClient(app):
@@ -676,10 +677,13 @@ class TestLoggingLifespans(LoggingTestBase):
         super().setUp()
         patcher_a = patch("auth_server.api.acquire_motor_lifespan")
         patcher_r = patch("auth_server.api.release_motor_lifespan")
+        patcher_v = patch("auth_server.api.validate_saml2_config")  # no app config in these tests
         patcher_a.start()
         patcher_r.start()
+        patcher_v.start()
         self.addCleanup(patcher_a.stop)
         self.addCleanup(patcher_r.stop)
+        self.addCleanup(patcher_v.stop)
         self.app = FastAPI(lifespan=lifespan)
 
     def _install_sink(self: Self) -> _CollectHandler:

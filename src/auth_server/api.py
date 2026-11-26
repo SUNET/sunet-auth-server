@@ -7,6 +7,7 @@ from typing import Self, cast
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from pymongo.errors import PyMongoError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.staticfiles import StaticFiles
@@ -23,6 +24,7 @@ from auth_server.routers.interaction import interaction_router
 from auth_server.routers.root import root_router
 from auth_server.routers.saml2_sp import saml2_router
 from auth_server.routers.status import status_router
+from auth_server.saml2 import clear_saml2_sp, get_saml2_sp
 from auth_server.utils import import_class
 
 __author__ = "lundberg"
@@ -30,13 +32,36 @@ __author__ = "lundberg"
 logger = logging.getLogger(__name__)
 
 
+async def validate_saml2_config() -> None:
+    """
+    Load and build the SAML2 SP at startup so a broken settings file fails the deploy and not the first login.
+
+    Does nothing when SAML is not configured. A Mongo that is unreachable is not a configuration error, it is
+    logged and the SP is built on first use instead.
+    """
+    config = load_config()
+    if not config.pysaml2_config_path or not config.mongo_uri:
+        return
+    try:
+        await get_saml2_sp()
+    except PyMongoError as e:
+        logger.warning(f"SAML2 settings loaded but the SAML2 SP could not be built, Mongo is not available: {e!r}")
+    except Exception as e:
+        logger.error(f"SAML2 configuration {config.pysaml2_config_path} is invalid: {e!r}")
+        raise
+    else:
+        logger.info(f"SAML2 configuration {config.pysaml2_config_path} loaded")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     acquire_motor_lifespan()
     acquire_logging()
     try:
+        await validate_saml2_config()
         yield
     finally:
+        clear_saml2_sp()
         release_motor_lifespan()
         # Last lifespan joins the log listener thread (bounded by log_stop_timeout), keep it off the event loop
         await asyncio.to_thread(release_logging)

@@ -35,6 +35,7 @@ SAML_CONFIG = {
             },
             # Do not check for signature during tests
             "want_response_signed": False,
+            "want_assertions_signed": False,
             # in this section the list of IdPs we talk to are defined
             "idp": {
                 # we do not need a WAYF service since there is
