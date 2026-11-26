@@ -522,6 +522,23 @@ class TestSAMLSP(TestCase):
         assert response.status_code == 400
         assert response.json()["detail"] == "Bad SAML response: Unsolicited SAML response"
 
+    def test_saml_acs_replay_cache_mongo_error_gives_503(self: Self) -> None:
+        # a valid response when Mongo fails in the replay cache is a backend outage (503), not a bad response (400).
+        # The native client turns the cache exception into a verification error, the real error must survive.
+        auth_req_ref = self._start_authn()
+        generated_authn_response = self._generate_auth_response(
+            request_id=auth_req_ref, saml_response_tpl=self.saml_response_tpl_success
+        )
+        with mock.patch("pymongo.collection.Collection.insert_one", side_effect=AutoReconnect("replay mongo down")):
+            with self.assertLogs("auth_server.saml2", level="ERROR") as logs:
+                response = self._post_saml_response(generated_authn_response)
+        assert response.status_code == 503
+        assert response.json()["detail"] == "SAML backend temporarily unavailable"
+        assert any("replay cache backend error" in line for line in logs.output)
+        # the error state does not leak into the next request: the same response is accepted when Mongo is back
+        response = self._post_saml_response(generated_authn_response)
+        assert response.status_code == 303
+
     def test_saml_acs_replayed_assertion(self: Self) -> None:
         # the same assertion in a response to another (valid) request
         auth_req_ref = self._start_authn()

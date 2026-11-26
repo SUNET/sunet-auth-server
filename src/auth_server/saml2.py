@@ -9,6 +9,7 @@ import sys
 import threading
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import lru_cache, partial
@@ -30,7 +31,7 @@ from pygamlastan.compat.saml2.saml import Subject
 from pygamlastan.compat.saml2.sigver import MissingKey
 from pygamlastan.compat.saml2.typing import SAMLHttpArgs
 from pymongo import MongoClient, WriteConcern
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from auth_server.config import AuthServerConfig, load_config
 from auth_server.db.client import create_sync_mongo_client
@@ -206,6 +207,13 @@ class ExpectedIdPs:
         return self._cache.get_idp(request_id) or default
 
 
+# The pygamlastan native adapter turns any exception from the replay cache into "replay detected" (False), which
+# the client reports as a verification error. A Mongo outage would then look like a bad response (400) and the
+# real error is lost. The cache keeps the error here (the SAML client is called synchronously on the loop thread,
+# so this is request scoped) and get_authn_response re-raises it after the client returns or fails.
+_replay_backend_error: ContextVar[PyMongoError | None] = ContextVar("replay_backend_error", default=None)
+
+
 class ReplayCache:
     """
     MongoDB backed replay cache for the pygamlastan client, shared by all workers.
@@ -230,14 +238,20 @@ class ReplayCache:
 
     def check_and_insert(self: Self, id: str, expiry: datetime) -> bool:
         try:
-            self._coll.insert_one({"lookup_key": id, "expires_at": expiry})
-            return True
-        except DuplicateKeyError:
-            # the id exists, it is only a replay if the old entry has not expired yet
-            res = self._coll.update_one(
-                {"lookup_key": id, "expires_at": {"$lt": utc_now()}}, {"$set": {"expires_at": expiry}}
-            )
-            return res.matched_count == 1
+            try:
+                self._coll.insert_one({"lookup_key": id, "expires_at": expiry})
+                return True
+            except DuplicateKeyError:
+                # the id exists, it is only a replay if the old entry has not expired yet
+                res = self._coll.update_one(
+                    {"lookup_key": id, "expires_at": {"$lt": utc_now()}}, {"$set": {"expires_at": expiry}}
+                )
+                return res.matched_count == 1
+        except PyMongoError as e:
+            # still fails closed (the native adapter turns the exception into a replay), but keep the real error
+            logger.error(f"SAML replay cache backend error: {e!r}")
+            _replay_backend_error.set(e)
+            raise
 
     def cleanup(self: Self) -> None:
         # expired entries are removed by the TTL index
@@ -644,6 +658,30 @@ def _peek_response(raw_response: str) -> tuple[str | None, str | None]:
         return None, None
 
 
+def _parse_authn_response(saml2_sp: SAML2SP, raw_response: str) -> AuthnResponse:
+    """
+    Run the synchronous SAML client, and re-raise a Mongo error that the replay cache hit during validation.
+
+    The error is re-raised whatever the client did with it (it is normally reported as a verification error), so the
+    router can answer 503 for a backend outage and not 400 for a bad response. The request is still rejected.
+    """
+    _replay_backend_error.set(None)
+    try:
+        response = saml2_sp.client.parse_authn_request_response(
+            raw_response,
+            BINDING_HTTP_POST,
+            saml2_sp.outstanding_queries_cache,  # type: ignore[arg-type]
+            expected_idps=ExpectedIdPs(saml2_sp.outstanding_queries_cache),
+        )
+    except Exception:
+        if (backend_error := _replay_backend_error.get()) is not None:
+            raise backend_error from None
+        raise
+    if (backend_error := _replay_backend_error.get()) is not None:
+        raise backend_error
+    return response
+
+
 async def get_authn_response(raw_response: str) -> tuple[AuthnResponse, AuthnRequestRef]:
     """
     Check a SAML response and return the response.
@@ -685,12 +723,7 @@ async def get_authn_response(raw_response: str) -> tuple[AuthnResponse, AuthnReq
 
     try:
         # process the authentication response
-        response = saml2_sp.client.parse_authn_request_response(
-            raw_response,
-            BINDING_HTTP_POST,
-            saml2_sp.outstanding_queries_cache,  # type: ignore[arg-type]
-            expected_idps=ExpectedIdPs(saml2_sp.outstanding_queries_cache),
-        )
+        response = _parse_authn_response(saml2_sp, raw_response)
     except SignatureError as e:
         # needs to be before AssertionError as SignatureError is a subclass
         logger.error(f"SAML response signature is invalid: {repr(e)}")
