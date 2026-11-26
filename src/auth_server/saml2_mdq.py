@@ -246,8 +246,8 @@ class MDQMetadataSource(MetaDataMDX):
             if self.cert is not None and not self._signed_by_cert(xml, document):
                 logger.error(f"MDQ metadata for {entity_id} has no valid signature covering the document root")
                 return None
-        except Exception as e:
-            logger.error(f"MDQ metadata for {entity_id} could not be used: {e!r}")
+        except Exception:
+            logger.exception(f"MDQ metadata for {entity_id} could not be used")
             return None
         return item.entity, ttl, max_age
 
@@ -480,10 +480,10 @@ class LazyMetadataStore(MetadataStore):
                 _get_refresh_executor(), source.loader
             )
             self._swap_source(key, entities, deadlines)
-        except Exception as e:
+        except Exception:
             with self._lock:
                 source.refresh_at = utc_now() + timedelta(seconds=METADATA_REFRESH_RETRY_SECONDS)
-            logger.error(f"SAML metadata refresh of {key} failed, keeping the last good copy until it expires: {e!r}")
+            logger.exception(f"SAML metadata refresh of {key} failed, keeping the last good copy until it expires")
             return False
         logger.info(f"SAML metadata source {key} refreshed")
         return True

@@ -51,8 +51,8 @@ async def validate_saml2_config() -> None:
         # connectivity only (covers ServerSelectionTimeoutError and NetworkTimeout, as the router maps to 503), other
         # Mongo errors (bad client options, auth failure, index conflicts) are persistent and must fail the startup
         logger.warning(f"SAML2 settings loaded but the SAML2 SP could not be built, Mongo is not available: {e!r}")
-    except Exception as e:
-        logger.error(f"SAML2 startup validation of {config.pysaml2_config_path} failed: {e!r}")
+    except Exception:
+        logger.exception(f"SAML2 startup validation of {config.pysaml2_config_path} failed")
         raise
     else:
         logger.info(f"SAML2 configuration {config.pysaml2_config_path} loaded")

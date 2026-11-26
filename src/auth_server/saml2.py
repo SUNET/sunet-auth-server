@@ -43,6 +43,22 @@ __author__ = "lundberg"
 
 logger = getLogger(__name__)
 
+MAX_LOGGED_VALUE_LENGTH = 200
+
+
+def log_safe(value: object, max_length: int = MAX_LOGGED_VALUE_LENGTH) -> str:
+    """
+    Make a request controlled value safe to log (no log injection).
+
+    Control characters (CR, LF, tab, ...) and other non printable characters are escaped like repr does, so the
+    value can not forge extra log lines, and the result is truncated.
+    """
+    text = str(value)
+    truncated = len(text) > max_length
+    escaped = repr(text[:max_length])[1:-1]
+    return f"{escaped}..." if truncated else escaped
+
+
 AuthnRequestRef = NewType("AuthnRequestRef", str)
 
 
@@ -249,7 +265,7 @@ class ReplayCache:
                 return res.matched_count == 1
         except PyMongoError as e:
             # still fails closed (the native adapter turns the exception into a replay), but keep the real error
-            logger.error(f"SAML replay cache backend error: {e!r}")
+            logger.exception("SAML replay cache backend error")
             _replay_backend_error.set(e)
             raise
 
@@ -381,7 +397,7 @@ def saml2_compat_module_names() -> frozenset[str]:
 
 
 class UnsupportedSAML2Module(ModuleNotFoundError):
-    pass
+    """Raised when the settings file imports a pysaml2 module that the pygamlastan compat package lacks"""
 
 
 class _Saml2AliasLoader(Loader):
@@ -394,7 +410,8 @@ class _Saml2AliasLoader(Loader):
         return importlib.import_module(self.target)
 
     def exec_module(self: Self, module: ModuleType) -> None:
-        pass
+        # nothing to execute: create_module returns the already imported compat module
+        return None
 
 
 class _Saml2AliasFinder(MetaPathFinder):
@@ -642,7 +659,7 @@ async def process_assertion(saml_response: str) -> AssertionData | None:
     # Fail closed: flows.py needs one of these to put a subject identity claim in the token. eduPersonTargetedID is
     # not supported by the pygamlastan compat layer, so an IdP releasing only that ends up here.
     if not (attributes.eppn or attributes.unique_id or attributes.targeted_id):
-        logger.error(f"SAML assertion from {session_info.issuer} has no supported identity attribute")
+        logger.error(f"SAML assertion from {log_safe(session_info.issuer)} has no supported identity attribute")
         raise BadSAMLResponse(
             "SAML assertion has no supported identity attribute (eduPersonPrincipalName, eduPersonUniqueId)"
         )
@@ -743,12 +760,12 @@ async def get_authn_response(raw_response: str) -> tuple[AuthnResponse, AuthnReq
     try:
         # process the authentication response
         response = _parse_authn_response(saml2_sp, raw_response)
-    except SignatureError as e:
+    except SignatureError:
         # needs to be before AssertionError as SignatureError is a subclass
-        logger.error(f"SAML response signature is invalid: {repr(e)}")
+        logger.exception("SAML response signature is invalid")
         raise BadSAMLResponse("SAML response signature is invalid")
     except AssertionError:
-        logger.error("SAML response is not verified")
+        logger.exception("SAML response is not verified")
         raise BadSAMLResponse("SAML response is not verified")
     except UnsolicitedResponse:
         logger.error("Unsolicited SAML response")
@@ -759,24 +776,24 @@ async def get_authn_response(raw_response: str) -> tuple[AuthnResponse, AuthnReq
     except StatusError as e:
         if str(e).startswith(MALFORMED_RESPONSE_PREFIX):
             # not a status from the IdP, the response could not be decoded or parsed
-            logger.error(f"SAML response is not correctly formatted: {repr(e)}")
+            logger.exception("SAML response is not correctly formatted")
             raise BadSAMLResponse("SAML response is not correctly formatted")
-        logger.error(f"SAML response was a failure: {repr(e)}")
+        logger.exception("SAML response was a failure")
         raise e
-    except MissingKey as e:
+    except MissingKey:
         # no key to verify with for the IdP
-        logger.error(f"SAML response could not be verified: {repr(e)}")
+        logger.exception("SAML response could not be verified")
         raise BadSAMLResponse("SAML response is not verified")
     except ValueError as e:
         # Only the known input case is a client error. Any other ValueError is a config or programming fault: log
         # the traceback and raise SAMLServerError (HTTP 500 with a constant detail).
         if str(e).startswith(UNKNOWN_EXPECTED_IDP_PREFIX):
-            logger.error(f"SAML response could not be verified: {repr(e)}")
+            logger.exception("SAML response could not be verified")
             raise BadSAMLResponse("SAML response is not verified")
         logger.exception("unexpected ValueError while processing SAML response")
         raise SAMLServerError("SAML response processing failed") from e
-    except SAMLError as e:
-        logger.error(f"SAML response could not be processed: {repr(e)}")
+    except SAMLError:
+        logger.exception("SAML response could not be processed")
         raise BadSAMLResponse("SAML response could not be processed")
 
     if response is None:
@@ -789,13 +806,13 @@ async def get_authn_response(raw_response: str) -> tuple[AuthnResponse, AuthnReq
         raise BadSAMLResponse("Unsolicited SAML response")
     authn_reqref = saml2_sp.outstanding_queries_cache.get(session_id)
     if authn_reqref is None:
-        logger.error(f"No outstanding query for {session_id}")
+        logger.error(f"No outstanding query for {log_safe(session_id)}")
         raise BadSAMLResponse("Unsolicited SAML response")
     authn_reqref = AuthnRequestRef(authn_reqref)
     saml2_sp.outstanding_queries_cache.delete(session_id)
 
     logger.debug(
-        f"Response {session_id}, request reference {authn_reqref}\n"
+        f"Response {log_safe(session_id)}, request reference {log_safe(authn_reqref)}\n"
         f"session info:\n{pprint.pformat(response.session_info())}\n\n"
     )
 

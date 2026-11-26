@@ -42,6 +42,7 @@ from auth_server.saml2 import (
     get_pysaml2_sp_config,
     get_saml2_sp,
     load_sp_config,
+    log_safe,
     saml2_module_alias,
 )
 from auth_server.saml2_mdq import LazyMetadataStore, MDQMetadataSource, run_coroutine_sync
@@ -51,6 +52,24 @@ from auth_server.tests.test_app import MockResponse
 __author__ = "lundberg"
 
 from auth_server.time_utils import utc_now
+
+
+class TestLogSafe(TestCase):
+    def test_crlf_injection_is_escaped(self: Self) -> None:
+        value = "https://idp.example.org\r\n2026-01-01 INFO forged log line\x00\x1b[31m"
+        result = log_safe(value)
+        assert "\r" not in result
+        assert "\n" not in result
+        assert "\x00" not in result
+        assert "\x1b" not in result
+        assert "\\r\\n" in result
+
+    def test_truncated(self: Self) -> None:
+        result = log_safe("a" * 1000, max_length=10)
+        assert result == "a" * 10 + "..."
+
+    def test_plain_value_unchanged(self: Self) -> None:
+        assert log_safe("https://idp.example.org/idp.xml") == "https://idp.example.org/idp.xml"
 
 
 class TestSAMLSP(TestCase):
@@ -1057,7 +1076,9 @@ class TestSAMLSP(TestCase):
         # far validUntil: usable until refresh time + max_stale, no longer
         source = MDQMetadataSource(url="http://mdq.example.com", ttl=100.0, max_stale=50.0)
         assert self._mdq_lookup(source, self._signed_metadata(valid_until=now + timedelta(days=30))) is not None
-        assert 100.0 < source._cache[self.test_idp].drop_at - time.monotonic() <= 150.0
+        remaining = source._cache[self.test_idp].drop_at - time.monotonic()
+        assert remaining > 100.0
+        assert remaining <= 150.0
         # near validUntil: never past validUntil
         source = MDQMetadataSource(url="http://mdq.example.com", ttl=100.0, max_stale=50.0)
         assert self._mdq_lookup(source, self._signed_metadata(valid_until=now + timedelta(seconds=120))) is not None
@@ -1240,7 +1261,8 @@ class TestSAMLSP(TestCase):
             store = self._local_store(path)
             source = store._sources[path]
             assert source.refresh_at is not None
-            assert now + timedelta(minutes=59) < source.refresh_at < now + timedelta(hours=1, minutes=1)
+            assert now + timedelta(minutes=59) < source.refresh_at
+            assert source.refresh_at < now + timedelta(hours=1, minutes=1)
             # the file is replaced with a later validUntil
             self._expiring_metadata_file(tmp, now + timedelta(hours=10))
 
@@ -1639,7 +1661,8 @@ class TestSAMLSP(TestCase):
         first = asyncio.run(get_saml2_sp())
         self._update_app_config()
         second = asyncio.run(get_saml2_sp())
-        assert first is not None and second is not None
+        assert first is not None
+        assert second is not None
         assert first is not second
 
     def test_get_saml2_sp_build_failure_not_cached(self: Self) -> None:
