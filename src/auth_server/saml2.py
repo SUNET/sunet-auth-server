@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import functools
 import importlib.util
 import pkgutil
 import pprint
@@ -315,9 +316,19 @@ class _SP:
     mongo_client: MongoClient
 
 
+@dataclass
+class _Building:
+    """The build of the SAML2SP that is in flight, shared by the concurrent callers of get_saml2_sp"""
+
+    task: asyncio.Future[SAML2SP]
+    config: AuthServerConfig
+    sp_config: SPConfig
+
+
 # One SAML2SP per process (one MongoClient, one set of caches, indexes created once)
 _sp_lock = threading.Lock()
 _sp: _SP | None = None
+_building: _Building | None = None
 
 
 def _build_saml2_sp(config: AuthServerConfig, sp_config: SPConfig) -> _SP:
@@ -368,9 +379,10 @@ def _get_or_build_saml2_sp(config: AuthServerConfig, sp_config: SPConfig) -> SAM
 
 def clear_saml2_sp() -> None:
     """Forget the SAML2SP and close its Mongo client. Used on shutdown and by tests when the config is changed."""
-    global _sp  # noqa: PLW0603
+    global _sp, _building  # noqa: PLW0603
     with _sp_lock:
         old, _sp = _sp, None
+    _building = None
     if old is not None:
         old.mongo_client.close()
 
@@ -385,8 +397,31 @@ async def get_saml2_sp() -> SAML2SP | None:
     if _is_current(current, config, sp_config):
         assert current is not None  # please mypy
         return current.saml2_sp
-    # building blocks (index creation), keep it off the event loop. The lock makes concurrent first calls build once.
-    return await asyncio.to_thread(_get_or_build_saml2_sp, config, sp_config)
+    # Building blocks (index creation, and with Mongo down a server selection timeout), keep it off the event loop.
+    # Concurrent callers share one in-flight build and its result or exception, so an outage costs one thread and one
+    # timeout, not one per request. Once the build is done the next call starts a new one (a failure is not cached).
+    global _building  # noqa: PLW0603
+    building = _building
+    if (
+        building is None
+        or building.config is not config
+        or building.sp_config is not sp_config
+        or building.task.get_loop() is not asyncio.get_running_loop()
+    ):
+        task = asyncio.ensure_future(asyncio.to_thread(_get_or_build_saml2_sp, config, sp_config))
+        building = _Building(task=task, config=config, sp_config=sp_config)
+        _building = building
+        task.add_done_callback(functools.partial(_build_done, building))
+    # shield: a cancelled caller (client disconnect) must not cancel the build the others wait for
+    return await asyncio.shield(building.task)
+
+
+def _build_done(building: _Building, task: asyncio.Future[SAML2SP]) -> None:
+    global _building  # noqa: PLW0603
+    if _building is building:
+        _building = None
+    if not task.cancelled():
+        task.exception()  # mark it retrieved, the waiting callers get it, and with no waiter it is not a warning
 
 
 COMPAT_PACKAGE = saml2_compat.__name__

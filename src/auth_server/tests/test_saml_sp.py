@@ -1727,6 +1727,30 @@ class TestSAMLSP(TestCase):
                 asyncio.run(get_saml2_sp())
         assert asyncio.run(get_saml2_sp()) is not None
 
+    def test_get_saml2_sp_concurrent_failed_build_is_shared(self: Self) -> None:
+        # Mongo down before the SP exists: concurrent callers share one build and its exception, not one each
+        calls = 0
+
+        def slow_failing_build(*args: Any, **kwargs: Any) -> Any:
+            nonlocal calls
+            calls += 1
+            time.sleep(0.3)
+            raise ServerSelectionTimeoutError("no mongo")
+
+        async def gather() -> list[Any]:
+            return list(await asyncio.gather(*[get_saml2_sp() for _ in range(5)], return_exceptions=True))
+
+        with mock.patch("auth_server.saml2._build_saml2_sp", side_effect=slow_failing_build):
+            results = asyncio.run(gather())
+            assert calls == 1
+            assert all(isinstance(r, ServerSelectionTimeoutError) for r in results)
+            # the failure is not cached, the next call tries again
+            with self.assertRaises(ServerSelectionTimeoutError):
+                asyncio.run(get_saml2_sp())
+            assert calls == 2
+        # and works when Mongo is back
+        assert asyncio.run(get_saml2_sp()) is not None
+
     def test_mongo_timeouts_set(self: Self) -> None:
         sp = asyncio.run(get_saml2_sp())
         assert sp is not None
