@@ -144,7 +144,7 @@ class MDQMetadataSource(MetaDataMDX):
             if b"-----BEGIN CERTIFICATE-----" not in data:
                 raise ValueError("not a PEM certificate")
             return ssl.create_default_context(cafile=tls_ca)
-        except (OSError, ValueError, ssl.SSLError) as e:
+        except (OSError, ValueError) as e:  # ssl.SSLError is an OSError
             raise RuntimeError(f"MDQ tls_ca {tls_ca} could not be loaded: {e}") from e
 
     @staticmethod
@@ -501,7 +501,7 @@ class LazyMetadataStore(MetadataStore):
         now = utc_now()
         loop = asyncio.get_running_loop()
         waiting: list[asyncio.Future[bool]] = []
-        for key, source in list(self._sources.items()):
+        for key, source in self._sources.items():
             if source.loader is None or source.refresh_at is None or now < source.refresh_at:
                 continue
             task = source.task
