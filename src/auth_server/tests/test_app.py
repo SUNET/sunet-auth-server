@@ -53,7 +53,7 @@ from auth_server.models.jose import (
     SupportedJWSTypeLegacy,
 )
 from auth_server.models.status import Status
-from auth_server.saml2 import AuthnInfo, NameID, SAMLAttributes, SessionInfo
+from auth_server.saml2 import AuthnInfo, NameID, SAMLAttributes, SessionInfo, clear_saml2_sp
 from auth_server.testing import MongoTemporaryInstance
 from auth_server.tests.utils import create_cert, create_tls_fed_metadata, tls_fed_metadata_to_jws
 from auth_server.time_utils import utc_now
@@ -64,8 +64,12 @@ __author__ = "lundberg"
 
 
 class MockResponse:
-    def __init__(self: Self, content: bytes = b"", status_code: int = 200) -> None:
+    def __init__(
+        self: Self, content: bytes = b"", status_code: int = 200, url: str = "", history: tuple[Any, ...] = ()
+    ) -> None:
         self._content = content
+        self.url = url
+        self.history = history
         self._status_code = status_code
         self.accessed_status = 0
 
@@ -136,6 +140,7 @@ class TestAuthServer(TestCase):
         load_jwks.cache_clear()
         get_signing_key.cache_clear()
         clear_tls_fed_metadata_cache()
+        clear_saml2_sp()
 
     def tearDown(self: Self) -> None:
         self.app = None  # type: ignore

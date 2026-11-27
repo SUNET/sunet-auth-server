@@ -9,7 +9,7 @@ from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import MongoClient, WriteConcern
 
-from auth_server.config import load_config
+from auth_server.config import AuthServerConfig, load_config
 
 __author__ = "lundberg"
 
@@ -104,11 +104,21 @@ async def get_motor_client() -> AsyncIOMotorClient | None:
             _close_client(old_client)
 
 
-async def get_mongo_client() -> MongoClient | None:
-    config = load_config()
+def create_sync_mongo_client(config: AuthServerConfig) -> MongoClient | None:
+    """Create a sync pymongo client with explicit timeouts, so an unavailable Mongo fails fast instead of after 30 s"""
     if config.mongo_uri is None:
         return None
-    return MongoClient(config.mongo_uri, tz_aware=True)
+    return MongoClient(
+        config.mongo_uri,
+        tz_aware=True,
+        serverSelectionTimeoutMS=int(config.mongo_server_selection_timeout.total_seconds() * 1000),
+        connectTimeoutMS=int(config.mongo_connect_timeout.total_seconds() * 1000),
+        socketTimeoutMS=int(config.mongo_socket_timeout.total_seconds() * 1000),
+    )
+
+
+async def get_mongo_client() -> MongoClient | None:
+    return create_sync_mongo_client(load_config())
 
 
 class DBError(Exception):

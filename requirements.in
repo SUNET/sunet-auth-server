@@ -8,7 +8,7 @@ jwcrypto
 http-message-signatures==3.0.0
 xmltodict
 motor
-pysaml2
+pygamlastan==0.7.0
 pki-tools
 pydantic-settings
 uvicorn[standard]

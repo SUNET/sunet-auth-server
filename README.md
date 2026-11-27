@@ -87,6 +87,9 @@ The server is configured using environment variables or a YAML configuration fil
 | `AUTH_TOKEN_AUDIENCE` | JWT token audience | None |
 | `AUTH_TOKEN_EXPIRES_IN` | Token expiration time | 10 hours |
 | `MONGO_URI` | MongoDB connection string | None |
+| `MONGO_SERVER_SELECTION_TIMEOUT` | Server selection timeout of the SAML Mongo client | 2 seconds |
+| `MONGO_CONNECT_TIMEOUT` | Connect timeout of the SAML Mongo client | 2 seconds |
+| `MONGO_SOCKET_TIMEOUT` | Socket timeout of the SAML Mongo client | 3 seconds |
 | `KEYSTORE_PATH` | Path to JWKS keystore file | `keystore.jwks` |
 | `SIGNING_KEY_ID` | Key ID for signing tokens | `default` |
 
@@ -113,6 +116,80 @@ pysaml2_config_path: /path/to/saml2_config.py
 saml2_discovery_service_url: https://ds.example.com
 saml2_single_idp: https://idp.example.com/metadata  # Optional: skip discovery
 ```
+
+The SAML2 SP is implemented with [pygamlastan](https://github.com/kushaldas/pygamlastan) using its
+pysaml2 compatible `pygamlastan.compat.saml2` module (no `xmlsec1` binary needed). The settings file
+(`pysaml2_config_path`, a Python module with a dict named `pysaml2_config_name`) keeps the pysaml2 format and
+existing files that only import `saml2` or `saml2.<module>` for modules the compat package also provides (for
+example `saml2.attributemaps`, `saml2.config`, `saml2.saml`) load unchanged, those imports are served by the compat
+module while the file is loaded (a deprecation warning is logged, import from `pygamlastan.compat.saml2` instead).
+Other pysaml2 modules (for example `saml2.entity_category.*`) are not available and fail with an error that names
+the module, the settings file needs to be migrated.
+
+The SAML2 settings are loaded and the SP is built at startup when `pysaml2_config_path` and `mongo_uri` are set, a
+broken settings file stops the server from starting. A Mongo that is down at startup only logs a warning, the SP is
+then built on first use. If Mongo can not be reached while handling a SAML request the answer is 503.
+
+Things to be aware of when upgrading from pysaml2:
+
+- `want_response_signed` and `want_assertions_signed` both default to `True` as in pysaml2 (pygamlastan itself
+  defaults `want_assertions_signed` to `False`). Set them explicitly in the `sp` section of the settings to
+  override. pygamlastan treats both as hard requirements, so an IdP that signs only the assertion needs
+  `want_response_signed: False`, and an IdP that signs only the Response needs `want_assertions_signed: False`.
+  Setting BOTH to `False` disables all signature verification (an unsigned response is accepted): this is
+  permissive, only for tests, and must never be used in production. A CRITICAL line naming the settings file is
+  logged at load when both are `False` and `testing` is not set. Validate a real signed response from each
+  production IdP before rollout.
+- XMLDSig verification runs in pygamlastan's native code, pinned exactly (`pygamlastan==0.7.0`). The signature tests
+  in `test_saml_sp.py` are its acceptance test, run them when bumping the pin.
+- `eduPersonTargetedID` is not supported, the compat layer does not deliver NameID valued attributes. An assertion
+  with neither `eduPersonPrincipalName` nor `eduPersonUniqueId` is rejected (HTTP 400), as no subject identity
+  could be put in the token.
+- Metadata sources `local`, `remote` (https, with `cert`) and `mdq` (`{"url": ..., "cert": ...}`) are supported.
+  A bare url string (`"mdq": ["https://mdq.example.com/"]`, the pysaml2 form) is accepted as `{"url": ...}`.
+  A `cert` pinning the federation signing key is strongly recommended for `mdq`: it makes a signed document
+  mandatory. Without it the metadata is trusted on the HTTPS connection only (a warning is logged at config load).
+  An `http://` MDQ url without a `cert` is refused at config load (RuntimeError) unless `testing` is set, use https or
+  pin a `cert` (the signature then authenticates the metadata, so http is allowed). An MDQ fetch (also in MDQFlow)
+  that started as https and ended on an http url after redirects is refused (error logged, fail closed).
+  Per `mdq` entry (dict form) there are two knobs for internal/test servers, unknown keys and non-boolean values are
+  rejected at config load:
+  - `allow_http: true` (default `false`) permits an `http://` url without a `cert` outside `testing`. The metadata is
+    then trusted on an unauthenticated channel and a network attacker can replace the IdP signing keys, a WARNING is
+    logged at config load. Not needed with a pinned `cert`. It only applies to a url that starts as http: an https
+    source is never downgraded, such a redirect is still refused.
+  - `tls_ca: /path/ca.pem` uses that PEM CA (or the self-signed server cert) as the trust anchor for this source
+    only (validated at config load). The safer option for a self-signed server. `tls_verify: false` (default `true`)
+    turns TLS verification off for this source only, logs a WARNING, and is trust-on-nothing unless a `cert` is
+    pinned. `tls_ca` together with `tls_verify: false` is a config error.
+  Example: `"mdq": [{"url": "https://mdq.internal:8443/", "tls_ca": "/etc/ssl/internal-ca.pem"}, `
+  `{"url": "http://mdq.test:8080/", "allow_http": True}]`.
+  MDQ entities are fetched from `<url>/entities/{sha1}<hash>` on demand and cached for at most one hour (or until
+  `validUntil`). A document without `validUntil` is refused (as the library does for `remote` sources). If a refresh
+  fails the last good copy is kept for at most one more hour (`MDQ_MAX_STALE_SECONDS`), never past its `validUntil`.
+  The request handlers prefetch the IdP metadata, a lookup inside the event loop that was not
+  prefetched is refused (fail closed) and never blocks the loop. Concurrent lookups of one entity share one fetch.
+- Metadata expiry (`local` and `remote` sources): the SAML SP is a process-lifetime singleton, so every entity keeps
+  its effective `validUntil` (also one inherited from an enclosing `EntitiesDescriptor`). A lookup (`[]`, `get`, `in`,
+  `name`, `service`, `single_sign_on_service`, iteration, `only_idp`) past it fails closed like a missing entity
+  (KeyError / unknown entity) and logs an error naming the entity. No I/O happens in lookups. Sources are reloaded from
+  async code (request handlers via `prefetch_idp_metadata`, and at startup) once they are half way (at least 60 s) to
+  their earliest `validUntil`, with the same loader and checks as at config load (https only, size limit, `cert`
+  signature over the root, expiry). A local file is re-read the same way, so replacing the file is enough. The reload
+  runs on a dedicated single thread (the compat loader is sync urllib), one reload per source at a time. While the
+  copy is still valid the reload runs in the background and the old copy is served. A failed reload (retried every 60 s)
+  keeps the last good copy only until its own `validUntil`, never longer. A source that is already expired is awaited by
+  the request that finds it. A local file past its `validUntil` that is not replaced makes lookups fail (the IdP
+  gets refused) until it is replaced, no restart is needed. Refresh is request driven, an idle worker reloads on the next
+  login.
+- Trust model: the IdP allow-list check in `/saml2/sp/discovery-response` applies only when the settings enumerate
+  `idp`. With metadata/MDQ-only settings any IdP in that metadata is trusted, so the metadata source (the
+  federation) decides which IdPs are accepted. Entities without an IDPSSODescriptor are always refused.
+- Responses are only accepted from the IdP the request was sent to. Outstanding requests stored before the
+  upgrade do not know their IdP, they are only accepted when the IdP can be determined from the settings (one IdP).
+- Assertion replay protection is stored in MongoDB (collection `saml_replay_cache`), shared by all workers.
+- `xmlsec_binary` and `attribute_map_dir` in the settings are ignored. No identity (session) cache is kept, as
+  single logout is not used.
 
 ### TLS-FED Metadata
 

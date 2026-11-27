@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<md:EntityDescriptor validUntil="2099-01-01T00:00:00Z" xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:shibmd="urn:mace:shibboleth:metadata:1.0" entityID="https://idp.example.com/simplesaml/saml2/idp/metadata.php">
+  <md:Extensions>
+    <shibmd:Scope regexp="false">example.com</shibmd:Scope>
+    <shibmd:Scope regexp="false">anotherexample.com</shibmd:Scope>
+  </md:Extensions>
+  <md:IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+    <md:KeyDescriptor use="signing">
+      <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+        <ds:X509Data>
+          <ds:X509Certificate>MIIDAjCCAeqgAwIBAgIUd8ISuaHAYlM4A96WAqUCrlWuXZkwDQYJKoZIhvcNAQELBQAwIDEeMBwGA1UEAwwVdGVzdC1vbmx5IGlkcF9zaWduaW5nMCAXDTI2MTEyNjA5NDAxMloYDzIxMjYxMTAyMDk0MDEyWjAgMR4wHAYDVQQDDBV0ZXN0LW9ubHkgaWRwX3NpZ25pbmcwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDLccJawydEmMh/NimuRG/VB6P6ARC9IbyVvXI0Cd4R1NmmuOv+edxQW/HhylwkJwaRsMz39NW2MKwOYh0s+0golwF1Pajul7AN9RcgWQbPS1B2QVlYhstECaDATEacmjSiGZeSy5xhWgE9H1IrkNhWw1zS2FmQw6TqATyG30UI0ZwFlt/mxcv5+4DBJ9wB4uwe/6GLV7NrhyA1pQWG7W/G1OoivsRqEBRrfZFYS8VnrYzrcTQO2lOxG39SVhWYxUOmSZJUAesz1H39ZSqJiuMFtI9CXY+QSrhetqJWxjlFiKcsbnBZbGeXcTdxeDfQqccmvhQOkMNZbjHS9VXOj3bjAgMBAAGjMjAwMB0GA1UdDgQWBBSSjxF9NYgc1BJYmqS4goCSbqqdGzAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQAQ4Nu+HCOlqibahBkcC+TWtqv+YTOpqmxI+pgrg5BYIM1daRo+qhsRXCQoSEAIb9c9iYkEjGIpmRIvgO9kXvkHbad3ilIT8DShgTsVeJsQmHzCahSzEhcwQF4pypPh8/2nnv5oofZ+z4ceL3vYjutx4QcwMBraSABnbP0YiiFaiXLD1zpC7MWANyoGotpo8JocnmQEvDlY7dSIQZJ3Iz/QK/782pdulFH8cJ6k7DbagnczUQbd5T9gXlcPXggi+4nNpq4U8wgR4lRpOkOrw1dh3GffJnRSCOqBpGzDkYz9p35yrHBVbhpstOCCNn5dfuwvU6ARGc3aib1ixdhY0KBO</ds:X509Certificate>
+        </ds:X509Data>
+      </ds:KeyInfo>
+    </md:KeyDescriptor>
+    <md:KeyDescriptor use="encryption">
+      <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+        <ds:X509Data>
+          <ds:X509Certificate>MIIDAjCCAeqgAwIBAgIUd8ISuaHAYlM4A96WAqUCrlWuXZkwDQYJKoZIhvcNAQELBQAwIDEeMBwGA1UEAwwVdGVzdC1vbmx5IGlkcF9zaWduaW5nMCAXDTI2MTEyNjA5NDAxMloYDzIxMjYxMTAyMDk0MDEyWjAgMR4wHAYDVQQDDBV0ZXN0LW9ubHkgaWRwX3NpZ25pbmcwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDLccJawydEmMh/NimuRG/VB6P6ARC9IbyVvXI0Cd4R1NmmuOv+edxQW/HhylwkJwaRsMz39NW2MKwOYh0s+0golwF1Pajul7AN9RcgWQbPS1B2QVlYhstECaDATEacmjSiGZeSy5xhWgE9H1IrkNhWw1zS2FmQw6TqATyG30UI0ZwFlt/mxcv5+4DBJ9wB4uwe/6GLV7NrhyA1pQWG7W/G1OoivsRqEBRrfZFYS8VnrYzrcTQO2lOxG39SVhWYxUOmSZJUAesz1H39ZSqJiuMFtI9CXY+QSrhetqJWxjlFiKcsbnBZbGeXcTdxeDfQqccmvhQOkMNZbjHS9VXOj3bjAgMBAAGjMjAwMB0GA1UdDgQWBBSSjxF9NYgc1BJYmqS4goCSbqqdGzAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQAQ4Nu+HCOlqibahBkcC+TWtqv+YTOpqmxI+pgrg5BYIM1daRo+qhsRXCQoSEAIb9c9iYkEjGIpmRIvgO9kXvkHbad3ilIT8DShgTsVeJsQmHzCahSzEhcwQF4pypPh8/2nnv5oofZ+z4ceL3vYjutx4QcwMBraSABnbP0YiiFaiXLD1zpC7MWANyoGotpo8JocnmQEvDlY7dSIQZJ3Iz/QK/782pdulFH8cJ6k7DbagnczUQbd5T9gXlcPXggi+4nNpq4U8wgR4lRpOkOrw1dh3GffJnRSCOqBpGzDkYz9p35yrHBVbhpstOCCNn5dfuwvU6ARGc3aib1ixdhY0KBO</ds:X509Certificate>
+        </ds:X509Data>
+      </ds:KeyInfo>
+    </md:KeyDescriptor>
+    <md:SingleLogoutService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/simplesaml/saml2/idp/SingleLogoutService.php"/>
+    <md:NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:transient</md:NameIDFormat>
+    <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/simplesaml/saml2/idp/SSOService.php"/>
+  </md:IDPSSODescriptor>
+  <md:Organization>
+    <md:OrganizationName xml:lang="en">OpenMooc</md:OrganizationName>
+    <md:OrganizationName xml:lang="es">OpenMooc</md:OrganizationName>
+    <md:OrganizationDisplayName xml:lang="en">OpenMooc</md:OrganizationDisplayName>
+    <md:OrganizationDisplayName xml:lang="es">OpenMooc</md:OrganizationDisplayName>
+    <md:OrganizationURL xml:lang="en">http://example.com</md:OrganizationURL>
+    <md:OrganizationURL xml:lang="es">http://example.com</md:OrganizationURL>
+  </md:Organization>
+  <md:ContactPerson contactType="technical">
+    <md:GivenName>Sixto</md:GivenName>
+    <md:SurName>Martin</md:SurName>
+    <md:EmailAddress>smartin@example.com</md:EmailAddress>
+  </md:ContactPerson>
+</md:EntityDescriptor>
