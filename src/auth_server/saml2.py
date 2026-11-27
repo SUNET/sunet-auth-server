@@ -216,11 +216,16 @@ class ExpectedIdPs:
     got the request, which is needed when more than one IdP is configured.
     """
 
-    def __init__(self: Self, outstanding_queries_cache: OutstandingQueriesCache) -> None:
+    def __init__(
+        self: Self, outstanding_queries_cache: OutstandingQueriesCache, fallback_idp: str | None = None
+    ) -> None:
         self._cache = outstanding_queries_cache
+        # IdP for queries stored before the IdP was recorded (sent before an upgrade). The configured single IdP is
+        # the only place those can have been sent to. A stored IdP always wins.
+        self._fallback_idp = fallback_idp
 
     def get(self: Self, request_id: str, default: str | None = None) -> str | None:
-        return self._cache.get_idp(request_id) or default
+        return self._cache.get_idp(request_id) or self._fallback_idp or default
 
 
 # The pygamlastan native adapter turns any exception from the replay cache into "replay detected" (False), which
@@ -710,7 +715,7 @@ def _parse_authn_response(saml2_sp: SAML2SP, raw_response: str) -> AuthnResponse
             raw_response,
             BINDING_HTTP_POST,
             saml2_sp.outstanding_queries_cache,  # type: ignore[arg-type]
-            expected_idps=ExpectedIdPs(saml2_sp.outstanding_queries_cache),
+            expected_idps=ExpectedIdPs(saml2_sp.outstanding_queries_cache, fallback_idp=saml2_sp.single_idp),
         )
     except Exception:
         if (backend_error := _replay_backend_error.get()) is not None:
@@ -754,7 +759,12 @@ async def get_authn_response(raw_response: str) -> tuple[AuthnResponse, AuthnReq
         # signature and expected_idps checks in the client decide what is accepted.
         allowed_idps = saml2_sp.client.config.idp
         known_request = request_id is not None and saml2_sp.outstanding_queries_cache.get(request_id) is not None
-        if known_request and unverified_issuer is not None and (not allowed_idps or unverified_issuer in allowed_idps):
+        if known_request and saml2_sp.single_idp is not None:
+            # a legacy query with a configured single IdP can only have gone there, no need to trust the Issuer
+            expected_idp = saml2_sp.single_idp
+        elif (
+            known_request and unverified_issuer is not None and (not allowed_idps or unverified_issuer in allowed_idps)
+        ):
             expected_idp = unverified_issuer
         else:
             expected_idp = saml2_sp.client.config.only_idp()

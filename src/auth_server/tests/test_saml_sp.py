@@ -600,6 +600,39 @@ class TestSAMLSP(TestCase):
         response = self._post_saml_response(generated_authn_response)
         assert response.status_code == 303
 
+    def test_mdq_acs_legacy_outstanding_query_uses_single_idp(self: Self) -> None:
+        # upgrade case: MDQ only metadata (no only_idp()), a query stored before the IdP was recorded and a configured
+        # single IdP. The single IdP is the expected IdP and its metadata is prefetched, not the (unverified) Issuer.
+        self.config["pysaml2_config_path"] = f"{self.datadir}/saml2_settings_mdq.py"
+        self.config["saml2_single_idp"] = self.test_idp
+        self._update_app_config(config=self.config)
+        self.authentication_request_cache["authn-ref"] = self.test_transaction_state.transaction_id
+        self.outstanding_queries_cache["id-legacy"] = "authn-ref"
+        with open(f"{self.datadir}/remote_metadata.xml", "rb") as f:
+            mdq_response = f.read()
+        generated = self._generate_auth_response(
+            request_id="id-legacy", saml_response_tpl=self.saml_response_tpl_success
+        )
+        with mock.patch("aiohttp.ClientSession.get", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = MockResponse(content=mdq_response)
+            response = self._post_saml_response(generated)
+            assert mock_get.await_count == 1
+        assert response.status_code == 303
+
+    def test_mdq_acs_stored_idp_wins_over_single_idp(self: Self) -> None:
+        # a stored IdP is preserved: a response from another IdP than the one that got the request is refused even if
+        # a single IdP is configured
+        self.config["pysaml2_config_path"] = f"{self.datadir}/saml2_settings_two_idps.py"
+        self.config["saml2_single_idp"] = self.test_idp
+        self._update_app_config(config=self.config)
+        self.authentication_request_cache["authn-ref"] = self.test_transaction_state.transaction_id
+        self.outstanding_queries_cache.set("id-stored", "authn-ref", idp=self.test_idp2)
+        generated = self._generate_auth_response(
+            request_id="id-stored", saml_response_tpl=self.saml_response_tpl_success
+        )
+        response = self._post_saml_response(generated)
+        assert response.status_code == 400
+
     def test_two_idps_discovery(self: Self) -> None:
         self.config["pysaml2_config_path"] = f"{self.datadir}/saml2_settings_two_idps.py"
         self._update_app_config(config=self.config)
