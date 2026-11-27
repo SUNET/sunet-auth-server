@@ -17,6 +17,7 @@ from functools import lru_cache, partial
 from importlib.abc import Loader, MetaPathFinder
 from importlib.machinery import ModuleSpec
 from logging import getLogger
+from pathlib import Path
 from types import ModuleType
 from typing import Annotated, Any, NewType, Self
 
@@ -34,7 +35,7 @@ from pygamlastan.compat.saml2.typing import SAMLHttpArgs
 from pymongo import MongoClient, WriteConcern
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
-from auth_server.config import AuthServerConfig, load_config
+from auth_server.config import AuthServerConfig, ConfigurationError, load_config
 from auth_server.db.client import create_sync_mongo_client
 from auth_server.db.mongo_cache import MongoCache
 from auth_server.saml2_mdq import LazyMetadataStore, LazySPConfig, MDQMetadataSource, reload_metadata_source
@@ -561,6 +562,20 @@ def load_sp_config(settings: dict[str, Any]) -> SPConfig:
     return conf
 
 
+def validate_sp_config(sp_config: SPConfig, source: Path | str | None) -> None:
+    """
+    Check what the SP can not work without. The compat loader and client accept a missing entity id or ACS endpoint
+    and fail on the first login, check them when the config is loaded (before anything that needs Mongo is built) so
+    a bad settings file is a deploy time failure that a Mongo outage can not hide.
+    """
+    if not sp_config.entityid:
+        raise ConfigurationError(f"{source}: the SP entityid is missing in the SAML settings")
+    if not any(url for url, _binding in sp_config.acs_endpoints):
+        raise ConfigurationError(
+            f"{source}: no assertion_consumer_service endpoint in service.sp.endpoints in the SAML settings"
+        )
+
+
 @lru_cache
 def get_pysaml2_sp_config(name: str) -> SPConfig:
     """
@@ -587,6 +602,7 @@ def get_pysaml2_sp_config(name: str) -> SPConfig:
     sp_settings.setdefault("want_response_signed", True)
     sp_settings.setdefault("want_assertions_signed", True)
     sp_config = load_sp_config(settings)
+    validate_sp_config(sp_config, config.pysaml2_config_path)
     # check the normalized flags, the settings can hold strings like "false" or "0" that pygamlastan converts to False
     # but that are truthy here
     if not sp_config.want_response_signed and not sp_config.want_assertions_signed and not config.testing:

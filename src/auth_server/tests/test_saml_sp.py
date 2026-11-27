@@ -26,7 +26,7 @@ from pymongo.errors import AutoReconnect, OperationFailure, ServerSelectionTimeo
 from starlette.testclient import TestClient
 
 from auth_server.api import init_auth_server_api
-from auth_server.config import load_config
+from auth_server.config import ConfigurationError, load_config
 from auth_server.db.transaction_state import TransactionState
 from auth_server.models.gnap import AccessTokenRequest, Client, GrantRequest
 from auth_server.routers.saml2_sp import build_discovery_service_url, saml2_router
@@ -1810,6 +1810,38 @@ class TestSAMLSP(TestCase):
             with self.assertRaises(OperationFailure):
                 with TestClient(self.app):
                     pass
+
+    def _bad_sp_settings(self: Self, tmp: str, body: str) -> None:
+        settings = Path(tmp) / "bad_sp_settings.py"
+        settings.write_text(
+            "import copy, runpy\n"
+            f"SAML_CONFIG = copy.deepcopy(runpy.run_path('{self.datadir}/saml2_settings.py')['SAML_CONFIG'])\n" + body
+        )
+        self.config["pysaml2_config_path"] = str(settings)
+        self._update_app_config(config=self.config)
+
+    def test_sp_config_without_entityid_fails_at_load(self: Self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            self._bad_sp_settings(tmp, "SAML_CONFIG['entityid'] = ''\n")
+            with self.assertRaises(ConfigurationError) as ctx:
+                get_pysaml2_sp_config("SAML_CONFIG")
+            assert "entityid" in str(ctx.exception)
+
+    def test_sp_config_without_acs_endpoint_fails_at_load(self: Self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            self._bad_sp_settings(tmp, "SAML_CONFIG['service']['sp']['endpoints'] = {}\n")
+            with self.assertRaises(ConfigurationError) as ctx:
+                get_pysaml2_sp_config("SAML_CONFIG")
+            assert "assertion_consumer_service" in str(ctx.exception)
+
+    def test_startup_config_error_not_hidden_by_mongo_outage(self: Self) -> None:
+        # the settings are checked before the Mongo backed SP is built, Mongo being down must not hide the error
+        with tempfile.TemporaryDirectory() as tmp:
+            self._bad_sp_settings(tmp, "SAML_CONFIG['entityid'] = ''\n")
+            with mock.patch("auth_server.saml2._build_saml2_sp", side_effect=ServerSelectionTimeoutError("no mongo")):
+                with self.assertRaises(ConfigurationError):
+                    with TestClient(self.app):
+                        pass
 
     def test_startup_fails_on_bad_saml_config(self: Self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
